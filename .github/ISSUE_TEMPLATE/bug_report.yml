@@ -1,0 +1,73 @@
+name: 🐛 Bug Report
+description: Report a bug in flixopt
+title: "[BUG] "
+labels: ["type: bug"]
+body:
+- type: markdown
+  attributes:
+    value: |
+      **Quick guide**: Describe what's broken, provide code to reproduce if possible.
+      For simple bugs, just fill the first field.
+
+- type: textarea
+  id: problem
+  attributes:
+    label: What's broken?
+    description: Describe the bug - what happened vs. what you expected
+  validations:
+    required: true
+
+- type: textarea
+  id: example
+  attributes:
+    label: Code to reproduce
+    description: |
+      Provide the smallest possible code example that reproduces the bug.
+      See [how to create minimal bug reports](https://matthewrocklin.com/minimal-bug-reports).
+    value: |
+      import pandas as pd
+      import numpy as np
+      import flixopt as fx
+
+      fx.CONFIG.Logging.enable_console('DEBUG')
+      flow_system = fx.FlowSystem(pd.date_range('2020-01-01', periods=3, freq='h'))
+
+      flow_system.add_elements(
+          fx.Bus('Heat'),
+          fx.Bus('Gas'),
+          fx.Effect('Costs', '€', 'Cost', is_standard=True, is_objective=True),
+          fx.linear_converters.Boiler(
+              'Boiler',
+              eta=0.5,
+              Q_th=fx.Flow(label='Heat', bus='Heat', size=50),
+              Q_fu=fx.Flow(label='Gas', bus='Gas'),
+          ),
+          fx.Sink(
+              'Sink',
+              inputs=[
+                  fx.Flow(label='Demand', bus='Heat', size=1, fixed_relative_profile=np.array([30, 0, 20]))
+              ],
+          ),
+          fx.Source(
+              'Source',
+              outputs=[fx.Flow(label='Gas', bus='Gas', size=1000, effects_per_flow_hour=0.04)],
+          ),
+      )
+
+      calculation = fx.FullCalculation('Simulation1', flow_system).do_modeling().solve(fx.solvers.HighsSolver(0.01, 60))
+
+    render: python
+
+- type: textarea
+  id: error-output
+  attributes:
+    label: Error message
+    description: Paste the full traceback if there is one
+    render: shell
+
+- type: textarea
+  id: context
+  attributes:
+    label: Additional context
+    description: Solver, Python/OS version, environment details, or anything else relevant
+    placeholder: "HiGHS solver, Python 3.11, macOS 14"

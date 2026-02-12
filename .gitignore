@@ -1,0 +1,17 @@
+*.pyc
+__pycache__/
+*.egg-info
+dist/
+build/
+*.log
+*.nc4
+*.nc
+results/
+.idea/
+.vscode/
+.venv/
+venv/
+.DS_Store
+temp-plot.html
+.cache
+site/

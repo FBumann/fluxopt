@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 🤔 Modeling Questions
+    url: https://github.com/flixOpt/flixopt/discussions/categories/q-a
+    about: "How to model specific energy systems, components, and constraints"
+  - name: 📖 Documentation
+    url: https://flixopt.github.io/flixopt/latest/
+    about: "Guides, API reference, and examples"
