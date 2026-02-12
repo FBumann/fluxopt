@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from energysys import Bus, Effect, Flow, Sink, Source, Storage, solve
+from fluxopt import Bus, Effect, Flow, Sink, Source, Storage, solve
 
 
 class TestStorage:

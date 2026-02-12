@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
-from energysys.elements import Flow
-from energysys.types import TimeSeries
+if TYPE_CHECKING:
+    from fluxopt.elements import Flow
+    from fluxopt.types import TimeSeries
 
 
 @dataclass
@@ -11,7 +13,7 @@ class Source:
     label: str
     outputs: list[Flow]
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         for f in self.outputs:
             f._component = self.label
             f._is_input = False
@@ -22,7 +24,7 @@ class Sink:
     label: str
     inputs: list[Flow]
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         for f in self.inputs:
             f._component = self.label
             f._is_input = True
@@ -35,7 +37,7 @@ class LinearConverter:
     outputs: list[Flow]
     conversion_factors: list[dict[str, TimeSeries]] = field(default_factory=list)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         for f in self.inputs:
             f._component = self.label
             f._is_input = True

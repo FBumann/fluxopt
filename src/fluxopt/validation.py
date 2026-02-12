@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from energysys.components import LinearConverter, Sink, Source
-    from energysys.elements import Bus, Effect, Flow, Storage
+    from fluxopt.components import LinearConverter, Sink, Source
+    from fluxopt.elements import Bus, Effect, Flow, Storage
 
 
 def validate_system(
@@ -25,15 +25,10 @@ def _check_label_uniqueness(
     components: list[Source | Sink | LinearConverter],
     storages: list[Storage],
 ) -> None:
-    all_labels: list[str] = []
-    for bus in buses:
-        all_labels.append(bus.label)
-    for effect in effects:
-        all_labels.append(effect.label)
-    for comp in components:
-        all_labels.append(comp.label)
-    for stor in storages:
-        all_labels.append(stor.label)
+    all_labels = [bus.label for bus in buses]
+    all_labels.extend(effect.label for effect in effects)
+    all_labels.extend(comp.label for comp in components)
+    all_labels.extend(stor.label for stor in storages)
 
     seen: set[str] = set()
     for lbl in all_labels:

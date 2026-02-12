@@ -1,5 +1,7 @@
-from energysys.components import LinearConverter, Sink, Source
-from energysys.data import (
+import polars as pl
+
+from fluxopt.components import LinearConverter, Sink, Source
+from fluxopt.data import (
     BusesTable,
     ConvertersTable,
     EffectsTable,
@@ -8,22 +10,22 @@ from energysys.data import (
     StoragesTable,
     build_model_data,
 )
-from energysys.elements import Bus, Effect, Flow, Storage
-from energysys.model import EnergySystemModel
-from energysys.results import SolvedModel
-from energysys.types import TimeSeries, to_polars_series
+from fluxopt.elements import Bus, Effect, Flow, Storage
+from fluxopt.model import EnergySystemModel
+from fluxopt.results import SolvedModel
+from fluxopt.types import TimeSeries, to_polars_series
 
 
 def solve(
-    timesteps,
-    buses,
-    effects,
-    components,
-    storages=None,
-    dt=1.0,
-    solver='highs',
-    silent=True,
-):
+    timesteps: list[str] | pl.Series,
+    buses: list[Bus],
+    effects: list[Effect],
+    components: list[Source | Sink | LinearConverter],
+    storages: list[Storage] | None = None,
+    dt: float | list[float] = 1.0,
+    solver: str = 'highs',
+    silent: bool = True,
+) -> SolvedModel:
     """Convenience: build data, build model, solve, return results."""
     data = build_model_data(timesteps, buses, effects, components, storages, dt)
     model = EnergySystemModel(data, solver=solver)

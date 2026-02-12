@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-from typing import Union
-
 import pandas as pd
 import polars as pl
 
-TimeSeries = Union[float, int, list[float], pl.Series, pd.Series]
+TimeSeries = float | int | list[float] | pl.Series | pd.Series
 
 
 def to_polars_series(value: TimeSeries, timesteps: pl.Series, name: str = 'value') -> pl.Series:

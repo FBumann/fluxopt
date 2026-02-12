@@ -4,7 +4,7 @@ import pandas as pd
 import polars as pl
 import pytest
 
-from energysys.types import to_polars_series
+from fluxopt.types import to_polars_series
 
 
 @pytest.fixture

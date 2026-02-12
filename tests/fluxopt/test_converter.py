@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from energysys import Bus, Effect, Flow, LinearConverter, Sink, Source, solve
+from fluxopt import Bus, Effect, Flow, LinearConverter, Sink, Source, solve
 
 
 class TestBoiler:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import polars as pl
 
-from energysys import Bus, Effect, Flow, Sink, Source, build_model_data
+from fluxopt import Bus, Effect, Flow, Sink, Source, build_model_data
 
 
 class TestFlowsTable:
@@ -48,7 +48,7 @@ class TestBusesTable:
 
 class TestConvertersTable:
     def test_scalar_factors(self, timesteps_3):
-        from energysys import LinearConverter
+        from fluxopt import LinearConverter
 
         fuel = Flow('fuel', bus='gas', size=200)
         heat = Flow('heat', bus='heat', size=100)

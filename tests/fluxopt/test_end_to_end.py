@@ -3,7 +3,7 @@ from __future__ import annotations
 import polars as pl
 import pytest
 
-from energysys import (
+from fluxopt import (
     Bus,
     Effect,
     Flow,
@@ -14,7 +14,7 @@ from energysys import (
     build_model_data,
     solve,
 )
-from energysys.model import EnergySystemModel
+from fluxopt.model import EnergySystemModel
 
 
 class TestEndToEnd:
@@ -55,7 +55,6 @@ class TestEndToEnd:
         timesteps = ['t0', 't1', 't2', 't3']
         eta = 0.9
         gas_prices = [0.02, 0.08, 0.02, 0.08]
-        heat_demand = [50.0, 50.0, 50.0, 50.0]
 
         demand_flow = Flow('demand(heat)', bus='heat', size=100, fixed_relative_profile=[0.5, 0.5, 0.5, 0.5])
         gas_source = Flow('grid(gas)', bus='gas', size=500, effects_per_flow_hour={'cost': gas_prices})

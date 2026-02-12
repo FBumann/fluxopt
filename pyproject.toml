@@ -56,13 +56,15 @@ repository = "https://github.com/FBumann/fluxopt"
 source = "vcs"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/energysys"]
+packages = ["src/fluxopt"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src/energysys/", "LICENSE", "README.md"]
+include = ["src/fluxopt/", "LICENSE", "README.md"]
 
 [dependency-groups]
 dev = [
+    "mypy>=1.19.1",
+    "pandas-stubs>=3.0.0.260204",
     "pre-commit>=4.5.1",
     "pytest>=9.0.2",
     "pytest-cov>=7.0.0",
@@ -89,14 +91,6 @@ docs = [
 
 [tool.ruff]
 target-version = "py312"
-exclude = [
-    "venv",
-    "build",
-    "dist",
-    "__pycache__",
-    ".git",
-    ".mypy_cache",
-]
 line-length = 120
 
 [tool.ruff.lint]
@@ -109,12 +103,25 @@ select = [
     "N",     # pep8-naming
     "UP",    # pyupgrade
     "FA",    # flake8-future-annotations
-    "TCH",   # flake8-type-checking
+    "TC",    # flake8-type-checking
+    "SIM",   # flake8-simplify
+    "RUF",   # Ruff-specific rules
+    "PERF",  # perflint
+    "C4",    # flake8-comprehensions
+    "PIE",   # flake8-pie
+    "RET",   # flake8-return
+    "FLY",   # flynt (f-string)
+    "FURB",  # refurb
+    "T20",   # flake8-print
+    "PLC",   # pylint conventions
+    "PLE",   # pylint errors
 ]
 ignore = [
-    "E501",
+    "E501",     # line too long (handled by formatter)
+    "RET504",   # unnecessary assignment before return
+    "PLC0415",  # import not at top level (used for circular import avoidance)
 ]
-extend-fixable = ["B"]
+extend-fixable = ["B", "SIM", "RUF", "C4", "UP"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["S101"]
@@ -126,6 +133,25 @@ docstring-code-format = true
 
 [tool.ruff.lint.pyupgrade]
 keep-runtime-typing = false
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+
+[[tool.mypy.overrides]]
+module = [
+    "pyoframe.*",
+    "pyoptinterface.*",
+    "highspy.*",
+    "dash.*",
+    "dash_cytoscape.*",
+    "dash_daq.*",
+    "pyvis.*",
+    "tsam.*",
+]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 markers = [

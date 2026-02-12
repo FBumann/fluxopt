@@ -5,7 +5,6 @@ repo_name: FBumann/fluxopt
 
 nav:
   - Home: index.md
-  - API Reference: api-reference/
 
 theme:
   name: material
@@ -90,5 +89,5 @@ plugins:
             merge_init_into_class: true
 
 watch:
-  - src/energysys
+  - src/fluxopt
   - docs

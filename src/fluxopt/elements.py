@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
-from energysys.types import TimeSeries
+if TYPE_CHECKING:
+    from fluxopt.types import TimeSeries
 
 
 @dataclass
@@ -50,7 +52,7 @@ class Storage:
     relative_minimum_charge_state: TimeSeries = 0.0
     relative_maximum_charge_state: TimeSeries = 1.0
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.charging._component = self.label
         self.charging._is_input = True  # charging takes energy from the bus
         self.discharging._component = self.label

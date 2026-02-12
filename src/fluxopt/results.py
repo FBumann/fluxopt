@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 import polars as pl
 
 if TYPE_CHECKING:
-    from energysys.model import EnergySystemModel
+    from fluxopt.model import EnergySystemModel
 
 
 @dataclass

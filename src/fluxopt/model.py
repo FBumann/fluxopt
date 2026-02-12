@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import polars as pl
 import pyoframe as pf
 
-from energysys.data import ModelData
-from energysys.results import SolvedModel
+from fluxopt.results import SolvedModel
+
+if TYPE_CHECKING:
+    from fluxopt.data import ModelData
 
 
 class EnergySystemModel:
@@ -137,7 +141,7 @@ class EnergySystemModel:
         time_list = timesteps['time'].to_list()
 
         # charge_state has one extra step (N+1 for N timesteps)
-        steps = time_list + ['_end']
+        steps = [*time_list, '_end']
         steps_df = pl.DataFrame({'time': steps})
 
         m.charge_state = pf.Variable(storages_index, steps_df, lb=0)

@@ -1,15 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import polars as pl
 
-from energysys.types import to_polars_series
+from fluxopt.types import to_polars_series
 
 if TYPE_CHECKING:
-    from energysys.components import LinearConverter, Sink, Source
-    from energysys.elements import Bus, Effect, Flow, Storage
+    from fluxopt.components import LinearConverter, Sink, Source
+    from fluxopt.elements import Bus, Effect, Flow, Storage
 
 
 @dataclass
@@ -23,8 +23,8 @@ class FlowsTable:
         flow_labels = [f.label for f in flows]
         index = pl.DataFrame({'flow': flow_labels})
 
-        bounds_rows: list[dict] = []
-        fixed_rows: list[dict] = []
+        bounds_rows: list[dict[str, Any]] = []
+        fixed_rows: list[dict[str, Any]] = []
 
         for f in flows:
             lb_series = to_polars_series(f.relative_minimum, timesteps, 'lb')
@@ -62,15 +62,15 @@ class FlowsTable:
         flow_labels = df['flow'].to_list()
         index = pl.DataFrame({'flow': flow_labels})
 
-        bounds_rows: list[dict] = []
-        fixed_rows: list[dict] = []
+        bounds_rows: list[dict[str, Any]] = []
+        fixed_rows: list[dict[str, Any]] = []
         for row in df.iter_rows(named=True):
             size = row.get('size')
             rel_min = row.get('rel_min', 0.0)
             rel_max = row.get('rel_max', 1.0)
             for t in timesteps:
-                lb = rel_min * (size if size else 1e9)
-                ub = rel_max * (size if size else 1e9)
+                lb = rel_min * (size or 1e9)
+                ub = rel_max * (size or 1e9)
                 bounds_rows.append({'flow': row['flow'], 'time': t, 'lb': float(lb), 'ub': float(ub)})
 
         bounds = pl.DataFrame(
@@ -89,7 +89,7 @@ class BusesTable:
     def from_elements(cls, buses: list[Bus], flows: list[Flow]) -> BusesTable:
         index = pl.DataFrame({'bus': [b.label for b in buses]})
 
-        rows: list[dict] = []
+        rows: list[dict[str, Any]] = []
         for flow in flows:
             # Output to bus: +1, Input from bus: -1
             coeff = -1.0 if flow._is_input else 1.0
@@ -114,7 +114,7 @@ class ConvertersTable:
     def from_elements(cls, converters: list[LinearConverter], timesteps: pl.Series) -> ConvertersTable:
         index = pl.DataFrame({'converter': [c.label for c in converters]})
 
-        rows: list[dict] = []
+        rows: list[dict[str, Any]] = []
         for conv in converters:
             for eq_idx, equation in enumerate(conv.conversion_factors):
                 # Check if any factor is time-varying
@@ -135,16 +135,17 @@ class ConvertersTable:
                             )
                 else:
                     for flow_label, factor in equation.items():
-                        for t in timesteps:
-                            rows.append(
-                                {
-                                    'converter': conv.label,
-                                    'eq_idx': eq_idx,
-                                    'flow': flow_label,
-                                    'time': t,
-                                    'coeff': float(factor),
-                                }
-                            )
+                        scalar = float(factor)  # type: ignore[arg-type]  # guarded by is_time_varying check
+                        rows.extend(
+                            {
+                                'converter': conv.label,
+                                'eq_idx': eq_idx,
+                                'flow': flow_label,
+                                'time': t,
+                                'coeff': scalar,
+                            }
+                            for t in timesteps
+                        )
 
         flow_coefficients = pl.DataFrame(
             rows,
@@ -181,7 +182,7 @@ class EffectsTable:
         objective_effect = objective_effects[0].label
 
         # Flow-effect coefficients
-        coeff_rows: list[dict] = []
+        coeff_rows: list[dict[str, Any]] = []
         for flow in flows:
             for effect_label, factor in flow.effects_per_flow_hour.items():
                 factor_series = to_polars_series(factor, timesteps, 'coeff')
@@ -201,8 +202,8 @@ class EffectsTable:
         )
 
         # Bounds
-        bounds_rows: list[dict] = []
-        time_bounds_rows: list[dict] = []
+        bounds_rows: list[dict[str, Any]] = []
+        time_bounds_rows: list[dict[str, Any]] = []
         for e in effects:
             bounds_rows.append(
                 {
@@ -274,9 +275,9 @@ class StoragesTable:
     def from_elements(cls, storages: list[Storage], timesteps: pl.Series) -> StoragesTable:
         index = pl.DataFrame({'storage': [s.label for s in storages]})
 
-        params_rows: list[dict] = []
-        time_params_rows: list[dict] = []
-        flow_map_rows: list[dict] = []
+        params_rows: list[dict[str, Any]] = []
+        time_params_rows: list[dict[str, Any]] = []
+        flow_map_rows: list[dict[str, Any]] = []
 
         for s in storages:
             cyclic = s.initial_charge_state == 'cyclic'
@@ -363,7 +364,7 @@ def _collect_flows(
     components: list[Source | Sink | LinearConverter],
     storages: list[Storage] | None,
 ) -> list[Flow]:
-    from energysys.components import LinearConverter, Sink, Source
+    from fluxopt.components import LinearConverter, Sink, Source
 
     flows: list[Flow] = []
     for comp in components:
@@ -390,13 +391,10 @@ def build_model_data(
     dt: float | list[float] = 1.0,
 ) -> ModelData:
     """Build ModelData from element objects."""
-    from energysys.components import LinearConverter
-    from energysys.validation import validate_system
+    from fluxopt.components import LinearConverter
+    from fluxopt.validation import validate_system
 
-    if isinstance(timesteps, list):
-        ts_series = pl.Series('time', timesteps)
-    else:
-        ts_series = timesteps.alias('time')
+    ts_series = pl.Series('time', timesteps) if isinstance(timesteps, list) else timesteps.alias('time')
 
     flows = _collect_flows(components, storages)
     validate_system(buses, effects, components, storages, flows)
@@ -413,10 +411,7 @@ def build_model_data(
 
     # Build dt DataFrame
     n = len(ts_series)
-    if isinstance(dt, (int, float)):
-        dt_values = [float(dt)] * n
-    else:
-        dt_values = [float(v) for v in dt]
+    dt_values = [float(dt)] * n if isinstance(dt, (int, float)) else [float(v) for v in dt]
     dt_df = pl.DataFrame({'time': ts_series, 'dt': dt_values})
 
     return ModelData(
