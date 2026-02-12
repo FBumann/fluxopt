@@ -7,85 +7,15 @@ on:
 
 env:
   PYTHON_VERSION: "3.12"
-  PREPARATION_COMMIT: '[ci] prepare release ${{ github.ref_name }}'
 
 jobs:
-  check-preparation:
-    name: Check if release is prepared
-    runs-on: ubuntu-24.04
-    outputs:
-      prepared: ${{ steps.validate.outputs.prepared }}
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Validate commit message
-        id: validate
-        run: |
-          COMMIT_MESSAGE=$(git log -1 --pretty=%B)
-          echo "Expected: '${{ env.PREPARATION_COMMIT }}'"
-          echo "Received: '$COMMIT_MESSAGE'"
-
-          prepared="false"
-          if [[ "$COMMIT_MESSAGE" == "${{ env.PREPARATION_COMMIT }}" ]]; then
-            prepared="true"
-          fi
-
-          echo "prepared=$prepared" >> $GITHUB_OUTPUT
-
-  prepare-release:
-    name: Prepare release
-    needs: [check-preparation]
-    if: needs.check-preparation.outputs.prepared == 'false'
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Generate token for Release Bot
-        id: generate-token
-        uses: actions/create-github-app-token@v2
-        with:
-          app-id: ${{ vars.RELEASE_BOT_APP_ID }}
-          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
-
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-          ref: main
-          token: ${{ steps.generate-token.outputs.token }}
-
-      - name: Configure Git
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-      - name: Update CITATION.cff
-        run: |
-          VERSION=${GITHUB_REF#refs/tags/v}
-          DATE=$(date +%Y-%m-%d)
-          sed -i "s/^version: .*/version: $VERSION/" CITATION.cff
-          sed -i "s/^date-released: .*/date-released: $DATE/" CITATION.cff
-
-      - name: Remove previous tag
-        run: |
-          git tag -d ${{ github.ref_name }}
-          git push origin --delete ${{ github.ref_name }}
-
-      - name: Commit and re-tag
-        run: |
-          git add CITATION.cff
-          git commit -m "${{ env.PREPARATION_COMMIT }}"
-          git push origin main
-          git tag -a ${{ github.ref_name }} -m "${{ github.ref_name }}"
-          git push origin ${{ github.ref_name }}
-
   test:
     name: Run tests
-    needs: [check-preparation]
-    if: needs.check-preparation.outputs.prepared == 'true'
     uses: ./.github/workflows/tests.yaml
 
   build:
     name: Build package
-    needs: [check-preparation, test]
-    if: needs.check-preparation.outputs.prepared == 'true'
+    needs: [test]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
@@ -168,18 +98,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: actions/setup-python@v6
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Extract release notes
-        run: |
-          VERSION=${GITHUB_REF#refs/tags/v}
-          python scripts/extract_release_notes.py $VERSION > current_release_notes.md
-
       - uses: softprops/action-gh-release@v2
         with:
-          body_path: current_release_notes.md
           draft: false
           prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
           generate_release_notes: true
