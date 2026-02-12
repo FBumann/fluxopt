@@ -9,7 +9,7 @@ fast, standards-based, and configured in a single `pyproject.toml`.
   locking, building, adding/removing deps. No pip, no setuptools CLI, no tox.
 - **pyproject.toml is the single source of truth** — build config, dependencies,
   linter settings, test settings. No setup.py, setup.cfg, tox.ini, or .flake8.
-- **src layout** — source code lives in `src/energysys/`, enforcing proper installation
+- **src layout** — source code lives in `src/fluxopt/`, enforcing proper installation
   for testing and preventing accidental imports from the working directory.
 - **hatchling + hatch-vcs** for building — version comes from git tags automatically.
 - **PEP 735 dependency groups** for contributor tooling (dev, docs). These are *not*
@@ -50,8 +50,8 @@ uv remove <pkg>          # Remove a dependency
 ## Package Layout
 
 - **PyPI name**: `fluxopt`
-- **Import name**: `energysys`
-- **Source**: `src/energysys/` (src layout)
+- **Import name**: `fluxopt`
+- **Source**: `src/fluxopt/` (src layout)
 - **Tests**: `tests/`
 - **Docs**: `docs/` + `mkdocs.yml`
 

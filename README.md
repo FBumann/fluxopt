@@ -17,7 +17,7 @@ Includes the [HiGHS](https://highs.dev/) solver out of the box.
 ## Quick Start
 
 ```python
-import energysys as es
+import fluxopt as es
 
 result = es.solve(
     timesteps=["t0", "t1", "t2"],

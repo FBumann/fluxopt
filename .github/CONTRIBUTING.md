@@ -35,6 +35,6 @@ Tests live in `tests/`. Write tests for new functionality.
 
 ```bash
 uv run pytest                              # Full suite
-uv run pytest tests/energysys/test_data.py # Single file
+uv run pytest tests/fluxopt/test_data.py # Single file
 uv run pytest -k "keyword"                 # By keyword
 ```
