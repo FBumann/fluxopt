@@ -500,7 +500,7 @@ wheels = [
 ]
 
 [[package]]
-name = "flixopt-next"
+name = "fluxopt"
 source = { editable = "." }
 dependencies = [
     { name = "highspy" },
@@ -558,26 +558,26 @@ docs = [
 
 [package.metadata]
 requires-dist = [
-    { name = "dash", marker = "extra == 'full'", specifier = ">=3.0.0,<4" },
-    { name = "dash", marker = "extra == 'network-viz'", specifier = ">=3.0.0,<4" },
-    { name = "dash-cytoscape", marker = "extra == 'full'", specifier = ">=1.0.0,<2" },
-    { name = "dash-cytoscape", marker = "extra == 'network-viz'", specifier = ">=1.0.0,<2" },
-    { name = "dash-daq", marker = "extra == 'full'", specifier = ">=0.6.0,<1" },
-    { name = "dash-daq", marker = "extra == 'network-viz'", specifier = ">=0.6.0,<1" },
-    { name = "flask", marker = "extra == 'full'", specifier = ">=3.0.0,<4" },
-    { name = "flask", marker = "extra == 'network-viz'", specifier = ">=3.0.0,<4" },
-    { name = "gurobipy", marker = "python_full_version < '3.14' and extra == 'full'", specifier = ">=10.0.0,<14" },
+    { name = "dash", marker = "extra == 'full'", specifier = ">=3.0,<4" },
+    { name = "dash", marker = "extra == 'network-viz'", specifier = ">=3.0,<4" },
+    { name = "dash-cytoscape", marker = "extra == 'full'", specifier = ">=1.0,<2" },
+    { name = "dash-cytoscape", marker = "extra == 'network-viz'", specifier = ">=1.0,<2" },
+    { name = "dash-daq", marker = "extra == 'full'", specifier = ">=0.6,<1" },
+    { name = "dash-daq", marker = "extra == 'network-viz'", specifier = ">=0.6,<1" },
+    { name = "flask", marker = "extra == 'full'", specifier = ">=3.0,<4" },
+    { name = "flask", marker = "extra == 'network-viz'", specifier = ">=3.0,<4" },
+    { name = "gurobipy", marker = "python_full_version < '3.14' and extra == 'full'", specifier = ">=10.0,<14" },
     { name = "highspy", specifier = ">=1.13.1" },
-    { name = "networkx", marker = "extra == 'full'", specifier = ">=3.0.0,<4" },
-    { name = "networkx", marker = "extra == 'network-viz'", specifier = ">=3.0.0,<4" },
+    { name = "networkx", marker = "extra == 'full'", specifier = ">=3.0,<4" },
+    { name = "networkx", marker = "extra == 'network-viz'", specifier = ">=3.0,<4" },
     { name = "pandas", specifier = ">=3.0.0" },
     { name = "polars", specifier = ">=1.38.1" },
     { name = "pyoframe", specifier = ">=1.0.0" },
     { name = "pyvis", marker = "extra == 'full'", specifier = "==0.3.2" },
-    { name = "scipy", marker = "extra == 'full'", specifier = ">=1.15.1,<2" },
-    { name = "tsam", marker = "extra == 'full'", specifier = ">=2.3.0,<4" },
-    { name = "werkzeug", marker = "extra == 'full'", specifier = ">=3.0.0,<4" },
-    { name = "werkzeug", marker = "extra == 'network-viz'", specifier = ">=3.0.0,<4" },
+    { name = "scipy", marker = "extra == 'full'", specifier = ">=1.15,<2" },
+    { name = "tsam", marker = "extra == 'full'", specifier = ">=2.3,<4" },
+    { name = "werkzeug", marker = "extra == 'full'", specifier = ">=3.0,<4" },
+    { name = "werkzeug", marker = "extra == 'network-viz'", specifier = ">=3.0,<4" },
 ]
 provides-extras = ["full", "network-viz"]
 
