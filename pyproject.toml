@@ -50,7 +50,7 @@ full = [
 ]
 
 [project.urls]
-repository = "https://github.com/flixOpt/fluxopt"
+repository = "https://github.com/FBumann/fluxopt"
 
 [tool.hatch.version]
 source = "vcs"

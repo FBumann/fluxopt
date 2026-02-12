@@ -1,7 +1,7 @@
 site_name: fluxopt
 site_description: Energy system optimization with pyoframe
-repo_url: https://github.com/flixOpt/fluxopt
-repo_name: flixOpt/fluxopt
+repo_url: https://github.com/FBumann/fluxopt
+repo_name: FBumann/fluxopt
 
 nav:
   - Home: index.md

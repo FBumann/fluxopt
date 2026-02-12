@@ -5,7 +5,7 @@ Contributions are welcome — bug reports, code, docs, examples.
 ## Setup
 
 ```bash
-git clone https://github.com/flixOpt/fluxopt.git
+git clone https://github.com/FBumann/fluxopt.git
 cd fluxopt
 uv sync --group dev
 uv run pre-commit install
