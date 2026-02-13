@@ -32,23 +32,6 @@ dependencies = [
     "pyoframe>=1.0.0",
 ]
 
-[project.optional-dependencies]
-network_viz = [
-    "dash>=3.0,<4",
-    "dash-cytoscape>=1.0,<2",
-    "dash-daq>=0.6,<1",
-    "networkx>=3.0,<4",
-    "werkzeug>=3.0,<4",
-    "flask>=3.0,<4",
-]
-full = [
-    "fluxopt[network_viz]",
-    "tsam>=2.3,<4",
-    "pyvis==0.3.2",
-    "scipy>=1.15,<2",
-    "gurobipy>=10.0,<14; python_version<'3.14'",
-]
-
 [project.urls]
 repository = "https://github.com/FBumann/fluxopt"
 
@@ -145,11 +128,6 @@ module = [
     "pyoframe.*",
     "pyoptinterface.*",
     "highspy.*",
-    "dash.*",
-    "dash_cytoscape.*",
-    "dash_daq.*",
-    "pyvis.*",
-    "tsam.*",
 ]
 ignore_missing_imports = true
 
