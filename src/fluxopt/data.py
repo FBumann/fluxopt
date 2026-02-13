@@ -68,9 +68,16 @@ class FlowsTable:
             size = row.get('size')
             rel_min = row.get('rel_min', 0.0)
             rel_max = row.get('rel_max', 1.0)
+            if size is None and rel_max != 1.0:
+                msg = f"Flow '{row['flow']}': rel_max={rel_max} has no effect without a size"
+                raise ValueError(msg)
             for t in timesteps:
-                lb = rel_min * (size if size is not None else 1e9)
-                ub = rel_max * (size if size is not None else 1e9)
+                if size is not None:
+                    lb = rel_min * size
+                    ub = rel_max * size
+                else:
+                    lb = 0.0
+                    ub = float('inf')
                 bounds_rows.append({'flow': row['flow'], 'time': t, 'lb': float(lb), 'ub': float(ub)})
 
         bounds = pl.DataFrame(
