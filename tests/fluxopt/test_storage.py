@@ -7,18 +7,8 @@ import pytest
 from fluxopt import Bus, Effect, Flow, Sink, Source, Storage, solve
 
 
-@pytest.fixture(params=['string', 'datetime'], ids=['str', 'dt'])
-def ts4(request, timesteps_4, timesteps_4_dt):
-    return timesteps_4 if request.param == 'string' else timesteps_4_dt
-
-
-@pytest.fixture(params=['string', 'datetime'], ids=['str', 'dt'])
-def ts3(request, timesteps_3, timesteps_3_dt):
-    return timesteps_3 if request.param == 'string' else timesteps_3_dt
-
-
 class TestStorage:
-    def test_charge_in_cheap_discharge_in_expensive(self, ts4):
+    def test_charge_in_cheap_discharge_in_expensive(self, timesteps_4):
         """Battery charges in cheap hours, discharges in expensive hours."""
         prices = [0.02, 0.08, 0.02, 0.08]
 
@@ -30,7 +20,7 @@ class TestStorage:
         battery = Storage('battery', charging=charge_flow, discharging=discharge_flow, capacity=100.0)
 
         result = solve(
-            timesteps=ts4,
+            timesteps=timesteps_4,
             buses=[Bus('elec')],
             effects=[Effect('cost', is_objective=True)],
             components=[Source('grid', outputs=[source_flow]), Sink('demand', inputs=[demand_flow])],
@@ -51,7 +41,7 @@ class TestStorage:
         assert discharge[2] == pytest.approx(0.0, abs=1e-6)  # t2: cheap
         assert discharge[3] > 0  # t3: expensive
 
-    def test_charge_state_starts_at_zero(self, ts4):
+    def test_charge_state_starts_at_zero(self, timesteps_4):
         """Initial charge state defaults to 0."""
         source_flow = Flow('grid(elec)', bus='elec', size=200, effects_per_flow_hour={'cost': 0.04})
         demand_flow = Flow('demand(elec)', bus='elec', size=100, fixed_relative_profile=[0.5, 0.5, 0.5, 0.5])
@@ -63,7 +53,7 @@ class TestStorage:
         )
 
         result = solve(
-            timesteps=ts4,
+            timesteps=timesteps_4,
             buses=[Bus('elec')],
             effects=[Effect('cost', is_objective=True)],
             components=[Source('grid', outputs=[source_flow]), Sink('demand', inputs=[demand_flow])],
@@ -77,35 +67,6 @@ class TestStorage:
 
     def test_cyclic_storage(self):
         """Cyclic constraint: charge state at end == start."""
-        timesteps = ['t0', 't1']
-        source_flow = Flow('grid', bus='elec', size=200, effects_per_flow_hour={'cost': [0.02, 0.08]})
-        demand_flow = Flow('demand', bus='elec', size=100, fixed_relative_profile=[0.5, 0.5])
-
-        charge_flow = Flow('bat(charge)', bus='elec', size=100)
-        discharge_flow = Flow('bat(discharge)', bus='elec', size=100)
-        battery = Storage(
-            'battery',
-            charging=charge_flow,
-            discharging=discharge_flow,
-            capacity=100.0,
-            initial_charge_state='cyclic',
-        )
-
-        result = solve(
-            timesteps=timesteps,
-            buses=[Bus('elec')],
-            effects=[Effect('cost', is_objective=True)],
-            components=[Source('grid', outputs=[source_flow]), Sink('demand', inputs=[demand_flow])],
-            storages=[battery],
-        )
-
-        cs = result.charge_state('battery')
-        first = cs['value'][0]
-        last = cs['value'][-1]
-        assert last == pytest.approx(first, abs=1e-6)
-
-    def test_cyclic_storage_datetime(self):
-        """Cyclic constraint with datetime: charge state at end == start."""
         timesteps = [datetime(2024, 1, 1, h) for h in range(2)]
         source_flow = Flow('grid', bus='elec', size=200, effects_per_flow_hour={'cost': [0.02, 0.08]})
         demand_flow = Flow('demand', bus='elec', size=100, fixed_relative_profile=[0.5, 0.5])
@@ -133,7 +94,7 @@ class TestStorage:
         last = cs['value'][-1]
         assert last == pytest.approx(first, abs=1e-6)
 
-    def test_storage_with_efficiency(self, ts3):
+    def test_storage_with_efficiency(self, timesteps_3):
         """With eta_charge < 1, more energy is drawn from bus than stored."""
         eta_c = 0.8
         source_flow = Flow('grid', bus='elec', size=200, effects_per_flow_hour={'cost': [0.02, 0.08, 0.02]})
@@ -150,7 +111,7 @@ class TestStorage:
         )
 
         result = solve(
-            timesteps=ts3,
+            timesteps=timesteps_3,
             buses=[Bus('elec')],
             effects=[Effect('cost', is_objective=True)],
             components=[Source('grid', outputs=[source_flow]), Sink('demand', inputs=[demand_flow])],

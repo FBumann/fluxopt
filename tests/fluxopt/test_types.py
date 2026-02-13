@@ -11,7 +11,7 @@ from fluxopt.types import compute_dt, compute_end_time, normalize_timesteps, to_
 
 @pytest.fixture
 def ts():
-    return pl.Series('time', ['t0', 't1', 't2'])
+    return pl.Series('time', [datetime(2024, 1, 1, h) for h in range(3)], dtype=pl.Datetime)
 
 
 class TestToPolarsSeriesScalar:
@@ -59,12 +59,6 @@ class TestToPolarsSeriesUnsupported:
 
 
 class TestNormalizeTimesteps:
-    def test_string_list(self):
-        result = normalize_timesteps(['t0', 't1', 't2'])
-        assert result.name == 'time'
-        assert result.dtype == pl.String
-        assert result.to_list() == ['t0', 't1', 't2']
-
     def test_datetime_list(self):
         dts = [datetime(2024, 1, 1, h) for h in range(3)]
         result = normalize_timesteps(dts)
@@ -72,12 +66,20 @@ class TestNormalizeTimesteps:
         assert result.dtype == pl.Datetime
         assert result.to_list() == dts
 
-    def test_polars_series_string(self):
-        s = pl.Series('ts', ['a', 'b', 'c'])
-        result = normalize_timesteps(s)
+    def test_int_list(self):
+        result = normalize_timesteps([0, 1, 2])
         assert result.name == 'time'
-        assert result.dtype == pl.String
-        assert result.to_list() == ['a', 'b', 'c']
+        assert result.dtype == pl.Int64
+        assert result.to_list() == [0, 1, 2]
+
+    def test_string_list_rejected(self):
+        with pytest.raises(TypeError, match='Use datetime or int'):
+            normalize_timesteps(['t0', 't1', 't2'])
+
+    def test_polars_series_string_rejected(self):
+        s = pl.Series('ts', ['a', 'b', 'c'])
+        with pytest.raises(TypeError, match='String timesteps are not supported'):
+            normalize_timesteps(s)
 
     def test_polars_series_datetime(self):
         dts = [datetime(2024, 1, 1, h) for h in range(3)]
@@ -85,6 +87,13 @@ class TestNormalizeTimesteps:
         result = normalize_timesteps(s)
         assert result.name == 'time'
         assert result.dtype == pl.Datetime
+
+    def test_polars_series_int(self):
+        s = pl.Series('ts', [0, 1, 2], dtype=pl.Int64)
+        result = normalize_timesteps(s)
+        assert result.name == 'time'
+        assert result.dtype == pl.Int64
+        assert result.to_list() == [0, 1, 2]
 
     def test_pandas_datetimeindex(self):
         idx = pd.DatetimeIndex([datetime(2024, 1, 1, h) for h in range(3)])
@@ -96,35 +105,36 @@ class TestNormalizeTimesteps:
     def test_empty_list(self):
         result = normalize_timesteps([])
         assert result.name == 'time'
+        assert result.dtype == pl.Datetime
         assert len(result) == 0
 
 
 class TestComputeDt:
     def test_explicit_scalar(self):
-        ts = pl.Series('time', ['t0', 't1', 't2'])
+        ts = pl.Series('time', [datetime(2024, 1, 1, h) for h in range(3)], dtype=pl.Datetime)
         result = compute_dt(ts, 0.5)
         assert result.name == 'dt'
         assert result.to_list() == [0.5, 0.5, 0.5]
 
     def test_explicit_list(self):
-        ts = pl.Series('time', ['t0', 't1', 't2'])
+        ts = pl.Series('time', [datetime(2024, 1, 1, h) for h in range(3)], dtype=pl.Datetime)
         result = compute_dt(ts, [1.0, 2.0, 3.0])
         assert result.to_list() == [1.0, 2.0, 3.0]
 
     def test_explicit_list_wrong_length(self):
-        ts = pl.Series('time', ['t0', 't1'])
+        ts = pl.Series('time', [datetime(2024, 1, 1, h) for h in range(2)], dtype=pl.Datetime)
         with pytest.raises(ValueError, match='dt length'):
             compute_dt(ts, [1.0, 2.0, 3.0])
 
     def test_explicit_series(self):
-        ts = pl.Series('time', ['t0', 't1', 't2'])
+        ts = pl.Series('time', [datetime(2024, 1, 1, h) for h in range(3)], dtype=pl.Datetime)
         dt = pl.Series('vals', [1.0, 2.0, 3.0])
         result = compute_dt(ts, dt)
         assert result.name == 'dt'
         assert result.to_list() == [1.0, 2.0, 3.0]
 
-    def test_auto_string_defaults_to_1(self):
-        ts = pl.Series('time', ['t0', 't1', 't2'])
+    def test_auto_int_defaults_to_1(self):
+        ts = pl.Series('time', [0, 1, 2], dtype=pl.Int64)
         result = compute_dt(ts, None)
         assert result.to_list() == [1.0, 1.0, 1.0]
 
@@ -145,7 +155,7 @@ class TestComputeDt:
         assert result.to_list() == [1.0, 1.0, 3.0]
 
     def test_single_timestep(self):
-        ts = pl.Series('time', ['t0'])
+        ts = pl.Series('time', [0], dtype=pl.Int64)
         result = compute_dt(ts, None)
         assert result.to_list() == [1.0]
 
@@ -156,10 +166,10 @@ class TestComputeDt:
 
 
 class TestComputeEndTime:
-    def test_string(self):
-        ts = pl.Series('time', ['t0', 't1', 't2'])
+    def test_int(self):
+        ts = pl.Series('time', [0, 1, 2], dtype=pl.Int64)
         dt = pl.Series('dt', [1.0, 1.0, 1.0])
-        assert compute_end_time(ts, dt) == '_end'
+        assert compute_end_time(ts, dt) == 3
 
     def test_datetime(self):
         ts = pl.Series('time', [datetime(2024, 1, 1, h) for h in range(3)], dtype=pl.Datetime)

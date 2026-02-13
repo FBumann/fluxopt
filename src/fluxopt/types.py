@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     import pandas as pd
 
 type TimeSeries = float | int | list[float] | pl.Series | pd.Series
-type Timesteps = list[datetime] | list[str] | pl.Series | pd.DatetimeIndex
+type Timesteps = list[datetime] | list[int] | pl.Series | pd.DatetimeIndex
 
 
 def to_polars_series(value: TimeSeries, timesteps: pl.Series, name: str = 'value') -> pl.Series:
@@ -37,9 +37,11 @@ def to_polars_series(value: TimeSeries, timesteps: pl.Series, name: str = 'value
 def normalize_timesteps(timesteps: Timesteps) -> pl.Series:
     """Convert any Timesteps input to a pl.Series named 'time'.
 
-    Preserves dtype: pl.Datetime for datetime inputs, pl.String for string inputs.
+    Supports pl.Datetime and pl.Int64 dtypes. Strings are not supported.
     """
     if isinstance(timesteps, pl.Series):
+        if timesteps.dtype == pl.String:
+            raise TypeError('String timesteps are not supported. Use datetime or integer timesteps.')
         return timesteps.alias('time')
 
     # pandas DatetimeIndex
@@ -49,12 +51,14 @@ def normalize_timesteps(timesteps: Timesteps) -> pl.Series:
         except AttributeError:
             raise TypeError(f'Unsupported Timesteps type: {type(timesteps)}') from None
 
-    # list[datetime] or list[str]
+    # list[datetime] or list[int]
     if len(timesteps) == 0:
-        return pl.Series('time', [], dtype=pl.String)
+        return pl.Series('time', [], dtype=pl.Datetime)
     if isinstance(timesteps[0], datetime):
         return pl.Series('time', timesteps, dtype=pl.Datetime)
-    return pl.Series('time', timesteps, dtype=pl.String)
+    if isinstance(timesteps[0], int):
+        return pl.Series('time', timesteps, dtype=pl.Int64)
+    raise TypeError(f'Unsupported timestep element type: {type(timesteps[0])}. Use datetime or int.')
 
 
 def compute_dt(timesteps: pl.Series, dt: float | list[float] | pl.Series | None) -> pl.Series:
@@ -83,7 +87,7 @@ def compute_dt(timesteps: pl.Series, dt: float | list[float] | pl.Series | None)
     if n <= 1:
         return pl.Series('dt', [1.0] * n)
 
-    if timesteps.dtype == pl.String:
+    if timesteps.dtype.is_integer():
         return pl.Series('dt', [1.0] * n)
 
     # Datetime: derive from diff in hours
@@ -98,14 +102,15 @@ def compute_dt(timesteps: pl.Series, dt: float | list[float] | pl.Series | None)
     return pl.Series('dt', dt_values)
 
 
-def compute_end_time(timesteps: pl.Series, dt_series: pl.Series) -> object:
+def compute_end_time(timesteps: pl.Series, dt_series: pl.Series) -> datetime | int:
     """Return the time value one step past the last timestep.
 
     For datetime: last_time + timedelta(hours=last_dt).
-    For strings: '_end'.
+    For integer: last + 1.
     """
-    if timesteps.dtype == pl.String:
-        return '_end'
+    if timesteps.dtype.is_integer():
+        last: int = timesteps[-1]
+        return last + 1
     last_time: datetime = timesteps[-1]
     last_dt: float = dt_series[-1]
     return last_time + timedelta(hours=last_dt)

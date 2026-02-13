@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 import polars as pl
 import pytest
 
@@ -20,7 +22,7 @@ from fluxopt.model import EnergySystemModel
 class TestEndToEnd:
     def test_full_system(self):
         """Full system: gas source → boiler → heat bus ← demand, with cost tracking."""
-        timesteps = ['t0', 't1', 't2', 't3']
+        timesteps = [datetime(2024, 1, 1, h) for h in range(4)]
         eta = 0.9
         heat_demand = [40.0, 70.0, 50.0, 60.0]
 
@@ -52,7 +54,7 @@ class TestEndToEnd:
 
     def test_boiler_plus_storage(self):
         """Boiler + thermal storage: store heat in cheap hours."""
-        timesteps = ['t0', 't1', 't2', 't3']
+        timesteps = [datetime(2024, 1, 1, h) for h in range(4)]
         eta = 0.9
         gas_prices = [0.02, 0.08, 0.02, 0.08]
 
@@ -129,3 +131,28 @@ class TestEndToEnd:
         # effects_per_timestep
         assert 'effect' in result.effects_per_timestep.columns
         assert 'time' in result.effects_per_timestep.columns
+
+    def test_int_timesteps(self):
+        """Smoke test: int timesteps work end-to-end."""
+        timesteps = [0, 1, 2, 3]
+
+        demand_flow = Flow('demand(heat)', bus='heat', size=100, fixed_relative_profile=[0.4, 0.7, 0.5, 0.6])
+        gas_source = Flow('grid(gas)', bus='gas', size=500, effects_per_flow_hour={'cost': 0.04})
+        fuel = Flow('boiler(gas)', bus='gas', size=300)
+        heat = Flow('boiler(heat)', bus='heat', size=200)
+
+        result = solve(
+            timesteps=timesteps,
+            buses=[Bus('gas'), Bus('heat')],
+            effects=[Effect('cost', is_objective=True)],
+            components=[
+                Source('grid', outputs=[gas_source]),
+                Sink('demand', inputs=[demand_flow]),
+                LinearConverter.boiler('boiler', 0.9, fuel, heat),
+            ],
+        )
+
+        assert result.objective_value > 0
+        sr = result.flow_rate('boiler(gas)')
+        assert sr['time'].dtype == pl.Int64
+        assert len(sr) == 4
