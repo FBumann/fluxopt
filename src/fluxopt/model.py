@@ -20,9 +20,10 @@ class _TemporalSource:
 
 
 class FlowSystemModel:
-    def __init__(self, data: ModelData, solver: str = 'highs'):
+    def __init__(self, data: ModelData, solver: str = 'highs', *, silent: bool = True):
         self.data = data
         self.m = pf.Model(solver)
+        self.m.attr.Silent = silent
         self._temporal_sources: list[_TemporalSource] = []
 
     def add_temporal_contribution(
@@ -56,12 +57,25 @@ class FlowSystemModel:
         m = self.m
 
         # Create flow_rate variable indexed by (flow, time)
-        index = d.flows.bounds.select('flow', 'time')
+        index = d.flows.relative_bounds.select('flow', 'time')
         m.flow_rate = pf.Variable(index, lb=0)
 
-        # Apply bounds as constraints (exclude fixed-profile flows — equality constraint handles them)
+        # Compute absolute bounds for sized flows: lb = rel_lb * size, ub = rel_ub * size
+        # Unsized flows are only bounded by lb=0 (from variable definition), no constraints needed.
+        sized = d.flows.sizes.drop_nulls('size')
+        unsized = d.flows.sizes.filter(pl.col('size').is_null())
+
         fixed_flows = d.flows.fixed.select('flow').unique()
-        variable_bounds = d.flows.bounds.join(fixed_flows, on='flow', how='anti')
+
+        variable_bounds = (
+            d.flows.relative_bounds.join(sized, on='flow')
+            .with_columns(
+                (pl.col('rel_lb') * pl.col('size')).alias('lb'),
+                (pl.col('rel_ub') * pl.col('size')).alias('ub'),
+            )
+            .select('flow', 'time', 'lb', 'ub')
+            .join(fixed_flows, on='flow', how='anti')
+        )
 
         if len(variable_bounds) > 0:
             lb_param = pf.Param(variable_bounds.select('flow', 'time', pl.col('lb').alias('value')))
@@ -69,9 +83,16 @@ class FlowSystemModel:
             m.flow_lb = m.flow_rate.drop_extras() >= lb_param
             m.flow_ub = m.flow_rate.drop_extras() <= ub_param
 
-        # Fix profile flows (P_{f,t} = P̄_f · π_{f,t})
+        # Fix profile flows: compute absolute fixed values (value * size, or value as-is if unsized)
         if len(d.flows.fixed) > 0:
-            fixed_param = pf.Param(d.flows.fixed)
+            fixed_sized = (
+                d.flows.fixed.join(sized, on='flow')
+                .with_columns((pl.col('value') * pl.col('size')).alias('value'))
+                .select('flow', 'time', 'value')
+            )
+            fixed_unsized = d.flows.fixed.join(unsized.select('flow'), on='flow')
+            abs_fixed = pl.concat([fixed_sized, fixed_unsized])
+            fixed_param = pf.Param(abs_fixed)
             m.flow_fix = m.flow_rate.drop_extras() == fixed_param
 
         # Register flow contributions to effects

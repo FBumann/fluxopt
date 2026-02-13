@@ -73,14 +73,14 @@ def _check_flow_uniqueness(flows: list[Flow]) -> None:
 # -- Table-level validation (called by *Table.from_elements) ----------------
 
 
-def validate_flow_bounds(bounds: pl.DataFrame) -> None:
-    """Validate (flow, time, lb, ub) DataFrame."""
-    bad_lb = bounds.filter(pl.col('lb') < 0)
+def validate_flow_bounds(relative_bounds: pl.DataFrame) -> None:
+    """Validate (flow, time, rel_lb, rel_ub) DataFrame."""
+    bad_lb = relative_bounds.filter(pl.col('rel_lb') < 0)
     if len(bad_lb) > 0:
         flows = bad_lb['flow'].unique().sort().to_list()
         raise ValueError(f'Negative lower bounds on flows: {flows}')
 
-    bad_order = bounds.filter(pl.col('lb') > pl.col('ub'))
+    bad_order = relative_bounds.filter(pl.col('rel_lb') > pl.col('rel_ub'))
     if len(bad_order) > 0:
         flows = bad_order['flow'].unique().sort().to_list()
         raise ValueError(f'Lower bound > upper bound on flows: {flows}')

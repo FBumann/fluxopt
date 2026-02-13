@@ -95,8 +95,8 @@ class TestEndToEnd:
             ports=[Port('grid', imports=[source_flow]), Port('demand', exports=[sink_flow])],
         )
 
-        # Change demand from 50 to 70 by modifying fixed values
-        data.flows.fixed = data.flows.fixed.with_columns(pl.lit(70.0).alias('value'))
+        # Change demand from 0.5 to 0.7 (relative); absolute = 0.7 * 100 = 70
+        data.flows.fixed = data.flows.fixed.with_columns(pl.lit(0.7).alias('value'))
 
         model = FlowSystemModel(data)
         model.build()

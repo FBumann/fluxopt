@@ -15,14 +15,15 @@ if TYPE_CHECKING:
 @dataclass
 class FlowsTable:
     index: pl.DataFrame  # (flow: str)
-    bounds: pl.DataFrame  # (flow, time, lb, ub)
-    fixed: pl.DataFrame  # (flow, time, value) — only fixed-profile flows
+    sizes: pl.DataFrame  # (flow, size) — size is null for unsized flows
+    relative_bounds: pl.DataFrame  # (flow, time, rel_lb, rel_ub)
+    fixed: pl.DataFrame  # (flow, time, value) — relative profile values for fixed flows
     effect_coefficients: pl.DataFrame  # (flow, effect, time, coeff)
 
     def validate(self) -> None:
         from fluxopt.validation import validate_flow_bounds
 
-        validate_flow_bounds(self.bounds)
+        validate_flow_bounds(self.relative_bounds)
 
     @classmethod
     def from_elements(cls, flows: list[Flow], timesteps: pl.Series) -> FlowsTable:
@@ -30,33 +31,31 @@ class FlowsTable:
         index = pl.DataFrame({'flow': flow_ids})
         time_dtype = timesteps.dtype
 
+        sizes_rows: list[dict[str, Any]] = []
         bounds_rows: list[dict[str, Any]] = []
         fixed_rows: list[dict[str, Any]] = []
         coeff_rows: list[dict[str, Any]] = []
 
         for f in flows:
-            lb_series = to_polars_series(f.relative_minimum, timesteps, 'lb')
-            ub_series = to_polars_series(f.relative_maximum, timesteps, 'ub')
+            sizes_rows.append({'flow': f.id, 'size': f.size})
+
+            lb_series = to_polars_series(f.relative_minimum, timesteps, 'rel_lb')
+            ub_series = to_polars_series(f.relative_maximum, timesteps, 'rel_ub')
 
             for i, t in enumerate(timesteps):
-                lb = lb_series[i]
-                ub = ub_series[i]
-                if f.size is not None:
-                    lb = lb * f.size
-                    ub = ub * f.size
-                else:
-                    # No size: bounds are relative, use large M for upper
-                    lb = lb * 1e9
-                    ub = ub * 1e9
-                bounds_rows.append({'flow': f.id, 'time': t, 'lb': float(lb), 'ub': float(ub)})
+                bounds_rows.append(
+                    {
+                        'flow': f.id,
+                        'time': t,
+                        'rel_lb': float(lb_series[i]),
+                        'rel_ub': float(ub_series[i]),
+                    }
+                )
 
             if f.fixed_relative_profile is not None:
                 profile = to_polars_series(f.fixed_relative_profile, timesteps, 'value')
                 for i, t in enumerate(timesteps):
-                    val = float(profile[i])
-                    if f.size is not None:
-                        val = val * f.size
-                    fixed_rows.append({'flow': f.id, 'time': t, 'value': val})
+                    fixed_rows.append({'flow': f.id, 'time': t, 'value': float(profile[i])})
 
             for effect_label, factor in f.effects_per_flow_hour.items():
                 factor_series = to_polars_series(factor, timesteps, 'coeff')
@@ -70,15 +69,23 @@ class FlowsTable:
                         }
                     )
 
-        bounds = pl.DataFrame(
-            bounds_rows, schema={'flow': pl.String, 'time': time_dtype, 'lb': pl.Float64, 'ub': pl.Float64}
+        sizes = pl.DataFrame(sizes_rows, schema={'flow': pl.String, 'size': pl.Float64})
+        relative_bounds = pl.DataFrame(
+            bounds_rows,
+            schema={'flow': pl.String, 'time': time_dtype, 'rel_lb': pl.Float64, 'rel_ub': pl.Float64},
         )
         fixed = pl.DataFrame(fixed_rows, schema={'flow': pl.String, 'time': time_dtype, 'value': pl.Float64})
         effect_coefficients = pl.DataFrame(
             coeff_rows,
             schema={'flow': pl.String, 'effect': pl.String, 'time': time_dtype, 'coeff': pl.Float64},
         )
-        return cls(index=index, bounds=bounds, fixed=fixed, effect_coefficients=effect_coefficients)
+        return cls(
+            index=index,
+            sizes=sizes,
+            relative_bounds=relative_bounds,
+            fixed=fixed,
+            effect_coefficients=effect_coefficients,
+        )
 
     @classmethod
     def from_dataframe(
@@ -92,6 +99,7 @@ class FlowsTable:
         index = pl.DataFrame({'flow': flow_labels})
         time_dtype = timesteps.dtype
 
+        sizes_rows: list[dict[str, Any]] = []
         bounds_rows: list[dict[str, Any]] = []
         fixed_rows: list[dict[str, Any]] = []
         for row in df.iter_rows(named=True):
@@ -101,24 +109,34 @@ class FlowsTable:
             if size is None and rel_max != 1.0:
                 msg = f"Flow '{row['flow']}': rel_max={rel_max} has no effect without a size"
                 raise ValueError(msg)
-            for t in timesteps:
-                if size is not None:
-                    lb = rel_min * size
-                    ub = rel_max * size
-                else:
-                    lb = 0.0
-                    ub = float('inf')
-                bounds_rows.append({'flow': row['flow'], 'time': t, 'lb': float(lb), 'ub': float(ub)})
+            sizes_rows.append({'flow': row['flow'], 'size': size})
+            bounds_rows.extend(
+                {
+                    'flow': row['flow'],
+                    'time': t,
+                    'rel_lb': float(rel_min),
+                    'rel_ub': float(rel_max),
+                }
+                for t in timesteps
+            )
 
-        bounds = pl.DataFrame(
-            bounds_rows, schema={'flow': pl.String, 'time': time_dtype, 'lb': pl.Float64, 'ub': pl.Float64}
+        sizes = pl.DataFrame(sizes_rows, schema={'flow': pl.String, 'size': pl.Float64})
+        relative_bounds = pl.DataFrame(
+            bounds_rows,
+            schema={'flow': pl.String, 'time': time_dtype, 'rel_lb': pl.Float64, 'rel_ub': pl.Float64},
         )
         fixed = pl.DataFrame(fixed_rows, schema={'flow': pl.String, 'time': time_dtype, 'value': pl.Float64})
         if effect_coefficients is None:
             effect_coefficients = pl.DataFrame(
                 schema={'flow': pl.String, 'effect': pl.String, 'time': time_dtype, 'coeff': pl.Float64}
             )
-        return cls(index=index, bounds=bounds, fixed=fixed, effect_coefficients=effect_coefficients)
+        return cls(
+            index=index,
+            sizes=sizes,
+            relative_bounds=relative_bounds,
+            fixed=fixed,
+            effect_coefficients=effect_coefficients,
+        )
 
 
 @dataclass

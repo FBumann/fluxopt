@@ -11,9 +11,11 @@ class TestFlowsTable:
         data = build_model_data(
             timesteps_3, [Bus('b')], [Effect('cost', is_objective=True)], ports=[Port('src', imports=[flow])]
         )
-        bounds = data.flows.bounds.filter(pl.col('flow') == 'src(b)')
-        assert bounds['lb'].to_list() == [20.0, 20.0, 20.0]
-        assert bounds['ub'].to_list() == [80.0, 80.0, 80.0]
+        bounds = data.flows.relative_bounds.filter(pl.col('flow') == 'src(b)')
+        assert bounds['rel_lb'].to_list() == [0.2, 0.2, 0.2]
+        assert bounds['rel_ub'].to_list() == [0.8, 0.8, 0.8]
+        sizes = data.flows.sizes.filter(pl.col('flow') == 'src(b)')
+        assert sizes['size'].to_list() == [100.0]
 
     def test_fixed_profile(self, timesteps_3):
         flow = Flow(bus='b', size=100, fixed_relative_profile=[0.5, 0.8, 0.6])
@@ -24,7 +26,7 @@ class TestFlowsTable:
             ports=[Port('sink', exports=[flow])],
         )
         fixed = data.flows.fixed.filter(pl.col('flow') == 'sink(b)')
-        assert fixed['value'].to_list() == [50.0, 80.0, 60.0]
+        assert fixed['value'].to_list() == [0.5, 0.8, 0.6]
 
 
 class TestBusesTable:
