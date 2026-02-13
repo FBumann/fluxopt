@@ -11,6 +11,9 @@ nav:
     - Converters: guide/converters.md
     - Storage: guide/storage.md
     - Effects: guide/effects.md
+  - Notebooks:
+    - Quickstart: notebooks/01-quickstart.ipynb
+    - Heat System: notebooks/02-heat-system.ipynb
   - Math:
     - Notation: math/notation.md
     - Objective: math/objective.md
@@ -84,6 +87,10 @@ markdown_extensions:
 
 plugins:
   - search
+
+  - mkdocs-jupyter:
+      include_source: true
+      execute: true
 
   - mkdocstrings:
       default_handler: python

@@ -52,6 +52,9 @@ dev = [
     "pytest-cov==7.0.0",
     "ruff==0.15.0",
 ]
+viz = [
+    "plotly>=6",
+]
 docs = [
     "markdown-include==0.8.1",
     "mike==2.1.3",
@@ -108,6 +111,7 @@ extend-fixable = ["B", "SIM", "RUF", "C4", "UP"]
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["S101"]
 "scripts/**/*.py" = ["T201", "RUF003"]
+"docs/notebooks/*.ipynb" = ["T201", "RUF001", "RUF003"]
 
 [tool.ruff.format]
 quote-style = "single"
