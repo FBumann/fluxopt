@@ -1,12 +1,17 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 import polars as pl
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
+    import xarray as xr
+
     from fluxopt.model import FlowSystemModel
+    from fluxopt.tables import ModelData
 
 
 @dataclass
@@ -17,6 +22,7 @@ class SolvedModel:
     effects: pl.DataFrame  # (effect, solution)
     effects_per_timestep: pl.DataFrame  # (effect, time, solution)
     contributions: pl.DataFrame  # (source, contributor, effect, time, solution)
+    data: ModelData | None = field(default=None, repr=False)
 
     def flow_rate(self, id: str) -> pl.DataFrame:
         """Get time series for a single flow."""
@@ -81,4 +87,24 @@ class SolvedModel:
             effects=effect_total_sol,
             effects_per_timestep=effect_ts_sol,
             contributions=contributions,
+            data=model.data,
         )
+
+    def to_xarray(self) -> xr.Dataset:
+        """Convert solution data to an xarray Dataset."""
+        from fluxopt.io import solved_model_to_xarray
+
+        return solved_model_to_xarray(self)
+
+    def to_netcdf(self, path: str | Path) -> None:
+        """Write solution + model data to a NetCDF file."""
+        from fluxopt.io import solved_model_to_netcdf
+
+        solved_model_to_netcdf(self, path)
+
+    @classmethod
+    def from_netcdf(cls, path: str | Path) -> SolvedModel:
+        """Read a SolvedModel from a NetCDF file."""
+        from fluxopt.io import solved_model_from_netcdf
+
+        return solved_model_from_netcdf(path)

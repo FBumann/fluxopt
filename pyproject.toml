@@ -43,6 +43,12 @@ packages = ["src/fluxopt"]
 [tool.hatch.build.targets.sdist]
 include = ["src/fluxopt/", "LICENSE", "README.md"]
 
+[project.optional-dependencies]
+io = [
+    "xarray>=2024.1.0",
+    "netcdf4>=1.6.0",
+]
+
 [dependency-groups]
 dev = [
     "mypy==1.19.1",
@@ -132,6 +138,8 @@ module = [
     "pyoframe.*",
     "pyoptinterface.*",
     "highsbox.*",
+    "xarray.*",
+    "netCDF4.*",
 ]
 ignore_missing_imports = true
 
