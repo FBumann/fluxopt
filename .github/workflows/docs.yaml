@@ -72,8 +72,9 @@ jobs:
 
       - name: Deploy versioned docs
         if: inputs.deploy && inputs.version != ''
+        env:
+          VERSION: ${{ inputs.version }}
         run: |
-          VERSION=${{ inputs.version }}
           VERSION=${VERSION#v}
 
           if [[ "$VERSION" =~ (alpha|beta|rc) ]]; then

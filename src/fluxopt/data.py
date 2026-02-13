@@ -69,8 +69,8 @@ class FlowsTable:
             rel_min = row.get('rel_min', 0.0)
             rel_max = row.get('rel_max', 1.0)
             for t in timesteps:
-                lb = rel_min * (size or 1e9)
-                ub = rel_max * (size or 1e9)
+                lb = rel_min * (size if size is not None else 1e9)
+                ub = rel_max * (size if size is not None else 1e9)
                 bounds_rows.append({'flow': row['flow'], 'time': t, 'lb': float(lb), 'ub': float(ub)})
 
         bounds = pl.DataFrame(
@@ -411,7 +411,13 @@ def build_model_data(
 
     # Build dt DataFrame
     n = len(ts_series)
-    dt_values = [float(dt)] * n if isinstance(dt, (int, float)) else [float(v) for v in dt]
+    if isinstance(dt, (int, float)):
+        dt_values = [float(dt)] * n
+    else:
+        dt_values = [float(v) for v in dt]
+        if len(dt_values) != n:
+            msg = f'Length of dt ({len(dt_values)}) does not match length of ts_series ({n})'
+            raise ValueError(msg)
     dt_df = pl.DataFrame({'time': ts_series, 'dt': dt_values})
 
     return ModelData(

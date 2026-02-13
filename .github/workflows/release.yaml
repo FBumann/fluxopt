@@ -34,7 +34,7 @@ jobs:
       - name: Verify version matches tag
         run: |
           TAG_VERSION=${GITHUB_REF#refs/tags/v}
-          PKG_VERSION=$(ls dist/*.whl | sed 's/.*-\([^-]*\)-.*/\1/')
+          PKG_VERSION=$(ls dist/*.whl | sed 's/^[^-]*-\([^-]*\)-.*/\1/')
           if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
             echo "::error::Tag version ($TAG_VERSION) does not match package version ($PKG_VERSION)"
             exit 1
@@ -78,9 +78,11 @@ jobs:
       - name: Verify
         run: |
           VERSION=${GITHUB_REF#refs/tags/v}
+          TOTAL_WAIT=0
           for delay in 15 30 60 90; do
             sleep "$delay"
-            echo "Attempting install (waited ${delay}s total)..."
+            TOTAL_WAIT=$((TOTAL_WAIT + delay))
+            echo "Attempting install (waited ${TOTAL_WAIT}s total)..."
             if uv pip install --system "fluxopt==$VERSION" && \
                python -c "from importlib.metadata import version; assert version('fluxopt') == '$VERSION'"; then
               echo "Verified fluxopt==$VERSION on PyPI"
