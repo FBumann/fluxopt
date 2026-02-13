@@ -34,7 +34,7 @@ dependencies = [
 
 [project.optional-dependencies]
 network_viz = [
-    "dash>=3.0,<4",
+    "dash>=3.0,<5",
     "dash-cytoscape>=1.0,<2",
     "dash-daq>=0.6,<1",
     "networkx>=3.0,<4",
