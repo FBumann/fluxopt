@@ -24,7 +24,7 @@ repos:
         additional_dependencies:
           - pandas-stubs
           - polars
-        args: [--strict]
+        args: [--strict, src/]
         pass_filenames: false
         files: ^src/
 

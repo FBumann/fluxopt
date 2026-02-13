@@ -45,7 +45,7 @@ def normalize_timesteps(timesteps: Timesteps) -> pl.Series:
     # pandas DatetimeIndex
     if not isinstance(timesteps, list):
         try:
-            return pl.Series('time', timesteps.to_pydatetime().tolist(), dtype=pl.Datetime)  # type: ignore[union-attr]
+            return pl.Series('time', timesteps.to_pydatetime().tolist(), dtype=pl.Datetime)
         except AttributeError:
             raise TypeError(f'Unsupported Timesteps type: {type(timesteps)}') from None
 

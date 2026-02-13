@@ -103,15 +103,15 @@ class EnergySystemModel:
             'effect', pl.col('max_total').alias('value')
         )
         if len(min_total_df) > 0:
-            m.effect_min_total = m.effect_total >= pf.Param(min_total_df)
+            m.effect_min_total = m.effect_total.drop_extras() >= pf.Param(min_total_df)
         if len(max_total_df) > 0:
-            m.effect_max_total = m.effect_total <= pf.Param(max_total_df)
+            m.effect_max_total = m.effect_total.drop_extras() <= pf.Param(max_total_df)
 
         # Per-hour bounds — vectorized using pre-filtered DataFrames
         if len(d.effects.time_bounds_lb) > 0:
-            m.effect_min_ph = m.effect_per_timestep >= pf.Param(d.effects.time_bounds_lb)
+            m.effect_min_ph = m.effect_per_timestep.drop_extras() >= pf.Param(d.effects.time_bounds_lb)
         if len(d.effects.time_bounds_ub) > 0:
-            m.effect_max_ph = m.effect_per_timestep <= pf.Param(d.effects.time_bounds_ub)
+            m.effect_max_ph = m.effect_per_timestep.drop_extras() <= pf.Param(d.effects.time_bounds_ub)
 
     def _create_storage(self) -> None:
         d = self.data
@@ -126,20 +126,21 @@ class EnergySystemModel:
         # charge_state has one extra step (N+1 for N timesteps) — use charge_state_times
         m.charge_state = pf.Variable(storages_index, d.charge_state_times, lb=0)
 
-        # Charge state capacity upper bound — vectorized
+        # Charge state capacity upper bound — vectorized (expand to all charge_state_times)
         cap_df = d.storages.params.filter(pl.col('capacity').is_not_null()).select(
             'storage', pl.col('capacity').alias('value')
         )
         if len(cap_df) > 0:
-            m.cs_cap = m.charge_state <= pf.Param(cap_df)
+            cap_expanded = cap_df.join(d.charge_state_times, how='cross').select('storage', 'time', 'value')
+            m.cs_cap = m.charge_state <= pf.Param(cap_expanded)
 
         # Time-varying charge state bounds — vectorized using pre-computed absolute bounds
         cs_lb_df = d.storages.cs_bounds.filter(pl.col('cs_lb') > 0).select(
             'storage', 'time', pl.col('cs_lb').alias('value')
         )
-        cs_ub_active = d.storages.cs_bounds.join(
-            d.storages.params.select('storage', 'capacity'), on='storage'
-        ).filter(pl.col('cs_ub') < pl.col('capacity'))
+        cs_ub_active = d.storages.cs_bounds.join(d.storages.params.select('storage', 'capacity'), on='storage').filter(
+            pl.col('cs_ub') < pl.col('capacity')
+        )
         cs_ub_df = cs_ub_active.select('storage', 'time', pl.col('cs_ub').alias('value'))
 
         if len(cs_lb_df) > 0:

@@ -5,15 +5,20 @@ import pytest
 from fluxopt import Bus, Effect, Flow, Sink, Source, solve
 
 
+@pytest.fixture(params=['string', 'datetime'], ids=['str', 'dt'])
+def ts3(request, timesteps_3, timesteps_3_dt):
+    return timesteps_3 if request.param == 'string' else timesteps_3_dt
+
+
 class TestBusBalance:
-    def test_source_matches_fixed_demand(self, timesteps_3):
+    def test_source_matches_fixed_demand(self, ts3):
         """Source flow must match fixed demand through bus balance."""
         demand = [50.0, 80.0, 60.0]
         sink_flow = Flow('sink(elec)', bus='elec', size=100, fixed_relative_profile=[0.5, 0.8, 0.6])
         source_flow = Flow('source(elec)', bus='elec', size=200, effects_per_flow_hour={'cost': 0.04})
 
         result = solve(
-            timesteps=timesteps_3,
+            timesteps=ts3,
             buses=[Bus('elec')],
             effects=[Effect('cost', is_objective=True)],
             components=[Source('grid', outputs=[source_flow]), Sink('demand', inputs=[sink_flow])],
@@ -23,13 +28,13 @@ class TestBusBalance:
         for actual, expected in zip(source_rates, demand, strict=False):
             assert actual == pytest.approx(expected, abs=1e-6)
 
-    def test_cost_tracking(self, timesteps_3):
+    def test_cost_tracking(self, ts3):
         """Total cost = sum(flow_rate * cost_per_hour * dt)."""
         sink_flow = Flow('sink(elec)', bus='elec', size=100, fixed_relative_profile=[0.5, 0.8, 0.6])
         source_flow = Flow('source(elec)', bus='elec', size=200, effects_per_flow_hour={'cost': 0.04})
 
         result = solve(
-            timesteps=timesteps_3,
+            timesteps=ts3,
             buses=[Bus('elec')],
             effects=[Effect('cost', is_objective=True)],
             components=[Source('grid', outputs=[source_flow]), Sink('demand', inputs=[sink_flow])],
@@ -38,14 +43,14 @@ class TestBusBalance:
         expected_cost = (50 + 80 + 60) * 0.04
         assert result.objective_value == pytest.approx(expected_cost, abs=1e-6)
 
-    def test_two_sources_one_bus(self, timesteps_3):
+    def test_two_sources_one_bus(self, ts3):
         """Optimizer picks cheaper source."""
         demand_flow = Flow('demand', bus='elec', size=100, fixed_relative_profile=[0.5, 0.5, 0.5])
         cheap_flow = Flow('cheap', bus='elec', size=200, effects_per_flow_hour={'cost': 0.02})
         expensive_flow = Flow('expensive', bus='elec', size=200, effects_per_flow_hour={'cost': 0.10})
 
         result = solve(
-            timesteps=timesteps_3,
+            timesteps=ts3,
             buses=[Bus('elec')],
             effects=[Effect('cost', is_objective=True)],
             components=[

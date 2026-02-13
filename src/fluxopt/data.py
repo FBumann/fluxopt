@@ -263,13 +263,9 @@ class EffectsTable:
         objective_effect = obj_row['effect'][0]
         bounds = df.select('effect', 'min_total', 'max_total')
         # Infer time dtype from flow_effects_df if available
-        time_dtype: pl.DataType = flow_effects_df.schema.get('time', pl.String)
-        time_bounds_lb = pl.DataFrame(
-            schema={'effect': pl.String, 'time': time_dtype, 'value': pl.Float64}
-        )
-        time_bounds_ub = pl.DataFrame(
-            schema={'effect': pl.String, 'time': time_dtype, 'value': pl.Float64}
-        )
+        time_dtype = flow_effects_df.schema.get('time', pl.String())
+        time_bounds_lb = pl.DataFrame(schema={'effect': pl.String, 'time': time_dtype, 'value': pl.Float64})
+        time_bounds_ub = pl.DataFrame(schema={'effect': pl.String, 'time': time_dtype, 'value': pl.Float64})
         return cls(
             index=index,
             flow_coefficients=flow_effects_df,
@@ -376,7 +372,7 @@ class StoragesTable:
     ) -> StoragesTable:
         index = pl.DataFrame({'storage': params_df['storage']})
         # Infer time dtype from time_params_df
-        time_dtype: pl.DataType = time_params_df.schema.get('time', pl.String)
+        time_dtype = time_params_df.schema.get('time', pl.String())
         cs_bounds = pl.DataFrame(
             schema={'storage': pl.String, 'time': time_dtype, 'cs_lb': pl.Float64, 'cs_ub': pl.Float64}
         )
@@ -450,7 +446,7 @@ def build_model_data(
 
     # Build charge_state_times: N+1 entries
     end_time = compute_end_time(ts_series, dt_series)
-    cs_times = ts_series.to_list() + [end_time]
+    cs_times = [*ts_series.to_list(), end_time]
     charge_state_times = pl.DataFrame({'time': pl.Series('time', cs_times, dtype=ts_series.dtype)})
 
     return ModelData(
