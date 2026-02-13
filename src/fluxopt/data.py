@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any
 
 import polars as pl
 
-from fluxopt.types import to_polars_series
+from fluxopt.types import Timesteps, compute_dt, compute_end_time, normalize_timesteps, to_polars_series
 
 if TYPE_CHECKING:
     from fluxopt.components import LinearConverter, Sink, Source
@@ -22,6 +22,7 @@ class FlowsTable:
     def from_elements(cls, flows: list[Flow], timesteps: pl.Series) -> FlowsTable:
         flow_labels = [f.label for f in flows]
         index = pl.DataFrame({'flow': flow_labels})
+        time_dtype = timesteps.dtype
 
         bounds_rows: list[dict[str, Any]] = []
         fixed_rows: list[dict[str, Any]] = []
@@ -51,9 +52,9 @@ class FlowsTable:
                     fixed_rows.append({'flow': f.label, 'time': t, 'value': val})
 
         bounds = pl.DataFrame(
-            bounds_rows, schema={'flow': pl.String, 'time': pl.String, 'lb': pl.Float64, 'ub': pl.Float64}
+            bounds_rows, schema={'flow': pl.String, 'time': time_dtype, 'lb': pl.Float64, 'ub': pl.Float64}
         )
-        fixed = pl.DataFrame(fixed_rows, schema={'flow': pl.String, 'time': pl.String, 'value': pl.Float64})
+        fixed = pl.DataFrame(fixed_rows, schema={'flow': pl.String, 'time': time_dtype, 'value': pl.Float64})
         return cls(index=index, bounds=bounds, fixed=fixed)
 
     @classmethod
@@ -61,6 +62,7 @@ class FlowsTable:
         """df schema: (flow, bus, size, rel_min, rel_max, [fixed_profile columns])"""
         flow_labels = df['flow'].to_list()
         index = pl.DataFrame({'flow': flow_labels})
+        time_dtype = timesteps.dtype
 
         bounds_rows: list[dict[str, Any]] = []
         fixed_rows: list[dict[str, Any]] = []
@@ -81,9 +83,9 @@ class FlowsTable:
                 bounds_rows.append({'flow': row['flow'], 'time': t, 'lb': float(lb), 'ub': float(ub)})
 
         bounds = pl.DataFrame(
-            bounds_rows, schema={'flow': pl.String, 'time': pl.String, 'lb': pl.Float64, 'ub': pl.Float64}
+            bounds_rows, schema={'flow': pl.String, 'time': time_dtype, 'lb': pl.Float64, 'ub': pl.Float64}
         )
-        fixed = pl.DataFrame(fixed_rows, schema={'flow': pl.String, 'time': pl.String, 'value': pl.Float64})
+        fixed = pl.DataFrame(fixed_rows, schema={'flow': pl.String, 'time': time_dtype, 'value': pl.Float64})
         return cls(index=index, bounds=bounds, fixed=fixed)
 
 
@@ -120,6 +122,7 @@ class ConvertersTable:
     @classmethod
     def from_elements(cls, converters: list[LinearConverter], timesteps: pl.Series) -> ConvertersTable:
         index = pl.DataFrame({'converter': [c.label for c in converters]})
+        time_dtype = timesteps.dtype
 
         rows: list[dict[str, Any]] = []
         for conv in converters:
@@ -160,7 +163,7 @@ class ConvertersTable:
                 'converter': pl.String,
                 'eq_idx': pl.Int64,
                 'flow': pl.String,
-                'time': pl.String,
+                'time': time_dtype,
                 'coeff': pl.Float64,
             },
         )
@@ -179,11 +182,13 @@ class EffectsTable:
     flow_coefficients: pl.DataFrame  # (flow, effect, time, coeff)
     objective_effect: str
     bounds: pl.DataFrame  # (effect, min_total, max_total)
-    time_bounds: pl.DataFrame  # (effect, time, min_per_hour, max_per_hour)
+    time_bounds_lb: pl.DataFrame  # (effect, time, value) — only rows where min_per_hour is set
+    time_bounds_ub: pl.DataFrame  # (effect, time, value) — only rows where max_per_hour is set
 
     @classmethod
     def from_elements(cls, effects: list[Effect], flows: list[Flow], timesteps: pl.Series) -> EffectsTable:
         index = pl.DataFrame({'effect': [e.label for e in effects]})
+        time_dtype = timesteps.dtype
 
         objective_effects = [e for e in effects if e.is_objective]
         objective_effect = objective_effects[0].label
@@ -205,12 +210,13 @@ class EffectsTable:
 
         flow_coefficients = pl.DataFrame(
             coeff_rows,
-            schema={'flow': pl.String, 'effect': pl.String, 'time': pl.String, 'coeff': pl.Float64},
+            schema={'flow': pl.String, 'effect': pl.String, 'time': time_dtype, 'coeff': pl.Float64},
         )
 
         # Bounds
         bounds_rows: list[dict[str, Any]] = []
-        time_bounds_rows: list[dict[str, Any]] = []
+        tb_lb_rows: list[dict[str, Any]] = []
+        tb_ub_rows: list[dict[str, Any]] = []
         for e in effects:
             bounds_rows.append(
                 {
@@ -219,36 +225,33 @@ class EffectsTable:
                     'max_total': e.maximum_total,
                 }
             )
-            if e.minimum_per_hour is not None or e.maximum_per_hour is not None:
-                min_ph = (
-                    to_polars_series(e.minimum_per_hour, timesteps, 'min') if e.minimum_per_hour is not None else None
-                )
-                max_ph = (
-                    to_polars_series(e.maximum_per_hour, timesteps, 'max') if e.maximum_per_hour is not None else None
-                )
+            if e.minimum_per_hour is not None:
+                min_ph = to_polars_series(e.minimum_per_hour, timesteps, 'value')
                 for i, t in enumerate(timesteps):
-                    time_bounds_rows.append(
-                        {
-                            'effect': e.label,
-                            'time': t,
-                            'min_per_hour': float(min_ph[i]) if min_ph is not None else None,
-                            'max_per_hour': float(max_ph[i]) if max_ph is not None else None,
-                        }
-                    )
+                    tb_lb_rows.append({'effect': e.label, 'time': t, 'value': float(min_ph[i])})
+            if e.maximum_per_hour is not None:
+                max_ph = to_polars_series(e.maximum_per_hour, timesteps, 'value')
+                for i, t in enumerate(timesteps):
+                    tb_ub_rows.append({'effect': e.label, 'time': t, 'value': float(max_ph[i])})
 
         bounds = pl.DataFrame(
             bounds_rows, schema={'effect': pl.String, 'min_total': pl.Float64, 'max_total': pl.Float64}
         )
-        time_bounds = pl.DataFrame(
-            time_bounds_rows,
-            schema={'effect': pl.String, 'time': pl.String, 'min_per_hour': pl.Float64, 'max_per_hour': pl.Float64},
+        time_bounds_lb = pl.DataFrame(
+            tb_lb_rows,
+            schema={'effect': pl.String, 'time': time_dtype, 'value': pl.Float64},
+        )
+        time_bounds_ub = pl.DataFrame(
+            tb_ub_rows,
+            schema={'effect': pl.String, 'time': time_dtype, 'value': pl.Float64},
         )
         return cls(
             index=index,
             flow_coefficients=flow_coefficients,
             objective_effect=objective_effect,
             bounds=bounds,
-            time_bounds=time_bounds,
+            time_bounds_lb=time_bounds_lb,
+            time_bounds_ub=time_bounds_ub,
         )
 
     @classmethod
@@ -259,15 +262,21 @@ class EffectsTable:
         obj_row = df.filter(pl.col('is_objective') == True)  # noqa: E712
         objective_effect = obj_row['effect'][0]
         bounds = df.select('effect', 'min_total', 'max_total')
-        time_bounds = pl.DataFrame(
-            schema={'effect': pl.String, 'time': pl.String, 'min_per_hour': pl.Float64, 'max_per_hour': pl.Float64}
+        # Infer time dtype from flow_effects_df if available
+        time_dtype: pl.DataType = flow_effects_df.schema.get('time', pl.String)
+        time_bounds_lb = pl.DataFrame(
+            schema={'effect': pl.String, 'time': time_dtype, 'value': pl.Float64}
+        )
+        time_bounds_ub = pl.DataFrame(
+            schema={'effect': pl.String, 'time': time_dtype, 'value': pl.Float64}
         )
         return cls(
             index=index,
             flow_coefficients=flow_effects_df,
             objective_effect=objective_effect,
             bounds=bounds,
-            time_bounds=time_bounds,
+            time_bounds_lb=time_bounds_lb,
+            time_bounds_ub=time_bounds_ub,
         )
 
 
@@ -275,16 +284,19 @@ class EffectsTable:
 class StoragesTable:
     index: pl.DataFrame  # (storage: str)
     params: pl.DataFrame  # (storage, capacity, initial_charge, cyclic)
-    time_params: pl.DataFrame  # (storage, time, eta_c, eta_d, loss, cs_lb, cs_ub)
+    time_params: pl.DataFrame  # (storage, time, eta_c, eta_d, loss)
     flow_map: pl.DataFrame  # (storage, charge_flow, discharge_flow)
+    cs_bounds: pl.DataFrame  # (storage, time, cs_lb, cs_ub) — absolute values
 
     @classmethod
     def from_elements(cls, storages: list[Storage], timesteps: pl.Series) -> StoragesTable:
         index = pl.DataFrame({'storage': [s.label for s in storages]})
+        time_dtype = timesteps.dtype
 
         params_rows: list[dict[str, Any]] = []
         time_params_rows: list[dict[str, Any]] = []
         flow_map_rows: list[dict[str, Any]] = []
+        cs_bounds_rows: list[dict[str, Any]] = []
 
         for s in storages:
             cyclic = s.initial_charge_state == 'cyclic'
@@ -310,8 +322,10 @@ class StoragesTable:
             eta_c = to_polars_series(s.eta_charge, timesteps, 'eta_c')
             eta_d = to_polars_series(s.eta_discharge, timesteps, 'eta_d')
             loss = to_polars_series(s.relative_loss_per_hour, timesteps, 'loss')
-            cs_lb = to_polars_series(s.relative_minimum_charge_state, timesteps, 'cs_lb')
-            cs_ub = to_polars_series(s.relative_maximum_charge_state, timesteps, 'cs_ub')
+            cs_lb_rel = to_polars_series(s.relative_minimum_charge_state, timesteps, 'cs_lb')
+            cs_ub_rel = to_polars_series(s.relative_maximum_charge_state, timesteps, 'cs_ub')
+
+            cap = s.capacity or 1e9
 
             for i, t in enumerate(timesteps):
                 time_params_rows.append(
@@ -321,8 +335,14 @@ class StoragesTable:
                         'eta_c': float(eta_c[i]),
                         'eta_d': float(eta_d[i]),
                         'loss': float(loss[i]),
-                        'cs_lb': float(cs_lb[i]),
-                        'cs_ub': float(cs_ub[i]),
+                    }
+                )
+                cs_bounds_rows.append(
+                    {
+                        'storage': s.label,
+                        'time': t,
+                        'cs_lb': float(cs_lb_rel[i]) * cap,
+                        'cs_ub': float(cs_ub_rel[i]) * cap,
                     }
                 )
 
@@ -334,26 +354,33 @@ class StoragesTable:
             time_params_rows,
             schema={
                 'storage': pl.String,
-                'time': pl.String,
+                'time': time_dtype,
                 'eta_c': pl.Float64,
                 'eta_d': pl.Float64,
                 'loss': pl.Float64,
-                'cs_lb': pl.Float64,
-                'cs_ub': pl.Float64,
             },
         )
         flow_map = pl.DataFrame(
             flow_map_rows,
             schema={'storage': pl.String, 'charge_flow': pl.String, 'discharge_flow': pl.String},
         )
-        return cls(index=index, params=params, time_params=time_params, flow_map=flow_map)
+        cs_bounds = pl.DataFrame(
+            cs_bounds_rows,
+            schema={'storage': pl.String, 'time': time_dtype, 'cs_lb': pl.Float64, 'cs_ub': pl.Float64},
+        )
+        return cls(index=index, params=params, time_params=time_params, flow_map=flow_map, cs_bounds=cs_bounds)
 
     @classmethod
     def from_dataframe(
         cls, params_df: pl.DataFrame, time_params_df: pl.DataFrame, flow_map_df: pl.DataFrame
     ) -> StoragesTable:
         index = pl.DataFrame({'storage': params_df['storage']})
-        return cls(index=index, params=params_df, time_params=time_params_df, flow_map=flow_map_df)
+        # Infer time dtype from time_params_df
+        time_dtype: pl.DataType = time_params_df.schema.get('time', pl.String)
+        cs_bounds = pl.DataFrame(
+            schema={'storage': pl.String, 'time': time_dtype, 'cs_lb': pl.Float64, 'cs_ub': pl.Float64}
+        )
+        return cls(index=index, params=params_df, time_params=time_params_df, flow_map=flow_map_df, cs_bounds=cs_bounds)
 
 
 @dataclass
@@ -363,8 +390,10 @@ class ModelData:
     converters: ConvertersTable
     effects: EffectsTable
     storages: StoragesTable
-    timesteps: pl.DataFrame  # (time: str)
+    timesteps: pl.DataFrame  # (time)
     dt: pl.DataFrame  # (time, dt: f64)
+    weights: pl.DataFrame  # (time, weight: f64)
+    charge_state_times: pl.DataFrame  # (time) — N+1 entries for storage
 
 
 def _collect_flows(
@@ -390,18 +419,19 @@ def _collect_flows(
 
 
 def build_model_data(
-    timesteps: list[str] | pl.Series,
+    timesteps: Timesteps,
     buses: list[Bus],
     effects: list[Effect],
     components: list[Source | Sink | LinearConverter],
     storages: list[Storage] | None = None,
-    dt: float | list[float] = 1.0,
+    dt: float | list[float] | pl.Series | None = None,
 ) -> ModelData:
     """Build ModelData from element objects."""
     from fluxopt.components import LinearConverter
     from fluxopt.validation import validate_system
 
-    ts_series = pl.Series('time', timesteps) if isinstance(timesteps, list) else timesteps.alias('time')
+    ts_series = normalize_timesteps(timesteps)
+    dt_series = compute_dt(ts_series, dt)
 
     flows = _collect_flows(components, storages)
     validate_system(buses, effects, components, storages, flows)
@@ -415,17 +445,13 @@ def build_model_data(
     storages_table = StoragesTable.from_elements(storages or [], ts_series)
 
     timesteps_df = pl.DataFrame({'time': ts_series})
+    dt_df = pl.DataFrame({'time': ts_series, 'dt': dt_series})
+    weights_df = pl.DataFrame({'time': ts_series, 'weight': [1.0] * len(ts_series)})
 
-    # Build dt DataFrame
-    n = len(ts_series)
-    if isinstance(dt, (int, float)):
-        dt_values = [float(dt)] * n
-    else:
-        dt_values = [float(v) for v in dt]
-        if len(dt_values) != n:
-            msg = f'Length of dt ({len(dt_values)}) does not match length of ts_series ({n})'
-            raise ValueError(msg)
-    dt_df = pl.DataFrame({'time': ts_series, 'dt': dt_values})
+    # Build charge_state_times: N+1 entries
+    end_time = compute_end_time(ts_series, dt_series)
+    cs_times = ts_series.to_list() + [end_time]
+    charge_state_times = pl.DataFrame({'time': pl.Series('time', cs_times, dtype=ts_series.dtype)})
 
     return ModelData(
         flows=flows_table,
@@ -435,4 +461,6 @@ def build_model_data(
         storages=storages_table,
         timesteps=timesteps_df,
         dt=dt_df,
+        weights=weights_df,
+        charge_state_times=charge_state_times,
     )

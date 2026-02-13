@@ -92,42 +92,26 @@ class EnergySystemModel:
             # No flow contributions - effects are zero
             m.effect_tracking = m.effect_per_timestep == 0
 
-        # Total: effect_total = sum_time(effect_per_timestep)
-        m.effect_total_eq = m.effect_total == m.effect_per_timestep.sum('time')
+        # Total: effect_total = sum_time(effect_per_timestep * weight)
+        m.effect_total_eq = m.effect_total == (m.effect_per_timestep * pf.Param(d.weights)).sum('time')
 
-        # Effect bounds
-        for row in d.effects.bounds.iter_rows(named=True):
-            effect_label = row['effect']
-            if row['min_total'] is not None:
-                setattr(
-                    m,
-                    f'effect_min_total_{effect_label}',
-                    m.effect_total.filter(effect=effect_label) >= row['min_total'],
-                )
-            if row['max_total'] is not None:
-                setattr(
-                    m,
-                    f'effect_max_total_{effect_label}',
-                    m.effect_total.filter(effect=effect_label) <= row['max_total'],
-                )
+        # Effect total bounds — vectorized
+        min_total_df = d.effects.bounds.filter(pl.col('min_total').is_not_null()).select(
+            'effect', pl.col('min_total').alias('value')
+        )
+        max_total_df = d.effects.bounds.filter(pl.col('max_total').is_not_null()).select(
+            'effect', pl.col('max_total').alias('value')
+        )
+        if len(min_total_df) > 0:
+            m.effect_min_total = m.effect_total >= pf.Param(min_total_df)
+        if len(max_total_df) > 0:
+            m.effect_max_total = m.effect_total <= pf.Param(max_total_df)
 
-        # Per-hour bounds
-        if len(d.effects.time_bounds) > 0:
-            for row in d.effects.time_bounds.iter_rows(named=True):
-                effect_label = row['effect']
-                time_label = row['time']
-                if row['min_per_hour'] is not None:
-                    setattr(
-                        m,
-                        f'effect_min_ph_{effect_label}_{time_label}',
-                        m.effect_per_timestep.filter(effect=effect_label, time=time_label) >= row['min_per_hour'],
-                    )
-                if row['max_per_hour'] is not None:
-                    setattr(
-                        m,
-                        f'effect_max_ph_{effect_label}_{time_label}',
-                        m.effect_per_timestep.filter(effect=effect_label, time=time_label) <= row['max_per_hour'],
-                    )
+        # Per-hour bounds — vectorized using pre-filtered DataFrames
+        if len(d.effects.time_bounds_lb) > 0:
+            m.effect_min_ph = m.effect_per_timestep >= pf.Param(d.effects.time_bounds_lb)
+        if len(d.effects.time_bounds_ub) > 0:
+            m.effect_max_ph = m.effect_per_timestep <= pf.Param(d.effects.time_bounds_ub)
 
     def _create_storage(self) -> None:
         d = self.data
@@ -137,51 +121,35 @@ class EnergySystemModel:
             return
 
         storages_index = d.storages.index
-        timesteps = d.timesteps
-        time_list = timesteps['time'].to_list()
+        time_list = d.timesteps['time'].to_list()
 
-        # charge_state has one extra step (N+1 for N timesteps)
-        steps = [*time_list, '_end']
-        steps_df = pl.DataFrame({'time': steps})
+        # charge_state has one extra step (N+1 for N timesteps) — use charge_state_times
+        m.charge_state = pf.Variable(storages_index, d.charge_state_times, lb=0)
 
-        m.charge_state = pf.Variable(storages_index, steps_df, lb=0)
+        # Charge state capacity upper bound — vectorized
+        cap_df = d.storages.params.filter(pl.col('capacity').is_not_null()).select(
+            'storage', pl.col('capacity').alias('value')
+        )
+        if len(cap_df) > 0:
+            m.cs_cap = m.charge_state <= pf.Param(cap_df)
 
-        # Charge state bounds from capacity * relative bounds
-        for row in d.storages.params.iter_rows(named=True):
-            stor = row['storage']
-            cap = row['capacity']
-            if cap is not None:
-                # Set upper bound on charge_state
-                setattr(
-                    m,
-                    f'cs_cap_{stor}',
-                    m.charge_state.filter(storage=stor) <= cap,
-                )
+        # Time-varying charge state bounds — vectorized using pre-computed absolute bounds
+        cs_lb_df = d.storages.cs_bounds.filter(pl.col('cs_lb') > 0).select(
+            'storage', 'time', pl.col('cs_lb').alias('value')
+        )
+        cs_ub_active = d.storages.cs_bounds.join(
+            d.storages.params.select('storage', 'capacity'), on='storage'
+        ).filter(pl.col('cs_ub') < pl.col('capacity'))
+        cs_ub_df = cs_ub_active.select('storage', 'time', pl.col('cs_ub').alias('value'))
 
-        # Time-varying charge state bounds (relative to capacity)
-        for row in d.storages.params.iter_rows(named=True):
-            stor = row['storage']
-            cap = row['capacity'] or 1e9
-            time_params = d.storages.time_params.filter(pl.col('storage') == stor)
-            for tp_row in time_params.iter_rows(named=True):
-                t = tp_row['time']
-                cs_lb = tp_row['cs_lb'] * cap
-                cs_ub = tp_row['cs_ub'] * cap
-                if cs_lb > 0:
-                    setattr(
-                        m,
-                        f'cs_lb_{stor}_{t}',
-                        m.charge_state.filter(storage=stor, time=t) >= cs_lb,
-                    )
-                if cs_ub < cap:
-                    setattr(
-                        m,
-                        f'cs_ub_{stor}_{t}',
-                        m.charge_state.filter(storage=stor, time=t) <= cs_ub,
-                    )
+        if len(cs_lb_df) > 0:
+            m.cs_lb = m.charge_state >= pf.Param(cs_lb_df)
+        if len(cs_ub_df) > 0:
+            m.cs_ub = m.charge_state <= pf.Param(cs_ub_df)
 
         # Storage balance: cs[t+1] = cs[t] * (1 - loss*dt) + charge*eta_c*dt - discharge/eta_d*dt
         flow_map = d.storages.flow_map
+        cs_time_list = d.charge_state_times['time'].to_list()
 
         for row in flow_map.iter_rows(named=True):
             stor = row['storage']
@@ -201,7 +169,7 @@ class EnergySystemModel:
                 charge_factor = tp['eta_c'] * dt_val
                 discharge_factor = dt_val / tp['eta_d']
 
-                t_next = time_list[i + 1] if i + 1 < len(time_list) else '_end'
+                t_next = cs_time_list[i + 1]
 
                 cs_next = m.charge_state.pick(storage=stor, time=t_next)
                 cs_curr = m.charge_state.pick(storage=stor, time=t)
@@ -210,7 +178,7 @@ class EnergySystemModel:
 
                 setattr(
                     m,
-                    f'storage_bal_{stor}_{t}',
+                    f'storage_bal_{stor}_{i}',
                     cs_next == cs_curr * loss_factor + charge * charge_factor - discharge * discharge_factor,
                 )
 
@@ -221,7 +189,7 @@ class EnergySystemModel:
             if cyclic:
                 # Last step == first step
                 cs_first = m.charge_state.pick(storage=stor, time=time_list[0])
-                cs_last = m.charge_state.pick(storage=stor, time='_end')
+                cs_last = m.charge_state.pick(storage=stor, time=cs_time_list[-1])
                 setattr(m, f'cs_cyclic_{stor}', cs_last == cs_first)
             else:
                 cap = stor_params['capacity'] or 1e9

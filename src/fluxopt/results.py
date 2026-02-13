@@ -29,6 +29,7 @@ class SolvedModel:
     def from_model(cls, model: EnergySystemModel) -> SolvedModel:
         m = model.m
         d = model.data
+        time_dtype = d.timesteps.schema['time']
 
         # Extract flow rates
         flow_sol = m.flow_rate.solution.rename({'solution': 'value'})
@@ -37,7 +38,7 @@ class SolvedModel:
         if len(d.storages.index) > 0:
             cs_sol = m.charge_state.solution.rename({'solution': 'value'})
         else:
-            cs_sol = pl.DataFrame(schema={'storage': pl.String, 'time': pl.String, 'value': pl.Float64})
+            cs_sol = pl.DataFrame(schema={'storage': pl.String, 'time': time_dtype, 'value': pl.Float64})
 
         # Extract effects
         if len(d.effects.index) > 0:
@@ -45,7 +46,7 @@ class SolvedModel:
             effect_ts_sol = m.effect_per_timestep.solution.rename({'solution': 'value'})
         else:
             effect_total_sol = pl.DataFrame(schema={'effect': pl.String, 'total': pl.Float64})
-            effect_ts_sol = pl.DataFrame(schema={'effect': pl.String, 'time': pl.String, 'value': pl.Float64})
+            effect_ts_sol = pl.DataFrame(schema={'effect': pl.String, 'time': time_dtype, 'value': pl.Float64})
 
         # Objective value
         obj_effect = d.effects.objective_effect

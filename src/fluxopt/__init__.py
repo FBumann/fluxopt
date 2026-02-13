@@ -13,16 +13,16 @@ from fluxopt.data import (
 from fluxopt.elements import Bus, Effect, Flow, Storage
 from fluxopt.model import EnergySystemModel
 from fluxopt.results import SolvedModel
-from fluxopt.types import TimeSeries, to_polars_series
+from fluxopt.types import TimeSeries, Timesteps, compute_dt, normalize_timesteps, to_polars_series
 
 
 def solve(
-    timesteps: list[str] | pl.Series,
+    timesteps: Timesteps,
     buses: list[Bus],
     effects: list[Effect],
     components: list[Source | Sink | LinearConverter],
     storages: list[Storage] | None = None,
-    dt: float | list[float] = 1.0,
+    dt: float | list[float] | pl.Series | None = None,
     solver: str = 'highs',
     silent: bool = True,
 ) -> SolvedModel:
@@ -50,7 +50,10 @@ __all__ = [
     'Storage',
     'StoragesTable',
     'TimeSeries',
+    'Timesteps',
     'build_model_data',
+    'compute_dt',
+    'normalize_timesteps',
     'solve',
     'to_polars_series',
 ]
