@@ -220,11 +220,15 @@ class FlowSystemModel:
             extra = cs_bounds.filter(pl.col('time') == last_ts).with_columns(pl.lit(end_ts).alias('time'))
             cs_bounds = pl.concat([cs_bounds, extra])
 
-        # Time-varying charge state bounds — vectorized using pre-computed absolute bounds
-        cs_lb_df = cs_bounds.filter(pl.col('cs_lb') > 0).select('storage', 'time', pl.col('cs_lb').alias('value'))
-        cs_ub_active = cs_bounds.join(d.storages.params.select('storage', 'capacity'), on='storage').filter(
-            pl.col('cs_ub') < pl.col('capacity')
+        # Compute absolute charge state bounds: relative * capacity
+        cs_abs = cs_bounds.join(d.storages.params.select('storage', 'capacity'), on='storage').with_columns(
+            (pl.col('rel_cs_lb') * pl.col('capacity').fill_null(1e9)).alias('cs_lb'),
+            (pl.col('rel_cs_ub') * pl.col('capacity').fill_null(1e9)).alias('cs_ub'),
         )
+
+        # Time-varying charge state bounds — vectorized
+        cs_lb_df = cs_abs.filter(pl.col('cs_lb') > 0).select('storage', 'time', pl.col('cs_lb').alias('value'))
+        cs_ub_active = cs_abs.filter(pl.col('capacity').is_not_null() & (pl.col('cs_ub') < pl.col('capacity')))
         cs_ub_df = cs_ub_active.select('storage', 'time', pl.col('cs_ub').alias('value'))
 
         if len(cs_lb_df) > 0:

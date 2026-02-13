@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any
 
 import polars as pl
 
+from fluxopt.elements import Sizing
 from fluxopt.types import Timesteps, compute_dt, compute_end_time, normalize_timesteps, to_polars_series
 
 if TYPE_CHECKING:
@@ -12,18 +13,47 @@ if TYPE_CHECKING:
     from fluxopt.elements import Bus, Effect, Flow, Storage
 
 
+def _empty_sizing_params(entity_col: str) -> pl.DataFrame:
+    return pl.DataFrame(
+        schema={entity_col: pl.String, 'min_size': pl.Float64, 'max_size': pl.Float64, 'mandatory': pl.Boolean}
+    )
+
+
+def _empty_sizing_effects(entity_col: str) -> pl.DataFrame:
+    return pl.DataFrame(
+        schema={entity_col: pl.String, 'effect': pl.String, 'per_size': pl.Float64, 'of_size': pl.Float64}
+    )
+
+
+def _collect_sizing_effects(entity_id: str, sizing: Sizing, entity_col: str) -> list[dict[str, Any]]:
+    """Merge effects_per_size and effects_of_size into a flat row list."""
+    rows: dict[str, dict[str, Any]] = {}
+    for effect, coeff in sizing.effects_per_size.items():
+        rows[effect] = {entity_col: entity_id, 'effect': effect, 'per_size': coeff, 'of_size': 0.0}
+    for effect, coeff in sizing.effects_of_size.items():
+        if effect in rows:
+            rows[effect]['of_size'] = coeff
+        else:
+            rows[effect] = {entity_col: entity_id, 'effect': effect, 'per_size': 0.0, 'of_size': coeff}
+    return list(rows.values())
+
+
 @dataclass
 class FlowsTable:
     index: pl.DataFrame  # (flow: str)
-    sizes: pl.DataFrame  # (flow, size) — size is null for unsized flows
+    sizes: pl.DataFrame  # (flow, size) — size is null for unsized/sizable flows
     relative_bounds: pl.DataFrame  # (flow, time, rel_lb, rel_ub)
     fixed: pl.DataFrame  # (flow, time, value) — relative profile values for fixed flows
     effect_coefficients: pl.DataFrame  # (flow, effect, time, coeff)
+    sizing_params: pl.DataFrame  # (flow, min_size, max_size, mandatory) — only sizable flows
+    sizing_effects: pl.DataFrame  # (flow, effect, per_size, of_size)
 
     def validate(self) -> None:
-        from fluxopt.validation import validate_flow_bounds
+        from fluxopt.validation import validate_flow_bounds, validate_sizing_params
 
         validate_flow_bounds(self.relative_bounds)
+        if len(self.sizing_params) > 0:
+            validate_sizing_params(self.sizing_params, entity_col='flow')
 
     @classmethod
     def from_elements(cls, flows: list[Flow], timesteps: pl.Series) -> FlowsTable:
@@ -35,9 +65,23 @@ class FlowsTable:
         bounds_rows: list[dict[str, Any]] = []
         fixed_rows: list[dict[str, Any]] = []
         coeff_rows: list[dict[str, Any]] = []
+        sizing_params_rows: list[dict[str, Any]] = []
+        sizing_effects_rows: list[dict[str, Any]] = []
 
         for f in flows:
-            sizes_rows.append({'flow': f.id, 'size': f.size})
+            if isinstance(f.size, Sizing):
+                sizes_rows.append({'flow': f.id, 'size': None})
+                sizing_params_rows.append(
+                    {
+                        'flow': f.id,
+                        'min_size': f.size.min_size,
+                        'max_size': f.size.max_size,
+                        'mandatory': f.size.mandatory,
+                    }
+                )
+                sizing_effects_rows.extend(_collect_sizing_effects(f.id, f.size, 'flow'))
+            else:
+                sizes_rows.append({'flow': f.id, 'size': f.size})
 
             lb_series = to_polars_series(f.relative_minimum, timesteps, 'rel_lb')
             ub_series = to_polars_series(f.relative_maximum, timesteps, 'rel_ub')
@@ -79,12 +123,30 @@ class FlowsTable:
             coeff_rows,
             schema={'flow': pl.String, 'effect': pl.String, 'time': time_dtype, 'coeff': pl.Float64},
         )
+        sizing_params = (
+            pl.DataFrame(
+                sizing_params_rows,
+                schema={'flow': pl.String, 'min_size': pl.Float64, 'max_size': pl.Float64, 'mandatory': pl.Boolean},
+            )
+            if sizing_params_rows
+            else _empty_sizing_params('flow')
+        )
+        sizing_effects = (
+            pl.DataFrame(
+                sizing_effects_rows,
+                schema={'flow': pl.String, 'effect': pl.String, 'per_size': pl.Float64, 'of_size': pl.Float64},
+            )
+            if sizing_effects_rows
+            else _empty_sizing_effects('flow')
+        )
         return cls(
             index=index,
             sizes=sizes,
             relative_bounds=relative_bounds,
             fixed=fixed,
             effect_coefficients=effect_coefficients,
+            sizing_params=sizing_params,
+            sizing_effects=sizing_effects,
         )
 
     @classmethod
@@ -93,6 +155,9 @@ class FlowsTable:
         df: pl.DataFrame,
         timesteps: pl.Series,
         effect_coefficients: pl.DataFrame | None = None,
+        *,
+        sizing_params: pl.DataFrame | None = None,
+        sizing_effects: pl.DataFrame | None = None,
     ) -> FlowsTable:
         """df schema: (flow, bus, size, rel_min, rel_max, [fixed_profile columns])"""
         flow_labels = df['flow'].to_list()
@@ -136,6 +201,8 @@ class FlowsTable:
             relative_bounds=relative_bounds,
             fixed=fixed,
             effect_coefficients=effect_coefficients,
+            sizing_params=sizing_params if sizing_params is not None else _empty_sizing_params('flow'),
+            sizing_effects=sizing_effects if sizing_effects is not None else _empty_sizing_effects('flow'),
         )
 
 
@@ -311,13 +378,17 @@ class StoragesTable:
     params: pl.DataFrame  # (storage, capacity, initial_charge, cyclic)
     time_params: pl.DataFrame  # (storage, time, eta_c, eta_d, loss)
     flow_map: pl.DataFrame  # (storage, charge_flow, discharge_flow)
-    cs_bounds: pl.DataFrame  # (storage, time, cs_lb, cs_ub) — absolute values
+    cs_bounds: pl.DataFrame  # (storage, time, rel_cs_lb, rel_cs_ub) — relative values
+    sizing_params: pl.DataFrame  # (storage, min_size, max_size, mandatory) — only sizable storages
+    sizing_effects: pl.DataFrame  # (storage, effect, per_size, of_size)
 
     def validate(self) -> None:
-        from fluxopt.validation import validate_storage_params, validate_storage_time_params
+        from fluxopt.validation import validate_sizing_params, validate_storage_params, validate_storage_time_params
 
         validate_storage_params(self.params)
         validate_storage_time_params(self.time_params)
+        if len(self.sizing_params) > 0:
+            validate_sizing_params(self.sizing_params, entity_col='storage')
 
     @classmethod
     def from_elements(cls, storages: list[Storage], timesteps: pl.Series) -> StoragesTable:
@@ -328,15 +399,31 @@ class StoragesTable:
         time_params_rows: list[dict[str, Any]] = []
         flow_map_rows: list[dict[str, Any]] = []
         cs_bounds_rows: list[dict[str, Any]] = []
+        sizing_params_rows: list[dict[str, Any]] = []
+        sizing_effects_rows: list[dict[str, Any]] = []
 
         for s in storages:
             cyclic = s.initial_charge_state == 'cyclic'
             initial = 0.0 if cyclic else (float(s.initial_charge_state) if s.initial_charge_state is not None else 0.0)
 
+            if isinstance(s.capacity, Sizing):
+                capacity_scalar = None
+                sizing_params_rows.append(
+                    {
+                        'storage': s.id,
+                        'min_size': s.capacity.min_size,
+                        'max_size': s.capacity.max_size,
+                        'mandatory': s.capacity.mandatory,
+                    }
+                )
+                sizing_effects_rows.extend(_collect_sizing_effects(s.id, s.capacity, 'storage'))
+            else:
+                capacity_scalar = s.capacity
+
             params_rows.append(
                 {
                     'storage': s.id,
-                    'capacity': s.capacity,
+                    'capacity': capacity_scalar,
                     'initial_charge': initial,
                     'cyclic': cyclic,
                 }
@@ -353,10 +440,8 @@ class StoragesTable:
             eta_c = to_polars_series(s.eta_charge, timesteps, 'eta_c')
             eta_d = to_polars_series(s.eta_discharge, timesteps, 'eta_d')
             loss = to_polars_series(s.relative_loss_per_hour, timesteps, 'loss')
-            cs_lb_rel = to_polars_series(s.relative_minimum_charge_state, timesteps, 'cs_lb')
-            cs_ub_rel = to_polars_series(s.relative_maximum_charge_state, timesteps, 'cs_ub')
-
-            cap = s.capacity or 1e9
+            cs_lb_rel = to_polars_series(s.relative_minimum_charge_state, timesteps, 'rel_cs_lb')
+            cs_ub_rel = to_polars_series(s.relative_maximum_charge_state, timesteps, 'rel_cs_ub')
 
             for i, t in enumerate(timesteps):
                 time_params_rows.append(
@@ -372,8 +457,8 @@ class StoragesTable:
                     {
                         'storage': s.id,
                         'time': t,
-                        'cs_lb': float(cs_lb_rel[i]) * cap,
-                        'cs_ub': float(cs_ub_rel[i]) * cap,
+                        'rel_cs_lb': float(cs_lb_rel[i]),
+                        'rel_cs_ub': float(cs_ub_rel[i]),
                     }
                 )
 
@@ -397,21 +482,66 @@ class StoragesTable:
         )
         cs_bounds = pl.DataFrame(
             cs_bounds_rows,
-            schema={'storage': pl.String, 'time': time_dtype, 'cs_lb': pl.Float64, 'cs_ub': pl.Float64},
+            schema={'storage': pl.String, 'time': time_dtype, 'rel_cs_lb': pl.Float64, 'rel_cs_ub': pl.Float64},
         )
-        return cls(index=index, params=params, time_params=time_params, flow_map=flow_map, cs_bounds=cs_bounds)
+        sizing_params = (
+            pl.DataFrame(
+                sizing_params_rows,
+                schema={
+                    'storage': pl.String,
+                    'min_size': pl.Float64,
+                    'max_size': pl.Float64,
+                    'mandatory': pl.Boolean,
+                },
+            )
+            if sizing_params_rows
+            else _empty_sizing_params('storage')
+        )
+        sizing_effects = (
+            pl.DataFrame(
+                sizing_effects_rows,
+                schema={'storage': pl.String, 'effect': pl.String, 'per_size': pl.Float64, 'of_size': pl.Float64},
+            )
+            if sizing_effects_rows
+            else _empty_sizing_effects('storage')
+        )
+        return cls(
+            index=index,
+            params=params,
+            time_params=time_params,
+            flow_map=flow_map,
+            cs_bounds=cs_bounds,
+            sizing_params=sizing_params,
+            sizing_effects=sizing_effects,
+        )
 
     @classmethod
     def from_dataframe(
-        cls, params_df: pl.DataFrame, time_params_df: pl.DataFrame, flow_map_df: pl.DataFrame
+        cls,
+        params_df: pl.DataFrame,
+        time_params_df: pl.DataFrame,
+        flow_map_df: pl.DataFrame,
+        *,
+        cs_bounds: pl.DataFrame | None = None,
+        sizing_params: pl.DataFrame | None = None,
+        sizing_effects: pl.DataFrame | None = None,
     ) -> StoragesTable:
         index = pl.DataFrame({'storage': params_df['storage']})
         # Infer time dtype from time_params_df
         time_dtype = time_params_df.schema.get('time', pl.Datetime())
-        cs_bounds = pl.DataFrame(
-            schema={'storage': pl.String, 'time': time_dtype, 'cs_lb': pl.Float64, 'cs_ub': pl.Float64}
+        if cs_bounds is None:
+            cs_bounds = pl.DataFrame(
+                schema={'storage': pl.String, 'time': time_dtype, 'rel_cs_lb': pl.Float64, 'rel_cs_ub': pl.Float64}
+            )
+        return cls(
+            index=index,
+            params=params_df,
+            time_params=time_params_df,
+            flow_map=flow_map_df,
+            cs_bounds=cs_bounds,
+            sizing_params=sizing_params if sizing_params is not None else _empty_sizing_params('storage'),
+            sizing_effects=sizing_effects if sizing_effects is not None else _empty_sizing_effects('storage'),
         )
-        return cls(index=index, params=params_df, time_params=time_params_df, flow_map=flow_map_df, cs_bounds=cs_bounds)
 
 
 @dataclass

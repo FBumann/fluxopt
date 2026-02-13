@@ -1,7 +1,7 @@
 import polars as pl
 
 from fluxopt.components import Converter, Port
-from fluxopt.elements import Bus, Effect, Flow, Storage
+from fluxopt.elements import Bus, Effect, Flow, Sizing, Storage
 from fluxopt.model import FlowSystemModel
 from fluxopt.results import SolvedModel
 from fluxopt.tables import (
@@ -47,6 +47,7 @@ __all__ = [
     'IdList',
     'ModelData',
     'Port',
+    'Sizing',
     'SolvedModel',
     'Storage',
     'StoragesTable',

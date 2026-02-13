@@ -24,6 +24,7 @@ def validate_system(
     _check_bus_references(buses, flows)
     _check_objective(effects)
     _check_flow_uniqueness(flows)
+    _check_sizing_effect_references(effects, flows, storages or [])
 
 
 def _check_id_uniqueness(
@@ -110,3 +111,38 @@ def validate_storage_time_params(time_params: pl.DataFrame) -> None:
     if len(bad_loss) > 0:
         ids = bad_loss['storage'].unique().sort().to_list()
         raise ValueError(f'Negative relative_loss_per_hour on storages: {ids}')
+
+
+def validate_sizing_params(df: pl.DataFrame, *, entity_col: str) -> None:
+    """Validate sizing_params DataFrame: (entity, min_size, max_size, mandatory)."""
+    bad_min = df.filter(pl.col('min_size') < 0)
+    if len(bad_min) > 0:
+        ids = bad_min[entity_col].to_list()
+        raise ValueError(f'Negative min_size on {entity_col}s: {ids}')
+
+    bad_max = df.filter(pl.col('max_size') <= 0)
+    if len(bad_max) > 0:
+        ids = bad_max[entity_col].to_list()
+        raise ValueError(f'max_size must be > 0 on {entity_col}s: {ids}')
+
+    bad_order = df.filter(pl.col('min_size') > pl.col('max_size'))
+    if len(bad_order) > 0:
+        ids = bad_order[entity_col].to_list()
+        raise ValueError(f'min_size > max_size on {entity_col}s: {ids}')
+
+
+def _check_sizing_effect_references(effects: list[Effect], flows: list[Flow], storages: list[Storage]) -> None:
+    """Check that effect ids referenced in Sizing dicts exist in the effects list."""
+    from fluxopt.elements import Sizing
+
+    effect_ids = {e.id for e in effects}
+    for flow in flows:
+        if isinstance(flow.size, Sizing):
+            for eid in (*flow.size.effects_per_size, *flow.size.effects_of_size):
+                if eid not in effect_ids:
+                    raise ValueError(f'Flow {flow.id!r} sizing references unknown effect {eid!r}')
+    for stor in storages:
+        if isinstance(stor.capacity, Sizing):
+            for eid in (*stor.capacity.effects_per_size, *stor.capacity.effects_of_size):
+                if eid not in effect_ids:
+                    raise ValueError(f'Storage {stor.id!r} sizing references unknown effect {eid!r}')

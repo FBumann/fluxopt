@@ -7,6 +7,28 @@ if TYPE_CHECKING:
     from fluxopt.types import TimeSeries
 
 
+@dataclass
+class Sizing:
+    """Size optimization parameters for a flow or storage.
+
+    When ``min_size == max_size`` the decision is binary (build at fixed size or not).
+    """
+
+    min_size: float
+    max_size: float
+    mandatory: bool = False
+    effects_per_size: dict[str, float] = field(default_factory=dict)
+    effects_of_size: dict[str, float] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if self.min_size < 0:
+            raise ValueError(f'min_size must be >= 0, got {self.min_size}')
+        if self.max_size <= 0:
+            raise ValueError(f'max_size must be > 0, got {self.max_size}')
+        if self.min_size > self.max_size:
+            raise ValueError(f'min_size ({self.min_size}) must be <= max_size ({self.max_size})')
+
+
 @dataclass(eq=False)
 class Flow:
     """A single energy flow on a bus.
@@ -25,7 +47,7 @@ class Flow:
 
     bus: str
     id: str = ''
-    size: float | None = None  # P̄_f  [MW]
+    size: float | Sizing | None = None  # P̄_f  [MW]
     relative_minimum: TimeSeries = 0.0  # p̲_f  [-]
     relative_maximum: TimeSeries = 1.0  # p̄_f  [-]
     fixed_relative_profile: TimeSeries | None = None  # π_f  [-]
@@ -62,7 +84,7 @@ class Storage:
     id: str
     charging: Flow
     discharging: Flow
-    capacity: float | None = None  # Ē_s  [MWh]
+    capacity: float | Sizing | None = None  # Ē_s  [MWh]
     eta_charge: TimeSeries = 1.0  # η^c_s  [-]
     eta_discharge: TimeSeries = 1.0  # η^d_s  [-]
     relative_loss_per_hour: TimeSeries = 0.0  # δ_s  [1/h]
