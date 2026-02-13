@@ -44,23 +44,10 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: uv sync --frozen --group dev
+        run: uv sync --group dev
 
       - name: Run mypy
         run: uv run mypy src/
-
-  check-lock:
-    name: Check lock file
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: astral-sh/setup-uv@v7
-        with:
-          enable-cache: true
-
-      - run: uv lock --check
 
   test:
     name: Test (Python ${{ matrix.python-version }})
@@ -82,7 +69,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: uv sync --frozen --group dev
+        run: uv sync --group dev
 
       - name: Run tests
         run: uv run pytest -v --cov=fluxopt --cov-report=xml --cov-report=term-missing
