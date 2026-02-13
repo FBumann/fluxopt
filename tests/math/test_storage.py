@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 import pytest
 
-from energysys import Bus, Effect, Flow, Sink, Source, Storage, solve
+from fluxopt import Bus, Effect, Flow, Port, Storage, solve
 
 
 class TestStorage:
@@ -10,23 +12,23 @@ class TestStorage:
         """Battery charges in cheap hours, discharges in expensive hours."""
         prices = [0.02, 0.08, 0.02, 0.08]
 
-        source_flow = Flow('grid(elec)', bus='elec', size=200, effects_per_flow_hour={'cost': prices})
-        demand_flow = Flow('demand(elec)', bus='elec', size=100, fixed_relative_profile=[0.5, 0.5, 0.5, 0.5])
+        source_flow = Flow(bus='elec', size=200, effects_per_flow_hour={'cost': prices})
+        demand_flow = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.5, 0.5, 0.5])
 
-        charge_flow = Flow('bat(charge)', bus='elec', size=50)
-        discharge_flow = Flow('bat(discharge)', bus='elec', size=50)
+        charge_flow = Flow(bus='elec', size=50)
+        discharge_flow = Flow(bus='elec', size=50)
         battery = Storage('battery', charging=charge_flow, discharging=discharge_flow, capacity=100.0)
 
         result = solve(
             timesteps=timesteps_4,
             buses=[Bus('elec')],
             effects=[Effect('cost', is_objective=True)],
-            components=[Source('grid', outputs=[source_flow]), Sink('demand', inputs=[demand_flow])],
+            ports=[Port('grid', imports=[source_flow]), Port('demand', exports=[demand_flow])],
             storages=[battery],
         )
 
-        charge = result.flow_rate('bat(charge)')['value'].to_list()
-        discharge = result.flow_rate('bat(discharge)')['value'].to_list()
+        charge = result.flow_rate('battery(charge)')['solution'].to_list()
+        discharge = result.flow_rate('battery(discharge)')['solution'].to_list()
 
         # Should charge in cheap hours (t0, t2) and discharge in expensive (t1, t3)
         assert charge[0] > 0  # t0: cheap
@@ -41,11 +43,11 @@ class TestStorage:
 
     def test_charge_state_starts_at_zero(self, timesteps_4):
         """Initial charge state defaults to 0."""
-        source_flow = Flow('grid(elec)', bus='elec', size=200, effects_per_flow_hour={'cost': 0.04})
-        demand_flow = Flow('demand(elec)', bus='elec', size=100, fixed_relative_profile=[0.5, 0.5, 0.5, 0.5])
+        source_flow = Flow(bus='elec', size=200, effects_per_flow_hour={'cost': 0.04})
+        demand_flow = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.5, 0.5, 0.5])
 
-        charge_flow = Flow('bat(charge)', bus='elec', size=50)
-        discharge_flow = Flow('bat(discharge)', bus='elec', size=50)
+        charge_flow = Flow(bus='elec', size=50)
+        discharge_flow = Flow(bus='elec', size=50)
         battery = Storage(
             'battery', charging=charge_flow, discharging=discharge_flow, capacity=100.0, initial_charge_state=0.0
         )
@@ -54,21 +56,23 @@ class TestStorage:
             timesteps=timesteps_4,
             buses=[Bus('elec')],
             effects=[Effect('cost', is_objective=True)],
-            components=[Source('grid', outputs=[source_flow]), Sink('demand', inputs=[demand_flow])],
+            ports=[Port('grid', imports=[source_flow]), Port('demand', exports=[demand_flow])],
             storages=[battery],
         )
 
         cs = result.charge_state('battery')
-        assert cs.filter(cs['time'] == 't0')['value'][0] == pytest.approx(0.0, abs=1e-6)
+        # First row is the initial charge state (first timestep)
+        first_time = cs['time'][0]
+        assert cs.filter(cs['time'] == first_time)['solution'][0] == pytest.approx(0.0, abs=1e-6)
 
     def test_cyclic_storage(self):
         """Cyclic constraint: charge state at end == start."""
-        timesteps = ['t0', 't1']
-        source_flow = Flow('grid', bus='elec', size=200, effects_per_flow_hour={'cost': [0.02, 0.08]})
-        demand_flow = Flow('demand', bus='elec', size=100, fixed_relative_profile=[0.5, 0.5])
+        timesteps = [datetime(2024, 1, 1, h) for h in range(2)]
+        source_flow = Flow(bus='elec', size=200, effects_per_flow_hour={'cost': [0.02, 0.08]})
+        demand_flow = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.5])
 
-        charge_flow = Flow('bat(charge)', bus='elec', size=100)
-        discharge_flow = Flow('bat(discharge)', bus='elec', size=100)
+        charge_flow = Flow(bus='elec', size=100)
+        discharge_flow = Flow(bus='elec', size=100)
         battery = Storage(
             'battery',
             charging=charge_flow,
@@ -81,23 +85,23 @@ class TestStorage:
             timesteps=timesteps,
             buses=[Bus('elec')],
             effects=[Effect('cost', is_objective=True)],
-            components=[Source('grid', outputs=[source_flow]), Sink('demand', inputs=[demand_flow])],
+            ports=[Port('grid', imports=[source_flow]), Port('demand', exports=[demand_flow])],
             storages=[battery],
         )
 
         cs = result.charge_state('battery')
-        first = cs.filter(cs['time'] == 't0')['value'][0]
-        last = cs.filter(cs['time'] == '_end')['value'][0]
+        first = cs['solution'][0]
+        last = cs['solution'][-1]
         assert last == pytest.approx(first, abs=1e-6)
 
     def test_storage_with_efficiency(self, timesteps_3):
         """With eta_charge < 1, more energy is drawn from bus than stored."""
         eta_c = 0.8
-        source_flow = Flow('grid', bus='elec', size=200, effects_per_flow_hour={'cost': [0.02, 0.08, 0.02]})
-        demand_flow = Flow('demand', bus='elec', size=100, fixed_relative_profile=[0.5, 0.5, 0.5])
+        source_flow = Flow(bus='elec', size=200, effects_per_flow_hour={'cost': [0.02, 0.08, 0.02]})
+        demand_flow = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.5, 0.5])
 
-        charge_flow = Flow('bat_c', bus='elec', size=100)
-        discharge_flow = Flow('bat_d', bus='elec', size=100)
+        charge_flow = Flow(bus='elec', size=100)
+        discharge_flow = Flow(bus='elec', size=100)
         battery = Storage(
             'battery',
             charging=charge_flow,
@@ -110,16 +114,16 @@ class TestStorage:
             timesteps=timesteps_3,
             buses=[Bus('elec')],
             effects=[Effect('cost', is_objective=True)],
-            components=[Source('grid', outputs=[source_flow]), Sink('demand', inputs=[demand_flow])],
+            ports=[Port('grid', imports=[source_flow]), Port('demand', exports=[demand_flow])],
             storages=[battery],
         )
 
         # With charging efficiency, stored energy = charge_rate * eta_c
         cs = result.charge_state('battery')
-        charge_t0 = result.flow_rate('bat_c')['value'][0]
-        cs_t1 = cs.filter(cs['time'] == 't1')['value'][0]
-        cs_t0 = cs.filter(cs['time'] == 't0')['value'][0]
+        charge_t0 = result.flow_rate('battery(charge)')['solution'][0]
+        cs_t1 = cs['solution'][1]
+        cs_t0 = cs['solution'][0]
         # cs[t1] = cs[t0] + charge[t0] * eta_c - discharge[t0] / eta_d
-        discharge_t0 = result.flow_rate('bat_d')['value'][0]
+        discharge_t0 = result.flow_rate('battery(discharge)')['solution'][0]
         expected_cs_t1 = cs_t0 + charge_t0 * eta_c - discharge_t0
         assert cs_t1 == pytest.approx(expected_cs_t1, abs=1e-6)

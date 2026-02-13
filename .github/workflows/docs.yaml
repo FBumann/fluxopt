@@ -4,21 +4,21 @@ on:
   push:
     branches: [main]
     paths:
-      - 'docs/**'
-      - 'mkdocs.yml'
-      - 'src/energysys/**'
+      - "docs/**"
+      - "mkdocs.yml"
+      - "src/fluxopt/**"
   pull_request:
     paths:
-      - 'docs/**'
-      - 'mkdocs.yml'
+      - "docs/**"
+      - "mkdocs.yml"
   workflow_dispatch:
     inputs:
       deploy:
-        description: 'Deploy docs to GitHub Pages'
+        description: "Deploy docs"
         type: boolean
         default: false
       version:
-        description: 'Version to deploy (e.g., v6.0.0)'
+        description: "Version label (e.g. v0.1.0)"
         type: string
         required: false
   workflow_call:
@@ -31,81 +31,14 @@ on:
         required: false
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: docs-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  PYTHON_VERSION: "3.12"
-  MPLBACKEND: Agg
-  PLOTLY_RENDERER: notebook_connected
-
 jobs:
-  build:
-    name: Build documentation
+  docs:
+    name: Build & deploy docs
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - uses: astral-sh/setup-uv@v7
-        with:
-          version: "0.9.10"
-          enable-cache: true
-
-      - uses: actions/setup-python@v6
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Extract changelog
-        run: |
-          cp CHANGELOG.md docs/changelog.md
-          python scripts/format_changelog.py
-
-      - name: Install dependencies
-        run: uv sync --group docs
-
-      - name: Get notebook cache key
-        id: notebook-cache-key
-        run: |
-          set -eo pipefail
-          # Hash notebooks + flixopt source code using null-delimited find for safety
-          HASH=$({ find docs/notebooks -name '*.ipynb' -print0; find src/energysys -name '*.py' -print0; } | sort -z | xargs -0 tar -cf - 2>/dev/null | sha256sum | cut -d' ' -f1)
-          echo "hash=$HASH" >> $GITHUB_OUTPUT
-
-      - name: Cache executed notebooks
-        uses: actions/cache@v4
-        id: notebook-cache
-        with:
-          path: docs/notebooks/**/*.ipynb
-          key: notebooks-${{ steps.notebook-cache-key.outputs.hash }}
-
-      - name: Execute fast notebooks
-        if: steps.notebook-cache.outputs.cache-hit != 'true'
-        run: |
-          set -eo pipefail
-          # Execute fast notebooks in parallel (4 at a time), excluding slow ones
-          cd docs/notebooks && find . -name '*.ipynb' | \
-            grep -vFf slow_notebooks.txt | \
-            xargs -P 4 -I {} sh -c 'jupyter execute --inplace "$1" || exit 255' _ {}
-
-      - name: Build docs
-        env:
-          MKDOCS_JUPYTER_EXECUTE: "false"
-        run: mkdocs build --strict
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: docs
-          path: site/
-          retention-days: 7
-
-  deploy:
-    name: Deploy documentation
-    needs: build
-    if: ${{ inputs.deploy == true && inputs.version != '' }}
-    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     permissions:
       contents: write
     steps:
@@ -115,71 +48,38 @@ jobs:
 
       - uses: astral-sh/setup-uv@v7
         with:
-          version: "0.9.10"
           enable-cache: true
 
       - uses: actions/setup-python@v6
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Extract changelog
-        run: |
-          cp CHANGELOG.md docs/changelog.md
-          python scripts/format_changelog.py
+          python-version: "3.12"
 
       - name: Install dependencies
         run: uv sync --group docs
 
-      - name: Get notebook cache key
-        id: notebook-cache-key
-        run: |
-          set -eo pipefail
-          # Hash notebooks + flixopt source code using null-delimited find for safety
-          HASH=$({ find docs/notebooks -name '*.ipynb' -print0; find src/energysys -name '*.py' -print0; } | sort -z | xargs -0 tar -cf - 2>/dev/null | sha256sum | cut -d' ' -f1)
-          echo "hash=$HASH" >> $GITHUB_OUTPUT
-
-      - name: Cache executed notebooks
-        uses: actions/cache@v4
-        id: notebook-cache
-        with:
-          path: docs/notebooks/**/*.ipynb
-          key: notebooks-${{ steps.notebook-cache-key.outputs.hash }}
-
-      - name: Execute fast notebooks
-        if: steps.notebook-cache.outputs.cache-hit != 'true'
-        run: |
-          set -eo pipefail
-          # Execute fast notebooks in parallel (4 at a time), excluding slow ones
-          cd docs/notebooks && find . -name '*.ipynb' | \
-            grep -vFf slow_notebooks.txt | \
-            xargs -P 4 -I {} sh -c 'jupyter execute --inplace "$1" || exit 255' _ {}
-
-      - name: Execute slow notebooks
-        if: steps.notebook-cache.outputs.cache-hit != 'true'
-        run: |
-          set -eo pipefail
-          # Execute slow notebooks (only on release)
-          cd docs/notebooks && cat slow_notebooks.txt | \
-            xargs -I {} sh -c 'jupyter execute --inplace "$1" || exit 255' _ {}
+      - name: Build docs
+        run: uv run mkdocs build --strict
 
       - name: Configure Git
+        if: github.event_name == 'push' || inputs.deploy
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - name: Deploy docs
+      - name: Deploy dev docs
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.deploy
+        run: uv run mike deploy --push dev
+
+      - name: Deploy versioned docs
+        if: inputs.deploy && inputs.version != ''
         env:
-          MKDOCS_JUPYTER_EXECUTE: "false"
+          VERSION: ${{ inputs.version }}
         run: |
-          VERSION=${{ inputs.version }}
           VERSION=${VERSION#v}
 
-          # Check if this is a pre-release (alpha, beta, rc)
           if [[ "$VERSION" =~ (alpha|beta|rc) ]]; then
-            # Pre-release: deploy version only, don't update "latest"
-            mike deploy --push $VERSION
+            uv run mike deploy --push "$VERSION"
           else
-            # Stable release: deploy and update "latest" alias
-            mike deploy --push --update-aliases $VERSION latest
-            mike set-default --push latest
+            uv run mike deploy --push --update-aliases "$VERSION" latest
+            uv run mike set-default --push latest
           fi

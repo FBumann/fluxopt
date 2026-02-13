@@ -1,0 +1,34 @@
+version: 2
+
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+    groups:
+      linting:
+        patterns:
+          - "ruff"
+          - "mypy"
+          - "pre-commit"
+          - "pandas-stubs"
+      testing:
+        patterns:
+          - "pytest*"
+      documentation:
+        patterns:
+          - "mkdocs*"
+          - "mike"
+          - "pymdown-extensions"
+          - "pygments"
+          - "markdown-include"
+          - "notebook"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"

@@ -3,118 +3,56 @@ name: Release
 on:
   push:
     tags:
-      - v*.*.*
-
-env:
-  PYTHON_VERSION: "3.12"
-  PREPARATION_COMMIT: '[ci] prepare release ${{ github.ref_name }}'
+      - "v*.*.*"
 
 jobs:
-  check-preparation:
-    name: Check if release is prepared
-    runs-on: ubuntu-24.04
-    outputs:
-      prepared: ${{ steps.validate.outputs.prepared }}
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Validate commit message
-        id: validate
-        run: |
-          COMMIT_MESSAGE=$(git log -1 --pretty=%B)
-          echo "Expected: '${{ env.PREPARATION_COMMIT }}'"
-          echo "Received: '$COMMIT_MESSAGE'"
-
-          prepared="false"
-          if [[ "$COMMIT_MESSAGE" == "${{ env.PREPARATION_COMMIT }}" ]]; then
-            prepared="true"
-          fi
-
-          echo "prepared=$prepared" >> $GITHUB_OUTPUT
-
-  prepare-release:
-    name: Prepare release
-    needs: [check-preparation]
-    if: needs.check-preparation.outputs.prepared == 'false'
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Generate token for Release Bot
-        id: generate-token
-        uses: actions/create-github-app-token@v2
-        with:
-          app-id: ${{ vars.RELEASE_BOT_APP_ID }}
-          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
-
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-          ref: main
-          token: ${{ steps.generate-token.outputs.token }}
-
-      - name: Configure Git
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-      - name: Update CITATION.cff
-        run: |
-          VERSION=${GITHUB_REF#refs/tags/v}
-          DATE=$(date +%Y-%m-%d)
-          sed -i "s/^version: .*/version: $VERSION/" CITATION.cff
-          sed -i "s/^date-released: .*/date-released: $DATE/" CITATION.cff
-
-      - name: Remove previous tag
-        run: |
-          git tag -d ${{ github.ref_name }}
-          git push origin --delete ${{ github.ref_name }}
-
-      - name: Commit and re-tag
-        run: |
-          git add CITATION.cff
-          git commit -m "${{ env.PREPARATION_COMMIT }}"
-          git push origin main
-          git tag -a ${{ github.ref_name }} -m "${{ github.ref_name }}"
-          git push origin ${{ github.ref_name }}
-
-  test:
-    name: Run tests
-    needs: [check-preparation]
-    if: needs.check-preparation.outputs.prepared == 'true'
-    uses: ./.github/workflows/tests.yaml
+  ci:
+    name: CI
+    uses: ./.github/workflows/ci.yaml
 
   build:
     name: Build package
-    needs: [check-preparation, test]
-    if: needs.check-preparation.outputs.prepared == 'true'
+    needs: [ci]
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
-
-      - uses: astral-sh/setup-uv@v6
         with:
-          version: "0.9.10"
+          fetch-depth: 0
+
+      - uses: astral-sh/setup-uv@v7
+        with:
           enable-cache: true
 
       - uses: actions/setup-python@v6
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          python-version: "3.12"
 
-      - name: Build package
+      - name: Build
         run: uv build
+
+      - name: Verify version matches tag
+        run: |
+          TAG_VERSION=${GITHUB_REF#refs/tags/v}
+          PKG_VERSION=$(ls dist/*.whl | sed 's/^[^-]*-\([^-]*\)-.*/\1/')
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::Tag version ($TAG_VERSION) does not match package version ($PKG_VERSION)"
+            exit 1
+          fi
 
       - uses: actions/upload-artifact@v4
         with:
           name: dist
           path: dist/
-          retention-days: 7
+          retention-days: 5
 
-  publish-pypi:
+  publish:
     name: Publish to PyPI
     needs: [build]
     runs-on: ubuntu-24.04
     environment:
       name: pypi
-      url: https://pypi.org/p/fluxopt
+      url: https://pypi.org/project/fluxopt
     permissions:
       id-token: write
     steps:
@@ -123,70 +61,56 @@ jobs:
           name: dist
           path: dist/
 
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          skip-existing: true
+      - uses: pypa/gh-action-pypi-publish@release/v1
 
-  verify-pypi:
+  verify:
     name: Verify PyPI installation
-    needs: [publish-pypi]
+    needs: [publish]
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
     steps:
-      - uses: astral-sh/setup-uv@v6
-        with:
-          version: "0.9.10"
+      - uses: astral-sh/setup-uv@v7
 
       - uses: actions/setup-python@v6
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          python-version: "3.12"
 
-      - name: Verify installation
+      - name: Verify
         run: |
           VERSION=${GITHUB_REF#refs/tags/v}
-
-          for delay in 10 20 40 60 90 120 180 300; do
-            sleep $delay
-            echo "Attempting installation (waited ${delay}s)..."
-
-            if uv pip install --system --index-url https://pypi.org/simple/ "fluxopt==$VERSION" && \
+          TOTAL_WAIT=0
+          for delay in 15 30 60 90; do
+            sleep "$delay"
+            TOTAL_WAIT=$((TOTAL_WAIT + delay))
+            echo "Attempting install (waited ${TOTAL_WAIT}s total)..."
+            if uv pip install --system "fluxopt==$VERSION" && \
                python -c "from importlib.metadata import version; assert version('fluxopt') == '$VERSION'"; then
-              echo "PyPI installation successful!"
+              echo "Verified fluxopt==$VERSION on PyPI"
               exit 0
             fi
           done
-
-          echo "Failed to verify PyPI installation"
+          echo "::error::Failed to verify fluxopt==$VERSION on PyPI"
           exit 1
 
-  create-release:
-    name: Create GitHub release
-    needs: [verify-pypi]
+  github-release:
+    name: GitHub release
+    needs: [verify]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v6
 
-      - uses: actions/setup-python@v6
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Extract release notes
-        run: |
-          VERSION=${GITHUB_REF#refs/tags/v}
-          python scripts/extract_release_notes.py $VERSION > current_release_notes.md
-
       - uses: softprops/action-gh-release@v2
         with:
-          body_path: current_release_notes.md
-          draft: false
-          prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
           generate_release_notes: true
+          prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
 
   deploy-docs:
-    name: Deploy documentation
-    needs: [create-release]
+    name: Deploy docs
+    needs: [github-release]
+    permissions:
+      contents: write
     uses: ./.github/workflows/docs.yaml
     with:
       deploy: true
