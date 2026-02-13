@@ -10,74 +10,74 @@ if TYPE_CHECKING:
 
 @dataclass
 class Port:
-    label: str
+    id: str
     imports: list[Flow] = field(default_factory=list)
     exports: list[Flow] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         for f in self.imports:
-            f._component = self.label
+            f.id = f'{self.id}({f.bus})'
             f._is_input = False
         for f in self.exports:
-            f._component = self.label
+            f.id = f'{self.id}({f.bus})'
             f._is_input = True
 
 
 @dataclass
-class LinearConverter:
+class Converter:
     """Linear conversion between input and output flows.
 
     Conversion equation (per equation index):
         sum_f(a_f * P_{f,t}) = 0   for all t
     """
 
-    label: str
+    id: str
     inputs: list[Flow]
     outputs: list[Flow]
-    conversion_factors: list[dict[str, TimeSeries]] = field(default_factory=list)  # a_f
+    conversion_factors: list[dict[Flow, TimeSeries]] = field(default_factory=list)  # a_f
 
     def __post_init__(self) -> None:
         for f in self.inputs:
-            f._component = self.label
+            f.id = f'{self.id}({f.bus})'
             f._is_input = True
         for f in self.outputs:
-            f._component = self.label
+            f.id = f'{self.id}({f.bus})'
             f._is_input = False
 
     @classmethod
-    def boiler(cls, label: str, thermal_efficiency: TimeSeries, fuel_flow: Flow, thermal_flow: Flow) -> LinearConverter:
+    def boiler(cls, id: str, thermal_efficiency: TimeSeries, fuel_flow: Flow, thermal_flow: Flow) -> Converter:
         return cls(
-            label,
+            id,
             inputs=[fuel_flow],
             outputs=[thermal_flow],
-            conversion_factors=[{fuel_flow.label: thermal_efficiency, thermal_flow.label: -1}],
+            conversion_factors=[{fuel_flow: thermal_efficiency, thermal_flow: -1}],
         )
 
     @classmethod
-    def heat_pump(cls, label: str, cop: TimeSeries, electrical_flow: Flow, thermal_flow: Flow) -> LinearConverter:
+    def heat_pump(cls, id: str, cop: TimeSeries, electrical_flow: Flow, thermal_flow: Flow) -> Converter:
         return cls(
-            label,
+            id,
             inputs=[electrical_flow],
             outputs=[thermal_flow],
-            conversion_factors=[{electrical_flow.label: cop, thermal_flow.label: -1}],
+            conversion_factors=[{electrical_flow: cop, thermal_flow: -1}],
         )
 
     @classmethod
     def chp(
         cls,
-        label: str,
+        id: str,
         eta_el: TimeSeries,
         eta_th: TimeSeries,
         fuel_flow: Flow,
         electrical_flow: Flow,
         thermal_flow: Flow,
-    ) -> LinearConverter:
+    ) -> Converter:
         return cls(
-            label,
+            id,
             inputs=[fuel_flow],
             outputs=[electrical_flow, thermal_flow],
             conversion_factors=[
-                {fuel_flow.label: eta_el, electrical_flow.label: -1},
-                {fuel_flow.label: eta_th, thermal_flow.label: -1},
+                {fuel_flow: eta_el, electrical_flow: -1},
+                {fuel_flow: eta_th, thermal_flow: -1},
             ],
         )

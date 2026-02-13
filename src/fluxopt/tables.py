@@ -8,7 +8,7 @@ import polars as pl
 from fluxopt.types import Timesteps, compute_dt, compute_end_time, normalize_timesteps, to_polars_series
 
 if TYPE_CHECKING:
-    from fluxopt.components import LinearConverter, Port
+    from fluxopt.components import Converter, Port
     from fluxopt.elements import Bus, Effect, Flow, Storage
 
 
@@ -20,8 +20,8 @@ class FlowsTable:
 
     @classmethod
     def from_elements(cls, flows: list[Flow], timesteps: pl.Series) -> FlowsTable:
-        flow_labels = [f.label for f in flows]
-        index = pl.DataFrame({'flow': flow_labels})
+        flow_ids = [f.id for f in flows]
+        index = pl.DataFrame({'flow': flow_ids})
         time_dtype = timesteps.dtype
 
         bounds_rows: list[dict[str, Any]] = []
@@ -41,7 +41,7 @@ class FlowsTable:
                     # No size: bounds are relative, use large M for upper
                     lb = lb * 1e9
                     ub = ub * 1e9
-                bounds_rows.append({'flow': f.label, 'time': t, 'lb': float(lb), 'ub': float(ub)})
+                bounds_rows.append({'flow': f.id, 'time': t, 'lb': float(lb), 'ub': float(ub)})
 
             if f.fixed_relative_profile is not None:
                 profile = to_polars_series(f.fixed_relative_profile, timesteps, 'value')
@@ -49,7 +49,7 @@ class FlowsTable:
                     val = float(profile[i])
                     if f.size is not None:
                         val = val * f.size
-                    fixed_rows.append({'flow': f.label, 'time': t, 'value': val})
+                    fixed_rows.append({'flow': f.id, 'time': t, 'value': val})
 
         bounds = pl.DataFrame(
             bounds_rows, schema={'flow': pl.String, 'time': time_dtype, 'lb': pl.Float64, 'ub': pl.Float64}
@@ -96,13 +96,13 @@ class BusesTable:
 
     @classmethod
     def from_elements(cls, buses: list[Bus], flows: list[Flow]) -> BusesTable:
-        index = pl.DataFrame({'bus': [b.label for b in buses]})
+        index = pl.DataFrame({'bus': [b.id for b in buses]})
 
         rows: list[dict[str, Any]] = []
         for flow in flows:
             # Output to bus: +1, Input from bus: -1
             coeff = -1.0 if flow._is_input else 1.0
-            rows.append({'bus': flow.bus, 'flow': flow.label, 'coeff': coeff})
+            rows.append({'bus': flow.bus, 'flow': flow.id, 'coeff': coeff})
 
         flow_coefficients = pl.DataFrame(rows, schema={'bus': pl.String, 'flow': pl.String, 'coeff': pl.Float64})
         return cls(index=index, flow_coefficients=flow_coefficients)
@@ -120,8 +120,8 @@ class ConvertersTable:
     flow_coefficients: pl.DataFrame  # (converter, eq_idx, flow, coeff [,time])
 
     @classmethod
-    def from_elements(cls, converters: list[LinearConverter], timesteps: pl.Series) -> ConvertersTable:
-        index = pl.DataFrame({'converter': [c.label for c in converters]})
+    def from_elements(cls, converters: list[Converter], timesteps: pl.Series) -> ConvertersTable:
+        index = pl.DataFrame({'converter': [c.id for c in converters]})
         time_dtype = timesteps.dtype
 
         rows: list[dict[str, Any]] = []
@@ -131,26 +131,26 @@ class ConvertersTable:
                 is_time_varying = any(not isinstance(v, (int, float)) for v in equation.values())
 
                 if is_time_varying:
-                    for flow_label, factor in equation.items():
+                    for flow_obj, factor in equation.items():
                         factor_series = to_polars_series(factor, timesteps, 'coeff')
                         for i, t in enumerate(timesteps):
                             rows.append(
                                 {
-                                    'converter': conv.label,
+                                    'converter': conv.id,
                                     'eq_idx': eq_idx,
-                                    'flow': flow_label,
+                                    'flow': flow_obj.id,
                                     'time': t,
                                     'coeff': float(factor_series[i]),
                                 }
                             )
                 else:
-                    for flow_label, factor in equation.items():
+                    for flow_obj, factor in equation.items():
                         scalar = float(factor)  # type: ignore[arg-type]  # guarded by is_time_varying check
                         rows.extend(
                             {
-                                'converter': conv.label,
+                                'converter': conv.id,
                                 'eq_idx': eq_idx,
-                                'flow': flow_label,
+                                'flow': flow_obj.id,
                                 'time': t,
                                 'coeff': scalar,
                             }
@@ -187,11 +187,11 @@ class EffectsTable:
 
     @classmethod
     def from_elements(cls, effects: list[Effect], flows: list[Flow], timesteps: pl.Series) -> EffectsTable:
-        index = pl.DataFrame({'effect': [e.label for e in effects]})
+        index = pl.DataFrame({'effect': [e.id for e in effects]})
         time_dtype = timesteps.dtype
 
         objective_effects = [e for e in effects if e.is_objective]
-        objective_effect = objective_effects[0].label
+        objective_effect = objective_effects[0].id
 
         # Flow-effect coefficients
         coeff_rows: list[dict[str, Any]] = []
@@ -201,7 +201,7 @@ class EffectsTable:
                 for i, t in enumerate(timesteps):
                     coeff_rows.append(
                         {
-                            'flow': flow.label,
+                            'flow': flow.id,
                             'effect': effect_label,
                             'time': t,
                             'coeff': float(factor_series[i]),
@@ -220,7 +220,7 @@ class EffectsTable:
         for e in effects:
             bounds_rows.append(
                 {
-                    'effect': e.label,
+                    'effect': e.id,
                     'min_total': e.minimum_total,
                     'max_total': e.maximum_total,
                 }
@@ -228,11 +228,11 @@ class EffectsTable:
             if e.minimum_per_hour is not None:
                 min_ph = to_polars_series(e.minimum_per_hour, timesteps, 'value')
                 for i, t in enumerate(timesteps):
-                    tb_lb_rows.append({'effect': e.label, 'time': t, 'value': float(min_ph[i])})
+                    tb_lb_rows.append({'effect': e.id, 'time': t, 'value': float(min_ph[i])})
             if e.maximum_per_hour is not None:
                 max_ph = to_polars_series(e.maximum_per_hour, timesteps, 'value')
                 for i, t in enumerate(timesteps):
-                    tb_ub_rows.append({'effect': e.label, 'time': t, 'value': float(max_ph[i])})
+                    tb_ub_rows.append({'effect': e.id, 'time': t, 'value': float(max_ph[i])})
 
         bounds = pl.DataFrame(
             bounds_rows, schema={'effect': pl.String, 'min_total': pl.Float64, 'max_total': pl.Float64}
@@ -286,7 +286,7 @@ class StoragesTable:
 
     @classmethod
     def from_elements(cls, storages: list[Storage], timesteps: pl.Series) -> StoragesTable:
-        index = pl.DataFrame({'storage': [s.label for s in storages]})
+        index = pl.DataFrame({'storage': [s.id for s in storages]})
         time_dtype = timesteps.dtype
 
         params_rows: list[dict[str, Any]] = []
@@ -300,7 +300,7 @@ class StoragesTable:
 
             params_rows.append(
                 {
-                    'storage': s.label,
+                    'storage': s.id,
                     'capacity': s.capacity,
                     'initial_charge': initial,
                     'cyclic': cyclic,
@@ -309,9 +309,9 @@ class StoragesTable:
 
             flow_map_rows.append(
                 {
-                    'storage': s.label,
-                    'charge_flow': s.charging.label,
-                    'discharge_flow': s.discharging.label,
+                    'storage': s.id,
+                    'charge_flow': s.charging.id,
+                    'discharge_flow': s.discharging.id,
                 }
             )
 
@@ -326,7 +326,7 @@ class StoragesTable:
             for i, t in enumerate(timesteps):
                 time_params_rows.append(
                     {
-                        'storage': s.label,
+                        'storage': s.id,
                         'time': t,
                         'eta_c': float(eta_c[i]),
                         'eta_d': float(eta_d[i]),
@@ -335,7 +335,7 @@ class StoragesTable:
                 )
                 cs_bounds_rows.append(
                     {
-                        'storage': s.label,
+                        'storage': s.id,
                         'time': t,
                         'cs_lb': float(cs_lb_rel[i]) * cap,
                         'cs_ub': float(cs_ub_rel[i]) * cap,
@@ -394,7 +394,7 @@ class ModelData:
 
 def _collect_flows(
     ports: list[Port],
-    converters: list[LinearConverter],
+    converters: list[Converter],
     storages: list[Storage] | None,
 ) -> list[Flow]:
     flows: list[Flow] = []
@@ -416,7 +416,7 @@ def build_model_data(
     buses: list[Bus],
     effects: list[Effect],
     ports: list[Port],
-    converters: list[LinearConverter] | None = None,
+    converters: list[Converter] | None = None,
     storages: list[Storage] | None = None,
     dt: float | list[float] | pl.Series | None = None,
 ) -> ModelData:

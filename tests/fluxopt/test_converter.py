@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from fluxopt import Bus, Effect, Flow, LinearConverter, Port, solve
+from fluxopt import Bus, Converter, Effect, Flow, Port, solve
 
 
 class TestBoiler:
@@ -11,10 +11,10 @@ class TestBoiler:
         eta = 0.9
         heat_demand = [50.0, 80.0, 60.0]
 
-        demand_flow = Flow('demand(heat)', bus='heat', size=100, fixed_relative_profile=[0.5, 0.8, 0.6])
-        gas_flow = Flow('grid(gas)', bus='gas', size=200, effects_per_flow_hour={'cost': 0.04})
-        fuel = Flow('boiler(gas)', bus='gas', size=200)
-        heat = Flow('boiler(heat)', bus='heat', size=100)
+        demand_flow = Flow(bus='heat', size=100, fixed_relative_profile=[0.5, 0.8, 0.6])
+        gas_flow = Flow(bus='gas', size=200, effects_per_flow_hour={'cost': 0.04})
+        fuel = Flow(bus='gas', size=200)
+        heat = Flow(bus='heat', size=100)
 
         result = solve(
             timesteps=timesteps_3,
@@ -24,7 +24,7 @@ class TestBoiler:
                 Port('grid', imports=[gas_flow]),
                 Port('demand', exports=[demand_flow]),
             ],
-            converters=[LinearConverter.boiler('boiler', eta, fuel, heat)],
+            converters=[Converter.boiler('boiler', eta, fuel, heat)],
         )
 
         gas_rates = result.flow_rate('boiler(gas)')['value'].to_list()
@@ -35,10 +35,10 @@ class TestBoiler:
         """Total cost = sum(gas_rate * cost * dt)."""
         eta = 0.9
 
-        demand_flow = Flow('demand(heat)', bus='heat', size=100, fixed_relative_profile=[0.5, 0.8, 0.6])
-        gas_flow = Flow('grid(gas)', bus='gas', size=200, effects_per_flow_hour={'cost': 0.04})
-        fuel = Flow('boiler(gas)', bus='gas', size=200)
-        heat = Flow('boiler(heat)', bus='heat', size=100)
+        demand_flow = Flow(bus='heat', size=100, fixed_relative_profile=[0.5, 0.8, 0.6])
+        gas_flow = Flow(bus='gas', size=200, effects_per_flow_hour={'cost': 0.04})
+        fuel = Flow(bus='gas', size=200)
+        heat = Flow(bus='heat', size=100)
 
         result = solve(
             timesteps=timesteps_3,
@@ -48,7 +48,7 @@ class TestBoiler:
                 Port('grid', imports=[gas_flow]),
                 Port('demand', exports=[demand_flow]),
             ],
-            converters=[LinearConverter.boiler('boiler', eta, fuel, heat)],
+            converters=[Converter.boiler('boiler', eta, fuel, heat)],
         )
 
         expected = (50 / eta + 80 / eta + 60 / eta) * 0.04
@@ -60,13 +60,13 @@ class TestCHP:
         """CHP: fuel * eta_el = elec, fuel * eta_th = heat."""
         eta_el, eta_th = 0.3, 0.5
 
-        fuel_flow = Flow('chp(gas)', bus='gas', size=200)
-        elec_flow = Flow('chp(elec)', bus='elec', size=100)
-        heat_flow = Flow('chp(heat)', bus='heat', size=100)
+        fuel_flow = Flow(bus='gas', size=200)
+        elec_flow = Flow(bus='elec', size=100)
+        heat_flow = Flow(bus='heat', size=100)
 
-        gas_source = Flow('grid(gas)', bus='gas', size=500, effects_per_flow_hour={'cost': 0.04})
-        elec_demand = Flow('demand(elec)', bus='elec', size=100, fixed_relative_profile=[0.3, 0.3, 0.3])
-        heat_demand = Flow('demand(heat)', bus='heat', size=100, fixed_relative_profile=[0.5, 0.5, 0.5])
+        gas_source = Flow(bus='gas', size=500, effects_per_flow_hour={'cost': 0.04})
+        elec_demand = Flow(bus='elec', size=100, fixed_relative_profile=[0.3, 0.3, 0.3])
+        heat_demand = Flow(bus='heat', size=100, fixed_relative_profile=[0.5, 0.5, 0.5])
 
         result = solve(
             timesteps=timesteps_3,
@@ -77,7 +77,7 @@ class TestCHP:
                 Port('elec_demand', exports=[elec_demand]),
                 Port('heat_demand', exports=[heat_demand]),
             ],
-            converters=[LinearConverter.chp('chp', eta_el, eta_th, fuel_flow, elec_flow, heat_flow)],
+            converters=[Converter.chp('chp', eta_el, eta_th, fuel_flow, elec_flow, heat_flow)],
         )
 
         gas_rates = result.flow_rate('chp(gas)')['value'].to_list()

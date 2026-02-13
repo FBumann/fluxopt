@@ -1,6 +1,6 @@
 import polars as pl
 
-from fluxopt.components import LinearConverter, Port
+from fluxopt.components import Converter, Port
 from fluxopt.elements import Bus, Effect, Flow, Storage
 from fluxopt.model import FlowSystemModel
 from fluxopt.results import SolvedModel
@@ -21,7 +21,7 @@ def solve(
     buses: list[Bus],
     effects: list[Effect],
     ports: list[Port],
-    converters: list[LinearConverter] | None = None,
+    converters: list[Converter] | None = None,
     storages: list[Storage] | None = None,
     dt: float | list[float] | pl.Series | None = None,
     solver: str = 'highs',
@@ -37,13 +37,13 @@ def solve(
 __all__ = [
     'Bus',
     'BusesTable',
+    'Converter',
     'ConvertersTable',
     'Effect',
     'EffectsTable',
     'Flow',
     'FlowSystemModel',
     'FlowsTable',
-    'LinearConverter',
     'ModelData',
     'Port',
     'SolvedModel',

@@ -7,9 +7,8 @@ if TYPE_CHECKING:
     from fluxopt.types import TimeSeries
 
 
-@dataclass
+@dataclass(eq=False)
 class Flow:
-    label: str
     bus: str
     size: float | None = None  # P̄_f  [MW]
     relative_minimum: TimeSeries = 0.0  # p̲_f  [-]
@@ -17,20 +16,20 @@ class Flow:
     fixed_relative_profile: TimeSeries | None = None  # π_f  [-]
     effects_per_flow_hour: dict[str, TimeSeries] = field(default_factory=dict)  # c_{f,k}  [varies]
 
-    # Set internally by components
-    _component: str | None = field(default=None, repr=False, compare=False)
-    _is_input: bool | None = field(default=None, repr=False, compare=False)
+    # Set by parent component's __post_init__
+    id: str = field(default='', init=False)
+    _is_input: bool = field(default=False, init=False, repr=False)
 
 
 @dataclass
 class Bus:
-    label: str
+    id: str
     carrier: str | None = None
 
 
 @dataclass
 class Effect:
-    label: str
+    id: str
     unit: str = ''
     is_objective: bool = False
     maximum_total: float | None = None  # Φ̄_k  [unit]
@@ -47,7 +46,7 @@ class Storage:
         E_{s,t+1} = E_{s,t} (1 - δ Δt) + P^c η^c Δt - P^d / η^d Δt
     """
 
-    label: str
+    id: str
     charging: Flow
     discharging: Flow
     capacity: float | None = None  # Ē_s  [MWh]
@@ -59,7 +58,7 @@ class Storage:
     relative_maximum_charge_state: TimeSeries = 1.0  # ē_s  [-]
 
     def __post_init__(self) -> None:
-        self.charging._component = self.label
+        self.charging.id = f'{self.id}(charge)'
         self.charging._is_input = True  # charging takes energy from the bus
-        self.discharging._component = self.label
+        self.discharging.id = f'{self.id}(discharge)'
         self.discharging._is_input = False  # discharging puts energy to the bus

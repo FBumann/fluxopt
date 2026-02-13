@@ -9,8 +9,8 @@ class TestEffects:
     def test_single_cost_effect(self, timesteps_3):
         """Total cost = sum(rate * coeff * dt)."""
         demand = [50.0, 80.0, 60.0]
-        sink_flow = Flow('sink', bus='elec', size=100, fixed_relative_profile=[0.5, 0.8, 0.6])
-        source_flow = Flow('source', bus='elec', size=200, effects_per_flow_hour={'cost': 0.04})
+        sink_flow = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.8, 0.6])
+        source_flow = Flow(bus='elec', size=200, effects_per_flow_hour={'cost': 0.04})
 
         result = solve(
             timesteps=timesteps_3,
@@ -25,13 +25,11 @@ class TestEffects:
     def test_multiple_effects(self, timesteps_3):
         """Track cost and CO2 simultaneously, minimize cost."""
         sink_flow = Flow(
-            'sink',
             bus='elec',
             size=100,
             fixed_relative_profile=[0.5, 0.8, 0.6],
         )
         source_flow = Flow(
-            'source',
             bus='elec',
             size=200,
             effects_per_flow_hour={'cost': 0.04, 'co2': 0.5},
@@ -54,10 +52,10 @@ class TestEffects:
 
     def test_effect_maximum_total(self, timesteps_3):
         """Effect max_total constraint limits total emissions."""
-        sink_flow = Flow('sink', bus='elec', size=100, fixed_relative_profile=[0.5, 0.8, 0.6])
+        sink_flow = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.8, 0.6])
         # Two sources with different cost/co2 tradeoffs
-        cheap_dirty = Flow('cheap', bus='elec', size=200, effects_per_flow_hour={'cost': 0.02, 'co2': 1.0})
-        expensive_clean = Flow('clean', bus='elec', size=200, effects_per_flow_hour={'cost': 0.10, 'co2': 0.0})
+        cheap_dirty = Flow(bus='elec', size=200, effects_per_flow_hour={'cost': 0.02, 'co2': 1.0})
+        expensive_clean = Flow(bus='elec', size=200, effects_per_flow_hour={'cost': 0.10, 'co2': 0.0})
 
         co2_limit = 100.0  # demand_total = 190, so can't use all cheap
         result = solve(
@@ -77,8 +75,8 @@ class TestEffects:
     def test_time_varying_cost(self, timesteps_3):
         """Time-varying costs are tracked correctly."""
         prices = [0.02, 0.08, 0.04]
-        sink_flow = Flow('sink', bus='elec', size=100, fixed_relative_profile=[0.5, 0.5, 0.5])
-        source_flow = Flow('source', bus='elec', size=200, effects_per_flow_hour={'cost': prices})
+        sink_flow = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.5, 0.5])
+        source_flow = Flow(bus='elec', size=200, effects_per_flow_hour={'cost': prices})
 
         result = solve(
             timesteps=timesteps_3,

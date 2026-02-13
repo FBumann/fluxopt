@@ -17,13 +17,13 @@ class SolvedModel:
     effects: pl.DataFrame  # (effect, total)
     effects_per_timestep: pl.DataFrame  # (effect, time, value)
 
-    def flow_rate(self, label: str) -> pl.DataFrame:
+    def flow_rate(self, id: str) -> pl.DataFrame:
         """Get time series for a single flow."""
-        return self.flow_rates.filter(pl.col('flow') == label).select('time', 'value')
+        return self.flow_rates.filter(pl.col('flow') == id).select('time', 'value')
 
-    def charge_state(self, label: str) -> pl.DataFrame:
+    def charge_state(self, id: str) -> pl.DataFrame:
         """Get time series for a single storage."""
-        return self.charge_states.filter(pl.col('storage') == label).select('time', 'value')
+        return self.charge_states.filter(pl.col('storage') == id).select('time', 'value')
 
     @classmethod
     def from_model(cls, model: FlowSystemModel) -> SolvedModel:
