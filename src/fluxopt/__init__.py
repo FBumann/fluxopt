@@ -20,14 +20,15 @@ def solve(
     timesteps: Timesteps,
     buses: list[Bus],
     effects: list[Effect],
-    components: list[Port | LinearConverter],
+    ports: list[Port],
+    converters: list[LinearConverter] | None = None,
     storages: list[Storage] | None = None,
     dt: float | list[float] | pl.Series | None = None,
     solver: str = 'highs',
     silent: bool = True,
 ) -> SolvedModel:
     """Convenience: build data, build model, solve, return results."""
-    data = build_model_data(timesteps, buses, effects, components, storages, dt)
+    data = build_model_data(timesteps, buses, effects, ports, converters, storages, dt)
     model = FlowSystemModel(data, solver=solver)
     model.build()
     return model.solve(silent=silent)

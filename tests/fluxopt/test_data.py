@@ -10,7 +10,7 @@ class TestFlowsTable:
         flow = Flow('f1', bus='b', size=100, relative_minimum=0.2, relative_maximum=0.8)
         Port('src', imports=[flow])
         data = build_model_data(
-            timesteps_3, [Bus('b')], [Effect('cost', is_objective=True)], [Port('src', imports=[flow])]
+            timesteps_3, [Bus('b')], [Effect('cost', is_objective=True)], ports=[Port('src', imports=[flow])]
         )
         # Re-collect since Port.__post_init__ mutates flow
         bounds = data.flows.bounds.filter(pl.col('flow') == 'f1')
@@ -23,7 +23,7 @@ class TestFlowsTable:
             timesteps_3,
             [Bus('b')],
             [Effect('cost', is_objective=True)],
-            [Port('sink', exports=[flow])],
+            ports=[Port('sink', exports=[flow])],
         )
         fixed = data.flows.fixed.filter(pl.col('flow') == 'f1')
         assert fixed['value'].to_list() == [50.0, 80.0, 60.0]
@@ -37,7 +37,7 @@ class TestBusesTable:
             timesteps_3,
             [Bus('b')],
             [Effect('cost', is_objective=True)],
-            [Port('src', imports=[out_flow]), Port('sink', exports=[in_flow])],
+            ports=[Port('src', imports=[out_flow]), Port('sink', exports=[in_flow])],
         )
         coeffs = data.buses.flow_coefficients
         out_coeff = coeffs.filter(pl.col('flow') == 'out')['coeff'][0]
@@ -57,7 +57,8 @@ class TestConvertersTable:
             timesteps_3,
             [Bus('gas'), Bus('heat')],
             [Effect('cost', is_objective=True)],
-            [boiler, Port('src', imports=[Flow('g', bus='gas', size=200)])],
+            ports=[Port('src', imports=[Flow('g', bus='gas', size=200)])],
+            converters=[boiler],
         )
         coeffs = data.converters.flow_coefficients
         fuel_coeff = coeffs.filter(pl.col('flow') == 'fuel')['coeff'].unique().to_list()
@@ -73,7 +74,7 @@ class TestEffectsTable:
             timesteps_3,
             [Bus('b')],
             [Effect('cost', is_objective=True)],
-            [Port('src', imports=[flow])],
+            ports=[Port('src', imports=[flow])],
         )
         coeffs = data.effects.flow_coefficients
         assert len(coeffs) == 3  # one per timestep
@@ -84,6 +85,6 @@ class TestEffectsTable:
             timesteps_3,
             [Bus('b')],
             [Effect('cost', is_objective=True), Effect('co2')],
-            [Port('src', imports=[Flow('f', bus='b', size=100)])],
+            ports=[Port('src', imports=[Flow('f', bus='b', size=100)])],
         )
         assert data.effects.objective_effect == 'cost'

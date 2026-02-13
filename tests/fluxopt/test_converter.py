@@ -20,11 +20,11 @@ class TestBoiler:
             timesteps=timesteps_3,
             buses=[Bus('gas'), Bus('heat')],
             effects=[Effect('cost', is_objective=True)],
-            components=[
+            ports=[
                 Port('grid', imports=[gas_flow]),
                 Port('demand', exports=[demand_flow]),
-                LinearConverter.boiler('boiler', eta, fuel, heat),
             ],
+            converters=[LinearConverter.boiler('boiler', eta, fuel, heat)],
         )
 
         gas_rates = result.flow_rate('boiler(gas)')['value'].to_list()
@@ -44,11 +44,11 @@ class TestBoiler:
             timesteps=timesteps_3,
             buses=[Bus('gas'), Bus('heat')],
             effects=[Effect('cost', is_objective=True)],
-            components=[
+            ports=[
                 Port('grid', imports=[gas_flow]),
                 Port('demand', exports=[demand_flow]),
-                LinearConverter.boiler('boiler', eta, fuel, heat),
             ],
+            converters=[LinearConverter.boiler('boiler', eta, fuel, heat)],
         )
 
         expected = (50 / eta + 80 / eta + 60 / eta) * 0.04
@@ -72,12 +72,12 @@ class TestCHP:
             timesteps=timesteps_3,
             buses=[Bus('gas'), Bus('elec'), Bus('heat')],
             effects=[Effect('cost', is_objective=True)],
-            components=[
+            ports=[
                 Port('grid', imports=[gas_source]),
                 Port('elec_demand', exports=[elec_demand]),
                 Port('heat_demand', exports=[heat_demand]),
-                LinearConverter.chp('chp', eta_el, eta_th, fuel_flow, elec_flow, heat_flow),
             ],
+            converters=[LinearConverter.chp('chp', eta_el, eta_th, fuel_flow, elec_flow, heat_flow)],
         )
 
         gas_rates = result.flow_rate('chp(gas)')['value'].to_list()

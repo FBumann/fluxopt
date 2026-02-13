@@ -393,19 +393,17 @@ class ModelData:
 
 
 def _collect_flows(
-    components: list[Port | LinearConverter],
+    ports: list[Port],
+    converters: list[LinearConverter],
     storages: list[Storage] | None,
 ) -> list[Flow]:
-    from fluxopt.components import LinearConverter, Port
-
     flows: list[Flow] = []
-    for comp in components:
-        if isinstance(comp, Port):
-            flows.extend(comp.imports)
-            flows.extend(comp.exports)
-        elif isinstance(comp, LinearConverter):
-            flows.extend(comp.inputs)
-            flows.extend(comp.outputs)
+    for port in ports:
+        flows.extend(port.imports)
+        flows.extend(port.exports)
+    for conv in converters:
+        flows.extend(conv.inputs)
+        flows.extend(conv.outputs)
     if storages:
         for s in storages:
             flows.append(s.charging)
@@ -417,21 +415,20 @@ def build_model_data(
     timesteps: Timesteps,
     buses: list[Bus],
     effects: list[Effect],
-    components: list[Port | LinearConverter],
+    ports: list[Port],
+    converters: list[LinearConverter] | None = None,
     storages: list[Storage] | None = None,
     dt: float | list[float] | pl.Series | None = None,
 ) -> ModelData:
     """Build ModelData from element objects."""
-    from fluxopt.components import LinearConverter
     from fluxopt.validation import validate_system
 
+    converters = converters or []
     ts_series = normalize_timesteps(timesteps)
     dt_series = compute_dt(ts_series, dt)
 
-    flows = _collect_flows(components, storages)
-    validate_system(buses, effects, components, storages, flows)
-
-    converters = [c for c in components if isinstance(c, LinearConverter)]
+    flows = _collect_flows(ports, converters, storages)
+    validate_system(buses, effects, ports, converters, storages, flows)
 
     flows_table = FlowsTable.from_elements(flows, ts_series)
     buses_table = BusesTable.from_elements(buses, flows)

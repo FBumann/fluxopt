@@ -16,7 +16,7 @@ class TestBusBalance:
             timesteps=timesteps_3,
             buses=[Bus('elec')],
             effects=[Effect('cost', is_objective=True)],
-            components=[Port('grid', imports=[source_flow]), Port('demand', exports=[sink_flow])],
+            ports=[Port('grid', imports=[source_flow]), Port('demand', exports=[sink_flow])],
         )
 
         source_rates = result.flow_rate('source(elec)')['value'].to_list()
@@ -32,7 +32,7 @@ class TestBusBalance:
             timesteps=timesteps_3,
             buses=[Bus('elec')],
             effects=[Effect('cost', is_objective=True)],
-            components=[Port('grid', imports=[source_flow]), Port('demand', exports=[sink_flow])],
+            ports=[Port('grid', imports=[source_flow]), Port('demand', exports=[sink_flow])],
         )
 
         expected_cost = (50 + 80 + 60) * 0.04
@@ -48,7 +48,7 @@ class TestBusBalance:
             timesteps=timesteps_3,
             buses=[Bus('elec')],
             effects=[Effect('cost', is_objective=True)],
-            components=[
+            ports=[
                 Port('cheap_src', imports=[cheap_flow]),
                 Port('exp_src', imports=[expensive_flow]),
                 Port('demand', exports=[demand_flow]),

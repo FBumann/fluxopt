@@ -20,7 +20,7 @@ from fluxopt.model import FlowSystemModel
 
 class TestEndToEnd:
     def test_full_system(self):
-        """Full system: gas source → boiler → heat bus ← demand, with cost tracking."""
+        """Full system: gas source -> boiler -> heat bus <- demand, with cost tracking."""
         timesteps = [datetime(2024, 1, 1, h) for h in range(4)]
         eta = 0.9
         heat_demand = [40.0, 70.0, 50.0, 60.0]
@@ -34,11 +34,11 @@ class TestEndToEnd:
             timesteps=timesteps,
             buses=[Bus('gas'), Bus('heat')],
             effects=[Effect('cost', is_objective=True)],
-            components=[
+            ports=[
                 Port('grid', imports=[gas_source]),
                 Port('demand', exports=[demand_flow]),
-                LinearConverter.boiler('boiler', eta, fuel, heat),
             ],
+            converters=[LinearConverter.boiler('boiler', eta, fuel, heat)],
         )
 
         # Verify gas = heat / eta
@@ -70,11 +70,11 @@ class TestEndToEnd:
             timesteps=timesteps,
             buses=[Bus('gas'), Bus('heat')],
             effects=[Effect('cost', is_objective=True)],
-            components=[
+            ports=[
                 Port('grid', imports=[gas_source]),
                 Port('demand', exports=[demand_flow]),
-                LinearConverter.boiler('boiler', eta, fuel, heat_out),
             ],
+            converters=[LinearConverter.boiler('boiler', eta, fuel, heat_out)],
             storages=[storage],
         )
 
@@ -84,7 +84,7 @@ class TestEndToEnd:
         assert gas_t0 > gas_t1  # More gas bought in cheap hour
 
     def test_modified_data(self, timesteps_3):
-        """Build data, modify bounds, solve — verify modified result."""
+        """Build data, modify bounds, solve -- verify modified result."""
         sink_flow = Flow('sink', bus='elec', size=100, fixed_relative_profile=[0.5, 0.5, 0.5])
         source_flow = Flow('source', bus='elec', size=200, effects_per_flow_hour={'cost': 0.04})
 
@@ -92,7 +92,7 @@ class TestEndToEnd:
             timesteps_3,
             [Bus('elec')],
             [Effect('cost', is_objective=True)],
-            [Port('grid', imports=[source_flow]), Port('demand', exports=[sink_flow])],
+            ports=[Port('grid', imports=[source_flow]), Port('demand', exports=[sink_flow])],
         )
 
         # Change demand from 50 to 70 by modifying fixed values
@@ -115,7 +115,7 @@ class TestEndToEnd:
             timesteps=timesteps_3,
             buses=[Bus('elec')],
             effects=[Effect('cost', is_objective=True)],
-            components=[Port('grid', imports=[source_flow]), Port('demand', exports=[sink_flow])],
+            ports=[Port('grid', imports=[source_flow]), Port('demand', exports=[sink_flow])],
         )
 
         # flow_rate accessor
@@ -144,11 +144,11 @@ class TestEndToEnd:
             timesteps=timesteps,
             buses=[Bus('gas'), Bus('heat')],
             effects=[Effect('cost', is_objective=True)],
-            components=[
+            ports=[
                 Port('grid', imports=[gas_source]),
                 Port('demand', exports=[demand_flow]),
-                LinearConverter.boiler('boiler', 0.9, fuel, heat),
             ],
+            converters=[LinearConverter.boiler('boiler', 0.9, fuel, heat)],
         )
 
         assert result.objective_value > 0

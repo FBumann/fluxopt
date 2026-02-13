@@ -23,7 +23,7 @@ class TestStorage:
             timesteps=timesteps_4,
             buses=[Bus('elec')],
             effects=[Effect('cost', is_objective=True)],
-            components=[Port('grid', imports=[source_flow]), Port('demand', exports=[demand_flow])],
+            ports=[Port('grid', imports=[source_flow]), Port('demand', exports=[demand_flow])],
             storages=[battery],
         )
 
@@ -56,7 +56,7 @@ class TestStorage:
             timesteps=timesteps_4,
             buses=[Bus('elec')],
             effects=[Effect('cost', is_objective=True)],
-            components=[Port('grid', imports=[source_flow]), Port('demand', exports=[demand_flow])],
+            ports=[Port('grid', imports=[source_flow]), Port('demand', exports=[demand_flow])],
             storages=[battery],
         )
 
@@ -85,7 +85,7 @@ class TestStorage:
             timesteps=timesteps,
             buses=[Bus('elec')],
             effects=[Effect('cost', is_objective=True)],
-            components=[Port('grid', imports=[source_flow]), Port('demand', exports=[demand_flow])],
+            ports=[Port('grid', imports=[source_flow]), Port('demand', exports=[demand_flow])],
             storages=[battery],
         )
 
@@ -114,7 +114,7 @@ class TestStorage:
             timesteps=timesteps_3,
             buses=[Bus('elec')],
             effects=[Effect('cost', is_objective=True)],
-            components=[Port('grid', imports=[source_flow]), Port('demand', exports=[demand_flow])],
+            ports=[Port('grid', imports=[source_flow]), Port('demand', exports=[demand_flow])],
             storages=[battery],
         )
 

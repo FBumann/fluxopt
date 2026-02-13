@@ -10,11 +10,12 @@ if TYPE_CHECKING:
 def validate_system(
     buses: list[Bus],
     effects: list[Effect],
-    components: list[Port | LinearConverter],
+    ports: list[Port],
+    converters: list[LinearConverter],
     storages: list[Storage] | None,
     flows: list[Flow],
 ) -> None:
-    _check_label_uniqueness(buses, effects, components, storages or [])
+    _check_label_uniqueness(buses, effects, ports, converters, storages or [])
     _check_bus_references(buses, flows)
     _check_objective(effects)
 
@@ -22,12 +23,14 @@ def validate_system(
 def _check_label_uniqueness(
     buses: list[Bus],
     effects: list[Effect],
-    components: list[Port | LinearConverter],
+    ports: list[Port],
+    converters: list[LinearConverter],
     storages: list[Storage],
 ) -> None:
     all_labels = [bus.label for bus in buses]
     all_labels.extend(effect.label for effect in effects)
-    all_labels.extend(comp.label for comp in components)
+    all_labels.extend(port.label for port in ports)
+    all_labels.extend(conv.label for conv in converters)
     all_labels.extend(stor.label for stor in storages)
 
     seen: set[str] = set()
