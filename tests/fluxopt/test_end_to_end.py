@@ -10,8 +10,7 @@ from fluxopt import (
     Effect,
     Flow,
     LinearConverter,
-    Sink,
-    Source,
+    Port,
     Storage,
     build_model_data,
     solve,
@@ -36,8 +35,8 @@ class TestEndToEnd:
             buses=[Bus('gas'), Bus('heat')],
             effects=[Effect('cost', is_objective=True)],
             components=[
-                Source('grid', outputs=[gas_source]),
-                Sink('demand', inputs=[demand_flow]),
+                Port('grid', imports=[gas_source]),
+                Port('demand', exports=[demand_flow]),
                 LinearConverter.boiler('boiler', eta, fuel, heat),
             ],
         )
@@ -72,8 +71,8 @@ class TestEndToEnd:
             buses=[Bus('gas'), Bus('heat')],
             effects=[Effect('cost', is_objective=True)],
             components=[
-                Source('grid', outputs=[gas_source]),
-                Sink('demand', inputs=[demand_flow]),
+                Port('grid', imports=[gas_source]),
+                Port('demand', exports=[demand_flow]),
                 LinearConverter.boiler('boiler', eta, fuel, heat_out),
             ],
             storages=[storage],
@@ -93,7 +92,7 @@ class TestEndToEnd:
             timesteps_3,
             [Bus('elec')],
             [Effect('cost', is_objective=True)],
-            [Source('grid', outputs=[source_flow]), Sink('demand', inputs=[sink_flow])],
+            [Port('grid', imports=[source_flow]), Port('demand', exports=[sink_flow])],
         )
 
         # Change demand from 50 to 70 by modifying fixed values
@@ -116,7 +115,7 @@ class TestEndToEnd:
             timesteps=timesteps_3,
             buses=[Bus('elec')],
             effects=[Effect('cost', is_objective=True)],
-            components=[Source('grid', outputs=[source_flow]), Sink('demand', inputs=[sink_flow])],
+            components=[Port('grid', imports=[source_flow]), Port('demand', exports=[sink_flow])],
         )
 
         # flow_rate accessor
@@ -146,8 +145,8 @@ class TestEndToEnd:
             buses=[Bus('gas'), Bus('heat')],
             effects=[Effect('cost', is_objective=True)],
             components=[
-                Source('grid', outputs=[gas_source]),
-                Sink('demand', inputs=[demand_flow]),
+                Port('grid', imports=[gas_source]),
+                Port('demand', exports=[demand_flow]),
                 LinearConverter.boiler('boiler', 0.9, fuel, heat),
             ],
         )

@@ -9,23 +9,16 @@ if TYPE_CHECKING:
 
 
 @dataclass
-class Source:
+class Port:
     label: str
-    outputs: list[Flow]
+    imports: list[Flow] = field(default_factory=list)
+    exports: list[Flow] = field(default_factory=list)
 
     def __post_init__(self) -> None:
-        for f in self.outputs:
+        for f in self.imports:
             f._component = self.label
             f._is_input = False
-
-
-@dataclass
-class Sink:
-    label: str
-    inputs: list[Flow]
-
-    def __post_init__(self) -> None:
-        for f in self.inputs:
+        for f in self.exports:
             f._component = self.label
             f._is_input = True
 

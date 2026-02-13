@@ -10,8 +10,8 @@ Every bus \(b\) must be balanced at every timestep — total outflow equals tota
 
 where:
 
-- \(\mathcal{F}_b^{\text{out}}\) — flows that produce into bus \(b\) (outputs of sources and converters)
-- \(\mathcal{F}_b^{\text{in}}\) — flows that consume from bus \(b\) (inputs of sinks and converters)
+- \(\mathcal{F}_b^{\text{out}}\) — flows that produce into bus \(b\) (imports of ports and outputs of converters)
+- \(\mathcal{F}_b^{\text{in}}\) — flows that consume from bus \(b\) (exports of ports and inputs of converters)
 
 The sign convention uses coefficients: \(+1\) for flows producing into the bus and
 \(-1\) for flows consuming from the bus. The constraint is then:

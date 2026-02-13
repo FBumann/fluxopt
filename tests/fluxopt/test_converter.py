@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from fluxopt import Bus, Effect, Flow, LinearConverter, Sink, Source, solve
+from fluxopt import Bus, Effect, Flow, LinearConverter, Port, solve
 
 
 class TestBoiler:
@@ -21,8 +21,8 @@ class TestBoiler:
             buses=[Bus('gas'), Bus('heat')],
             effects=[Effect('cost', is_objective=True)],
             components=[
-                Source('grid', outputs=[gas_flow]),
-                Sink('demand', inputs=[demand_flow]),
+                Port('grid', imports=[gas_flow]),
+                Port('demand', exports=[demand_flow]),
                 LinearConverter.boiler('boiler', eta, fuel, heat),
             ],
         )
@@ -45,8 +45,8 @@ class TestBoiler:
             buses=[Bus('gas'), Bus('heat')],
             effects=[Effect('cost', is_objective=True)],
             components=[
-                Source('grid', outputs=[gas_flow]),
-                Sink('demand', inputs=[demand_flow]),
+                Port('grid', imports=[gas_flow]),
+                Port('demand', exports=[demand_flow]),
                 LinearConverter.boiler('boiler', eta, fuel, heat),
             ],
         )
@@ -73,9 +73,9 @@ class TestCHP:
             buses=[Bus('gas'), Bus('elec'), Bus('heat')],
             effects=[Effect('cost', is_objective=True)],
             components=[
-                Source('grid', outputs=[gas_source]),
-                Sink('elec_demand', inputs=[elec_demand]),
-                Sink('heat_demand', inputs=[heat_demand]),
+                Port('grid', imports=[gas_source]),
+                Port('elec_demand', exports=[elec_demand]),
+                Port('heat_demand', exports=[heat_demand]),
                 LinearConverter.chp('chp', eta_el, eta_th, fuel_flow, elec_flow, heat_flow),
             ],
         )

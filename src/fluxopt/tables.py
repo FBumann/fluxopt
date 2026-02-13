@@ -8,7 +8,7 @@ import polars as pl
 from fluxopt.types import Timesteps, compute_dt, compute_end_time, normalize_timesteps, to_polars_series
 
 if TYPE_CHECKING:
-    from fluxopt.components import LinearConverter, Sink, Source
+    from fluxopt.components import LinearConverter, Port
     from fluxopt.elements import Bus, Effect, Flow, Storage
 
 
@@ -393,17 +393,16 @@ class ModelData:
 
 
 def _collect_flows(
-    components: list[Source | Sink | LinearConverter],
+    components: list[Port | LinearConverter],
     storages: list[Storage] | None,
 ) -> list[Flow]:
-    from fluxopt.components import LinearConverter, Sink, Source
+    from fluxopt.components import LinearConverter, Port
 
     flows: list[Flow] = []
     for comp in components:
-        if isinstance(comp, Source):
-            flows.extend(comp.outputs)
-        elif isinstance(comp, Sink):
-            flows.extend(comp.inputs)
+        if isinstance(comp, Port):
+            flows.extend(comp.imports)
+            flows.extend(comp.exports)
         elif isinstance(comp, LinearConverter):
             flows.extend(comp.inputs)
             flows.extend(comp.outputs)
@@ -418,7 +417,7 @@ def build_model_data(
     timesteps: Timesteps,
     buses: list[Bus],
     effects: list[Effect],
-    components: list[Source | Sink | LinearConverter],
+    components: list[Port | LinearConverter],
     storages: list[Storage] | None = None,
     dt: float | list[float] | pl.Series | None = None,
 ) -> ModelData:

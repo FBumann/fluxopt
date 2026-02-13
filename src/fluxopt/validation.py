@@ -3,14 +3,14 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from fluxopt.components import LinearConverter, Sink, Source
+    from fluxopt.components import LinearConverter, Port
     from fluxopt.elements import Bus, Effect, Flow, Storage
 
 
 def validate_system(
     buses: list[Bus],
     effects: list[Effect],
-    components: list[Source | Sink | LinearConverter],
+    components: list[Port | LinearConverter],
     storages: list[Storage] | None,
     flows: list[Flow],
 ) -> None:
@@ -22,7 +22,7 @@ def validate_system(
 def _check_label_uniqueness(
     buses: list[Bus],
     effects: list[Effect],
-    components: list[Source | Sink | LinearConverter],
+    components: list[Port | LinearConverter],
     storages: list[Storage],
 ) -> None:
     all_labels = [bus.label for bus in buses]

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from fluxopt import Bus, Effect, Flow, Sink, Source, solve
+from fluxopt import Bus, Effect, Flow, Port, solve
 
 
 class TestEffects:
@@ -16,7 +16,7 @@ class TestEffects:
             timesteps=timesteps_3,
             buses=[Bus('elec')],
             effects=[Effect('cost', is_objective=True)],
-            components=[Source('grid', outputs=[source_flow]), Sink('demand', inputs=[sink_flow])],
+            components=[Port('grid', imports=[source_flow]), Port('demand', exports=[sink_flow])],
         )
 
         expected = sum(d * 0.04 for d in demand)
@@ -41,7 +41,7 @@ class TestEffects:
             timesteps=timesteps_3,
             buses=[Bus('elec')],
             effects=[Effect('cost', is_objective=True), Effect('co2', unit='kg')],
-            components=[Source('grid', outputs=[source_flow]), Sink('demand', inputs=[sink_flow])],
+            components=[Port('grid', imports=[source_flow]), Port('demand', exports=[sink_flow])],
         )
 
         demand_total = 50 + 80 + 60
@@ -65,9 +65,9 @@ class TestEffects:
             buses=[Bus('elec')],
             effects=[Effect('cost', is_objective=True), Effect('co2', maximum_total=co2_limit)],
             components=[
-                Source('cheap_src', outputs=[cheap_dirty]),
-                Source('clean_src', outputs=[expensive_clean]),
-                Sink('demand', inputs=[sink_flow]),
+                Port('cheap_src', imports=[cheap_dirty]),
+                Port('clean_src', imports=[expensive_clean]),
+                Port('demand', exports=[sink_flow]),
             ],
         )
 
@@ -84,7 +84,7 @@ class TestEffects:
             timesteps=timesteps_3,
             buses=[Bus('elec')],
             effects=[Effect('cost', is_objective=True)],
-            components=[Source('grid', outputs=[source_flow]), Sink('demand', inputs=[sink_flow])],
+            components=[Port('grid', imports=[source_flow]), Port('demand', exports=[sink_flow])],
         )
 
         expected = 50 * 0.02 + 50 * 0.08 + 50 * 0.04
