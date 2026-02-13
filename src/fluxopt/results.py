@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 import polars as pl
 
 if TYPE_CHECKING:
-    from fluxopt.model import EnergySystemModel
+    from fluxopt.model import FlowSystemModel
 
 
 @dataclass
@@ -26,7 +26,7 @@ class SolvedModel:
         return self.charge_states.filter(pl.col('storage') == label).select('time', 'value')
 
     @classmethod
-    def from_model(cls, model: EnergySystemModel) -> SolvedModel:
+    def from_model(cls, model: FlowSystemModel) -> SolvedModel:
         m = model.m
         d = model.data
         time_dtype = d.timesteps.schema['time']

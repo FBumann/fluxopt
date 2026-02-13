@@ -1,7 +1,10 @@
 import polars as pl
 
 from fluxopt.components import LinearConverter, Sink, Source
-from fluxopt.data import (
+from fluxopt.elements import Bus, Effect, Flow, Storage
+from fluxopt.model import FlowSystemModel
+from fluxopt.results import SolvedModel
+from fluxopt.tables import (
     BusesTable,
     ConvertersTable,
     EffectsTable,
@@ -10,9 +13,6 @@ from fluxopt.data import (
     StoragesTable,
     build_model_data,
 )
-from fluxopt.elements import Bus, Effect, Flow, Storage
-from fluxopt.model import EnergySystemModel
-from fluxopt.results import SolvedModel
 from fluxopt.types import TimeSeries, Timesteps, compute_dt, normalize_timesteps, to_polars_series
 
 
@@ -28,7 +28,7 @@ def solve(
 ) -> SolvedModel:
     """Convenience: build data, build model, solve, return results."""
     data = build_model_data(timesteps, buses, effects, components, storages, dt)
-    model = EnergySystemModel(data, solver=solver)
+    model = FlowSystemModel(data, solver=solver)
     model.build()
     return model.solve(silent=silent)
 
@@ -39,8 +39,8 @@ __all__ = [
     'ConvertersTable',
     'Effect',
     'EffectsTable',
-    'EnergySystemModel',
     'Flow',
+    'FlowSystemModel',
     'FlowsTable',
     'LinearConverter',
     'ModelData',

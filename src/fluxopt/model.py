@@ -8,10 +8,10 @@ import pyoframe as pf
 from fluxopt.results import SolvedModel
 
 if TYPE_CHECKING:
-    from fluxopt.data import ModelData
+    from fluxopt.tables import ModelData
 
 
-class EnergySystemModel:
+class FlowSystemModel:
     def __init__(self, data: ModelData, solver: str = 'highs'):
         self.data = data
         self.m = pf.Model(solver)

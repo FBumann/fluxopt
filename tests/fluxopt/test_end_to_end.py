@@ -16,7 +16,7 @@ from fluxopt import (
     build_model_data,
     solve,
 )
-from fluxopt.model import EnergySystemModel
+from fluxopt.model import FlowSystemModel
 
 
 class TestEndToEnd:
@@ -99,7 +99,7 @@ class TestEndToEnd:
         # Change demand from 50 to 70 by modifying fixed values
         data.flows.fixed = data.flows.fixed.with_columns(pl.lit(70.0).alias('value'))
 
-        model = EnergySystemModel(data)
+        model = FlowSystemModel(data)
         model.build()
         result = model.solve()
 
