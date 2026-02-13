@@ -404,10 +404,9 @@ def _collect_flows(
     for conv in converters:
         flows.extend(conv.inputs)
         flows.extend(conv.outputs)
-    if storages:
-        for s in storages:
-            flows.append(s.charging)
-            flows.append(s.discharging)
+    for s in storages or []:
+        flows.append(s.charging)
+        flows.append(s.discharging)
     return flows
 
 

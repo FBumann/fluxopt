@@ -1,15 +1,67 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol, overload, runtime_checkable
 
 import polars as pl
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable, Iterator
+
     import pandas as pd
 
 type TimeSeries = float | int | list[float] | pl.Series | pd.Series
 type Timesteps = list[datetime] | list[int] | pl.Series | pd.DatetimeIndex
+
+
+@runtime_checkable
+class Identified(Protocol):
+    @property
+    def id(self) -> str: ...
+
+
+class IdList[T: Identified]:
+    """Frozen, ordered container with access by ``id`` (str) or position (int).
+
+    Raises :class:`ValueError` on duplicate ids at construction time.
+    Supports concatenation via ``+`` (returns a new ``IdList``).
+    """
+
+    __slots__ = ('_by_id', '_items')
+
+    def __init__(self, items: Iterable[T]) -> None:
+        self._items: tuple[T, ...] = tuple(items)
+        self._by_id: dict[str, T] = {}
+        for item in self._items:
+            if item.id in self._by_id:
+                raise ValueError(f"Duplicate id: '{item.id}'")
+            self._by_id[item.id] = item
+
+    @overload
+    def __getitem__(self, key: str) -> T: ...
+    @overload
+    def __getitem__(self, key: int) -> T: ...
+    def __getitem__(self, key: str | int) -> T:
+        if isinstance(key, str):
+            return self._by_id[key]
+        return self._items[key]
+
+    def __iter__(self) -> Iterator[T]:
+        return iter(self._items)
+
+    def __len__(self) -> int:
+        return len(self._items)
+
+    def __contains__(self, key: object) -> bool:
+        if isinstance(key, str):
+            return key in self._by_id
+        return key in self._items
+
+    def __add__(self, other: IdList[T]) -> IdList[T]:
+        return IdList([*self._items, *other._items])
+
+    def __repr__(self) -> str:
+        return f'IdList({list(self._items)!r})'
 
 
 def to_polars_series(value: TimeSeries, timesteps: pl.Series, name: str = 'value') -> pl.Series:

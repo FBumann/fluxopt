@@ -13,7 +13,7 @@ from fluxopt.tables import (
     StoragesTable,
     build_model_data,
 )
-from fluxopt.types import TimeSeries, Timesteps, compute_dt, normalize_timesteps, to_polars_series
+from fluxopt.types import IdList, TimeSeries, Timesteps, compute_dt, normalize_timesteps, to_polars_series
 
 
 def solve(
@@ -44,6 +44,7 @@ __all__ = [
     'Flow',
     'FlowSystemModel',
     'FlowsTable',
+    'IdList',
     'ModelData',
     'Port',
     'SolvedModel',
