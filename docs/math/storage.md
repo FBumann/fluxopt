@@ -66,18 +66,6 @@ This ensures the storage ends at the same level it started.
 
 See [Notation](notation.md) for the full symbol table.
 
-## Code Mapping
-
-- **Charge state variable**: `model.py:127` — indexed by (storage, charge_state_times)
-  with \(|\mathcal{T}| + 1\) time points.
-- **Capacity bound**: `model.py:130–135` — `charge_state <= capacity`
-- **SOC bounds**: `model.py:138–149` — time-varying lower/upper bounds from precomputed
-  absolute values.
-- **Balance equation**: `model.py:155–184` — per-timestep loop computing
-  `cs_next == cs_curr * loss_factor + charge * charge_factor - discharge * discharge_factor`
-- **Initial condition**: `model.py:187–199` — either fixed initial value or cyclic
-  constraint.
-
 ## Example
 
 A battery with \(\bar{E} = 10\) MWh, \(\eta^{\text{c}} = 0.95\),

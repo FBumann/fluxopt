@@ -22,11 +22,6 @@ devices like CHP plants.
 
 See [Notation](notation.md) for the full symbol table.
 
-## Code Mapping
-
-- **Conversion constraint**: `model.py:61–69` — `_create_converter_constraints()`
-  applies `(Param(flow_coefficients) * flow_rate).sum('flow') == 0`.
-
 ## Examples
 
 ### Boiler

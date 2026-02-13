@@ -37,7 +37,7 @@ Each symbol maps to a specific field or variable in the code.
 | \(\delta_s\) | `Storage.relative_loss_per_hour` | \(\geq 0\) | 1/h | Self-discharge rate |
 | \(\underline{e}_s\) | `Storage.relative_minimum_charge_state` | \([0, 1]\) | — | Relative min SOC |
 | \(\bar{e}_s\) | `Storage.relative_maximum_charge_state` | \([0, 1]\) | — | Relative max SOC |
-| \(a_{f}\) | `LinearConverter.conversion_factors` | \(\mathbb{R}\) | — | Conversion coefficient |
+| \(a_{f}\) | `Converter.conversion_factors` | \(\mathbb{R}\) | — | Conversion coefficient |
 | \(w_t\) | weights | \(> 0\) | — | Timestep weight |
 | \(\Delta t_t\) | dt | \(> 0\) | h | Timestep duration |
 

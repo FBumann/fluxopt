@@ -30,13 +30,6 @@ The sign convention uses coefficients: \(+1\) for flows producing into the bus a
 
 See [Notation](notation.md) for the full symbol table.
 
-## Code Mapping
-
-- **Bus balance constraint**: `model.py:59` — `(Param(flow_coefficients) * flow_rate).sum('flow') == 0`
-
-The `flow_coefficients` DataFrame contains one row per (bus, flow, time) with the
-coefficient value (+1 or -1).
-
 ## Example
 
 A thermal bus with a boiler output (3 MW) and a demand input (3 MW):

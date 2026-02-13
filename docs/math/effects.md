@@ -64,15 +64,6 @@ This enforces per-hour limits (e.g., maximum hourly emissions).
 
 See [Notation](notation.md) for the full symbol table.
 
-## Code Mapping
-
-- **Effect variables**: `model.py:82–85` — `effect_per_timestep` and `effect_total`
-- **Per-timestep tracking**: `model.py:88–93` — `effect_per_timestep == sum_flow(coeff * flow_rate * dt)`
-- **Total aggregation**: `model.py:96` — `effect_total == sum_time(effect_per_timestep * weight)`
-- **Total bounds**: `model.py:98–108` — filters non-null bounds and applies `>=`/`<=`
-- **Per-timestep bounds**: `model.py:111–114` — applies lower/upper bounds from
-  precomputed DataFrames
-
 ## Example
 
 A system with two effects — cost (objective) and CO₂ (capped at 1000 kg):

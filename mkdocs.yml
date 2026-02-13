@@ -5,11 +5,17 @@ repo_name: FBumann/fluxopt
 
 nav:
   - Home: index.md
+  - Guide:
+    - Getting Started: guide/getting-started.md
+    - Flows: guide/flows.md
+    - Converters: guide/converters.md
+    - Storage: guide/storage.md
+    - Effects: guide/effects.md
   - Math:
     - Notation: math/notation.md
     - Objective: math/objective.md
     - Bus Balance: math/bus-balance.md
-    - Flow Bounds: math/flow-bounds.md
+    - Flows: math/flows.md
     - Converters: math/converters.md
     - Storage: math/storage.md
     - Effects: math/effects.md

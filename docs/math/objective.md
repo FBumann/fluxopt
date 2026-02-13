@@ -35,12 +35,6 @@ Each per-timestep effect is the sum of flow contributions scaled by duration:
 
 See [Notation](notation.md) for the full symbol table.
 
-## Code Mapping
-
-- **Objective**: `model.py:201–206` — `_set_objective()` minimizes `effect_total` filtered to the objective effect.
-- **Effect tracking**: `model.py:87–90` — `effect_per_timestep = sum_flow(coeff * flow_rate * dt)`
-- **Total aggregation**: `model.py:96` — `effect_total = sum_time(effect_per_timestep * weight)`
-
 ## Example
 
 Consider a gas boiler over 3 timesteps (\(\Delta t = 1\,\text{h}\), \(w = 1\)):
