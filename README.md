@@ -17,18 +17,18 @@ Includes the [HiGHS](https://highs.dev/) solver out of the box.
 ## Quick Start
 
 ```python
-import fluxopt as es
+import fluxopt as fx
 
-result = es.solve(
+result = fx.solve(
     timesteps=["t0", "t1", "t2"],
-    buses=[es.Bus("electricity")],
-    effects=[es.Effect("cost", is_objective=True)],
+    buses=[fx.Bus("electricity")],
+    effects=[fx.Effect("cost", is_objective=True)],
     components=[
-        es.Source("grid", outputs=[
-            es.Flow("elec", bus="electricity", size=200, effects_per_flow_hour={"cost": 0.04}),
+        fx.Source("grid", outputs=[
+            fx.Flow("elec", bus="electricity", size=200, effects_per_flow_hour={"cost": 0.04}),
         ]),
-        es.Sink("demand", inputs=[
-            es.Flow("elec", bus="electricity", size=100, fixed_relative_profile=[0.5, 0.8, 0.6]),
+        fx.Sink("demand", inputs=[
+            fx.Flow("elec", bus="electricity", size=100, fixed_relative_profile=[0.5, 0.8, 0.6]),
         ]),
     ],
 )
