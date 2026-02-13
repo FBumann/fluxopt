@@ -1,9 +1,13 @@
 from __future__ import annotations
 
-import pandas as pd
+from typing import TYPE_CHECKING
+
 import polars as pl
 
-TimeSeries = float | int | list[float] | pl.Series | pd.Series
+if TYPE_CHECKING:
+    import pandas as pd
+
+type TimeSeries = float | int | list[float] | pl.Series | pd.Series
 
 
 def to_polars_series(value: TimeSeries, timesteps: pl.Series, name: str = 'value') -> pl.Series:
@@ -18,10 +22,11 @@ def to_polars_series(value: TimeSeries, timesteps: pl.Series, name: str = 'value
         if len(value) != n:
             raise ValueError(f'List length {len(value)} does not match timesteps length {n}')
         return pl.Series(name, [float(v) for v in value])
-    if isinstance(value, pd.Series):
-        value = pl.from_pandas(value)
-    if isinstance(value, pl.Series):
-        if len(value) != n:
-            raise ValueError(f'Series length {len(value)} does not match timesteps length {n}')
-        return value.alias(name).cast(pl.Float64)
-    raise TypeError(f'Unsupported TimeSeries type: {type(value)}')
+    if not isinstance(value, pl.Series):
+        try:
+            value = pl.from_pandas(value)
+        except TypeError:
+            raise TypeError(f'Unsupported TimeSeries type: {type(value)}') from None
+    if len(value) != n:
+        raise ValueError(f'Series length {len(value)} does not match timesteps length {n}')
+    return value.alias(name).cast(pl.Float64)

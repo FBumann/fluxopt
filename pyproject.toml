@@ -26,10 +26,9 @@ classifiers = [
     "Topic :: Scientific/Engineering",
 ]
 dependencies = [
-    "highspy>=1.13.1",
-    "pandas>=3.0.0",
+    "highsbox>=1.13.1",
     "polars>=1.38.1",
-    "pyoframe>=1.0.0",
+    "pyoframe>=1.1.0",
 ]
 
 [project.urls]
@@ -127,7 +126,7 @@ warn_unused_configs = true
 module = [
     "pyoframe.*",
     "pyoptinterface.*",
-    "highspy.*",
+    "highsbox.*",
 ]
 ignore_missing_imports = true
 
