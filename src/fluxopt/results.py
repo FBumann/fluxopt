@@ -16,6 +16,7 @@ class SolvedModel:
     charge_states: pl.DataFrame  # (storage, time, value)
     effects: pl.DataFrame  # (effect, total)
     effects_per_timestep: pl.DataFrame  # (effect, time, value)
+    contributions: pl.DataFrame  # (source, contributor, effect, time, value)
 
     def flow_rate(self, id: str) -> pl.DataFrame:
         """Get time series for a single flow."""
@@ -48,6 +49,28 @@ class SolvedModel:
             effect_total_sol = pl.DataFrame(schema={'effect': pl.String, 'total': pl.Float64})
             effect_ts_sol = pl.DataFrame(schema={'effect': pl.String, 'time': time_dtype, 'value': pl.Float64})
 
+        # Extract per-source contributions
+        contrib_frames: list[pl.DataFrame] = []
+        for src in model._temporal_sources:
+            var_name = f'contributions({src.name})'
+            var = getattr(m, var_name)
+            sol = var.solution.rename({'solution': 'value', src.sum_dim: 'contributor'})
+            sol = sol.with_columns(pl.lit(src.name).alias('source'))
+            contrib_frames.append(sol.select('source', 'contributor', 'effect', 'time', 'value'))
+
+        if contrib_frames:
+            contributions = pl.concat(contrib_frames)
+        else:
+            contributions = pl.DataFrame(
+                schema={
+                    'source': pl.String,
+                    'contributor': pl.String,
+                    'effect': pl.String,
+                    'time': time_dtype,
+                    'value': pl.Float64,
+                }
+            )
+
         # Objective value
         obj_effect = d.effects.objective_effect
         obj_val = effect_total_sol.filter(pl.col('effect') == obj_effect)['total'][0]
@@ -58,4 +81,5 @@ class SolvedModel:
             charge_states=cs_sol,
             effects=effect_total_sol,
             effects_per_timestep=effect_ts_sol,
+            contributions=contributions,
         )

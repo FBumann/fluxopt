@@ -17,6 +17,7 @@ class FlowsTable:
     index: pl.DataFrame  # (flow: str)
     bounds: pl.DataFrame  # (flow, time, lb, ub)
     fixed: pl.DataFrame  # (flow, time, value) — only fixed-profile flows
+    effect_coefficients: pl.DataFrame  # (flow, effect, time, coeff)
 
     def validate(self) -> None:
         from fluxopt.validation import validate_flow_bounds
@@ -31,6 +32,7 @@ class FlowsTable:
 
         bounds_rows: list[dict[str, Any]] = []
         fixed_rows: list[dict[str, Any]] = []
+        coeff_rows: list[dict[str, Any]] = []
 
         for f in flows:
             lb_series = to_polars_series(f.relative_minimum, timesteps, 'lb')
@@ -56,14 +58,35 @@ class FlowsTable:
                         val = val * f.size
                     fixed_rows.append({'flow': f.id, 'time': t, 'value': val})
 
+            for effect_label, factor in f.effects_per_flow_hour.items():
+                factor_series = to_polars_series(factor, timesteps, 'coeff')
+                for i, t in enumerate(timesteps):
+                    coeff_rows.append(
+                        {
+                            'flow': f.id,
+                            'effect': effect_label,
+                            'time': t,
+                            'coeff': float(factor_series[i]),
+                        }
+                    )
+
         bounds = pl.DataFrame(
             bounds_rows, schema={'flow': pl.String, 'time': time_dtype, 'lb': pl.Float64, 'ub': pl.Float64}
         )
         fixed = pl.DataFrame(fixed_rows, schema={'flow': pl.String, 'time': time_dtype, 'value': pl.Float64})
-        return cls(index=index, bounds=bounds, fixed=fixed)
+        effect_coefficients = pl.DataFrame(
+            coeff_rows,
+            schema={'flow': pl.String, 'effect': pl.String, 'time': time_dtype, 'coeff': pl.Float64},
+        )
+        return cls(index=index, bounds=bounds, fixed=fixed, effect_coefficients=effect_coefficients)
 
     @classmethod
-    def from_dataframe(cls, df: pl.DataFrame, timesteps: pl.Series) -> FlowsTable:
+    def from_dataframe(
+        cls,
+        df: pl.DataFrame,
+        timesteps: pl.Series,
+        effect_coefficients: pl.DataFrame | None = None,
+    ) -> FlowsTable:
         """df schema: (flow, bus, size, rel_min, rel_max, [fixed_profile columns])"""
         flow_labels = df['flow'].to_list()
         index = pl.DataFrame({'flow': flow_labels})
@@ -91,7 +114,11 @@ class FlowsTable:
             bounds_rows, schema={'flow': pl.String, 'time': time_dtype, 'lb': pl.Float64, 'ub': pl.Float64}
         )
         fixed = pl.DataFrame(fixed_rows, schema={'flow': pl.String, 'time': time_dtype, 'value': pl.Float64})
-        return cls(index=index, bounds=bounds, fixed=fixed)
+        if effect_coefficients is None:
+            effect_coefficients = pl.DataFrame(
+                schema={'flow': pl.String, 'effect': pl.String, 'time': time_dtype, 'coeff': pl.Float64}
+            )
+        return cls(index=index, bounds=bounds, fixed=fixed, effect_coefficients=effect_coefficients)
 
 
 @dataclass
@@ -184,39 +211,18 @@ class ConvertersTable:
 @dataclass
 class EffectsTable:
     index: pl.DataFrame  # (effect: str)
-    flow_coefficients: pl.DataFrame  # (flow, effect, time, coeff)
     objective_effect: str
     bounds: pl.DataFrame  # (effect, min_total, max_total)
     time_bounds_lb: pl.DataFrame  # (effect, time, value) — only rows where min_per_hour is set
     time_bounds_ub: pl.DataFrame  # (effect, time, value) — only rows where max_per_hour is set
 
     @classmethod
-    def from_elements(cls, effects: list[Effect], flows: list[Flow], timesteps: pl.Series) -> EffectsTable:
+    def from_elements(cls, effects: list[Effect], timesteps: pl.Series) -> EffectsTable:
         index = pl.DataFrame({'effect': [e.id for e in effects]})
         time_dtype = timesteps.dtype
 
         objective_effects = [e for e in effects if e.is_objective]
         objective_effect = objective_effects[0].id
-
-        # Flow-effect coefficients
-        coeff_rows: list[dict[str, Any]] = []
-        for flow in flows:
-            for effect_label, factor in flow.effects_per_flow_hour.items():
-                factor_series = to_polars_series(factor, timesteps, 'coeff')
-                for i, t in enumerate(timesteps):
-                    coeff_rows.append(
-                        {
-                            'flow': flow.id,
-                            'effect': effect_label,
-                            'time': t,
-                            'coeff': float(factor_series[i]),
-                        }
-                    )
-
-        flow_coefficients = pl.DataFrame(
-            coeff_rows,
-            schema={'flow': pl.String, 'effect': pl.String, 'time': time_dtype, 'coeff': pl.Float64},
-        )
 
         # Bounds
         bounds_rows: list[dict[str, Any]] = []
@@ -252,7 +258,6 @@ class EffectsTable:
         )
         return cls(
             index=index,
-            flow_coefficients=flow_coefficients,
             objective_effect=objective_effect,
             bounds=bounds,
             time_bounds_lb=time_bounds_lb,
@@ -260,20 +265,18 @@ class EffectsTable:
         )
 
     @classmethod
-    def from_dataframe(cls, df: pl.DataFrame, flow_effects_df: pl.DataFrame) -> EffectsTable:
-        """df: (effect, is_objective, min_total, max_total)
-        flow_effects_df: (flow, effect, time, coeff)"""
+    def from_dataframe(cls, df: pl.DataFrame, time_dtype: pl.DataType | None = None) -> EffectsTable:
+        """df: (effect, is_objective, min_total, max_total)"""
         index = pl.DataFrame({'effect': df['effect']})
         obj_row = df.filter(pl.col('is_objective') == True)  # noqa: E712
         objective_effect = obj_row['effect'][0]
         bounds = df.select('effect', 'min_total', 'max_total')
-        # Infer time dtype from flow_effects_df if available
-        time_dtype = flow_effects_df.schema.get('time', pl.Datetime())
+        if time_dtype is None:
+            time_dtype = pl.Datetime()
         time_bounds_lb = pl.DataFrame(schema={'effect': pl.String, 'time': time_dtype, 'value': pl.Float64})
         time_bounds_ub = pl.DataFrame(schema={'effect': pl.String, 'time': time_dtype, 'value': pl.Float64})
         return cls(
             index=index,
-            flow_coefficients=flow_effects_df,
             objective_effect=objective_effect,
             bounds=bounds,
             time_bounds_lb=time_bounds_lb,
@@ -443,7 +446,7 @@ def build_model_data(
     flows_table = FlowsTable.from_elements(flows, ts_series)
     buses_table = BusesTable.from_elements(buses, flows)
     converters_table = ConvertersTable.from_elements(converters, ts_series)
-    effects_table = EffectsTable.from_elements(effects, flows, ts_series)
+    effects_table = EffectsTable.from_elements(effects, ts_series)
     storages_table = StoragesTable.from_elements(storages or [], ts_series)
 
     flows_table.validate()

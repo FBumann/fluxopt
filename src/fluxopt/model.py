@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import polars as pl
@@ -11,10 +12,28 @@ if TYPE_CHECKING:
     from fluxopt.tables import ModelData
 
 
+@dataclass
+class _TemporalSource:
+    name: str  # e.g., 'flow' → variable named 'contributions(flow)'
+    index: pl.DataFrame  # sparse index, e.g., (flow, effect, time)
+    expression: pf.Expression  # the contribution expression with native dims
+    sum_dim: str  # dim to sum over → (effect, time), e.g., 'flow'
+
+
 class FlowSystemModel:
     def __init__(self, data: ModelData, solver: str = 'highs'):
         self.data = data
         self.m = pf.Model(solver)
+        self._temporal_sources: list[_TemporalSource] = []
+
+    def add_temporal_contribution(
+        self,
+        name: str,
+        index: pl.DataFrame,
+        expression: pf.Expression,
+        sum_dim: str,
+    ) -> None:
+        self._temporal_sources.append(_TemporalSource(name=name, index=index, expression=expression, sum_dim=sum_dim))
 
     def build(self) -> None:
         self._create_flow_variables()
@@ -53,6 +72,16 @@ class FlowSystemModel:
             fixed_param = pf.Param(d.flows.fixed)
             m.flow_fix = m.flow_rate.drop_extras() == fixed_param
 
+        # Register flow contributions to effects
+        if len(d.flows.effect_coefficients) > 0:
+            expr = pf.Param(d.flows.effect_coefficients) * m.flow_rate * pf.Param(d.dt)
+            self.add_temporal_contribution(
+                name='flow',
+                index=d.flows.effect_coefficients.select('flow', 'effect', 'time'),
+                expression=expr,
+                sum_dim='flow',
+            )
+
     def _create_bus_balance(self) -> None:
         """Bus balance: sum_f(coeff_{b,f} · P_{f,t}) = 0  for all b, t."""
         d = self.data
@@ -76,7 +105,13 @@ class FlowSystemModel:
         m.conversion = (pf.Param(d.converters.flow_coefficients) * m.flow_rate).sum('flow') == 0
 
     def _create_effects(self) -> None:
-        """Effect tracking: Φ_{k,t} = sum_f(c_{f,k,t} · P_{f,t} · Δt), Φ_k = sum_t(Φ_{k,t} · w_t)."""
+        """Effect tracking via registered temporal sources.
+
+        For each source: contributions(source) = expression  [source_dim, effect, time]
+        Accumulate:      effect(per_timestep)  = sum over source dims via keep_extras()
+        Temporal total:  effect(temporal)       = (effect(per_timestep) * weight).sum('time')
+        Grand total:     effect(total)          = effect(temporal)
+        """
         d = self.data
         m = self.m
 
@@ -86,24 +121,35 @@ class FlowSystemModel:
         if len(effects_index) == 0:
             return
 
-        # Effect per timestep variable
+        # 1. Per-source contribution variables
+        for src in self._temporal_sources:
+            var_name = f'contributions({src.name})'
+            var = pf.Variable(src.index)
+            setattr(m, var_name, var)
+            setattr(m, f'{var_name}_tracking', var == src.expression)
+
+        # 2. Accumulate into effect(per_timestep)
         m.effect_per_timestep = pf.Variable(effects_index, timesteps)
 
-        # Effect total variable
-        m.effect_total = pf.Variable(effects_index)
-
-        # Track effects: effect_per_timestep = sum_flow(coeff * flow_rate * dt)
-        if len(d.effects.flow_coefficients) > 0:
-            contribution = pf.Param(d.effects.flow_coefficients) * m.flow_rate * pf.Param(d.dt)
-            m.effect_tracking = m.effect_per_timestep == contribution.sum('flow')
+        if self._temporal_sources:
+            acc: pf.Expression | None = None
+            for src in self._temporal_sources:
+                var = getattr(m, f'contributions({src.name})')
+                summed = var.sum(src.sum_dim)
+                acc = summed if acc is None else acc.keep_extras() + summed.keep_extras()
+            m.effect_per_timestep_tracking = m.effect_per_timestep == acc
         else:
-            # No flow contributions - effects are zero
-            m.effect_tracking = m.effect_per_timestep == 0
+            m.effect_per_timestep_tracking = m.effect_per_timestep == 0
 
-        # Total: effect_total = sum_time(effect_per_timestep * weight)
-        m.effect_total_eq = m.effect_total == (m.effect_per_timestep * pf.Param(d.weights)).sum('time')
+        # 3. effect(temporal) = (effect(per_timestep) * weight).sum('time')
+        m.effect_temporal = pf.Variable(effects_index)
+        m.effect_temporal_eq = m.effect_temporal == (m.effect_per_timestep * pf.Param(d.weights)).sum('time')
 
-        # Effect total bounds — vectorized
+        # 4. effect(total) = effect(temporal) (future: + effect(periodic))
+        m.effect_total = pf.Variable(effects_index)
+        m.effect_total_eq = m.effect_total == m.effect_temporal
+
+        # 5. Bounds on effect(total)
         min_total_df = d.effects.bounds.filter(pl.col('min_total').is_not_null()).select(
             'effect', pl.col('min_total').alias('value')
         )
@@ -115,7 +161,7 @@ class FlowSystemModel:
         if len(max_total_df) > 0:
             m.effect_max_total = m.effect_total.drop_extras() <= pf.Param(max_total_df)
 
-        # Per-hour bounds — vectorized using pre-filtered DataFrames
+        # 6. Per-hour bounds on effect(per_timestep)
         if len(d.effects.time_bounds_lb) > 0:
             m.effect_min_ph = m.effect_per_timestep.drop_extras() >= pf.Param(d.effects.time_bounds_lb)
         if len(d.effects.time_bounds_ub) > 0:

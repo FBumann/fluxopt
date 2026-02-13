@@ -72,7 +72,7 @@ class TestEffectsTable:
             [Effect('cost', is_objective=True)],
             ports=[Port('src', imports=[flow])],
         )
-        coeffs = data.effects.flow_coefficients
+        coeffs = data.flows.effect_coefficients
         assert len(coeffs) == 3  # one per timestep
         assert coeffs['coeff'].unique().to_list() == [0.04]
 

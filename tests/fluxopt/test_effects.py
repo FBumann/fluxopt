@@ -22,6 +22,13 @@ class TestEffects:
         expected = sum(d * 0.04 for d in demand)
         assert result.objective_value == pytest.approx(expected, abs=1e-6)
 
+        # Verify per-flow contributions are available
+        contribs = result.contributions
+        assert len(contribs) > 0
+        assert set(contribs.columns) == {'source', 'contributor', 'effect', 'time', 'value'}
+        flow_contribs = contribs.filter(contribs['source'] == 'flow')
+        assert flow_contribs['value'].sum() == pytest.approx(expected, abs=1e-6)
+
     def test_multiple_effects(self, timesteps_3):
         """Track cost and CO2 simultaneously, minimize cost."""
         sink_flow = Flow(
