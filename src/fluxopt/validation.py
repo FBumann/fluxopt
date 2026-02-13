@@ -2,9 +2,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import polars as pl
+
 if TYPE_CHECKING:
     from fluxopt.components import Converter, Port
     from fluxopt.elements import Bus, Effect, Flow, Storage
+
+
+# -- System-level checks (cross-cutting) ------------------------------------
 
 
 def validate_system(
@@ -63,3 +68,45 @@ def _check_flow_uniqueness(flows: list[Flow]) -> None:
         if flow.id in seen:
             raise ValueError(f'Duplicate flow id: {flow.id!r}')
         seen.add(flow.id)
+
+
+# -- Table-level validation (called by *Table.from_elements) ----------------
+
+
+def validate_flow_bounds(bounds: pl.DataFrame) -> None:
+    """Validate (flow, time, lb, ub) DataFrame."""
+    bad_lb = bounds.filter(pl.col('lb') < 0)
+    if len(bad_lb) > 0:
+        flows = bad_lb['flow'].unique().sort().to_list()
+        raise ValueError(f'Negative lower bounds on flows: {flows}')
+
+    bad_order = bounds.filter(pl.col('lb') > pl.col('ub'))
+    if len(bad_order) > 0:
+        flows = bad_order['flow'].unique().sort().to_list()
+        raise ValueError(f'Lower bound > upper bound on flows: {flows}')
+
+
+def validate_storage_params(params: pl.DataFrame) -> None:
+    """Validate (storage, capacity, initial_charge, cyclic) DataFrame."""
+    bad_cap = params.filter(pl.col('capacity').is_not_null() & (pl.col('capacity') < 0))
+    if len(bad_cap) > 0:
+        ids = bad_cap['storage'].to_list()
+        raise ValueError(f'Negative capacity on storages: {ids}')
+
+
+def validate_storage_time_params(time_params: pl.DataFrame) -> None:
+    """Validate (storage, time, eta_c, eta_d, loss) DataFrame."""
+    bad_eta_c = time_params.filter((pl.col('eta_c') <= 0) | (pl.col('eta_c') > 1))
+    if len(bad_eta_c) > 0:
+        ids = bad_eta_c['storage'].unique().sort().to_list()
+        raise ValueError(f'eta_charge must be in (0, 1] on storages: {ids}')
+
+    bad_eta_d = time_params.filter((pl.col('eta_d') <= 0) | (pl.col('eta_d') > 1))
+    if len(bad_eta_d) > 0:
+        ids = bad_eta_d['storage'].unique().sort().to_list()
+        raise ValueError(f'eta_discharge must be in (0, 1] on storages: {ids}')
+
+    bad_loss = time_params.filter(pl.col('loss') < 0)
+    if len(bad_loss) > 0:
+        ids = bad_loss['storage'].unique().sort().to_list()
+        raise ValueError(f'Negative relative_loss_per_hour on storages: {ids}')

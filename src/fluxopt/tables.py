@@ -18,6 +18,11 @@ class FlowsTable:
     bounds: pl.DataFrame  # (flow, time, lb, ub)
     fixed: pl.DataFrame  # (flow, time, value) — only fixed-profile flows
 
+    def validate(self) -> None:
+        from fluxopt.validation import validate_flow_bounds
+
+        validate_flow_bounds(self.bounds)
+
     @classmethod
     def from_elements(cls, flows: list[Flow], timesteps: pl.Series) -> FlowsTable:
         flow_ids = [f.id for f in flows]
@@ -284,6 +289,12 @@ class StoragesTable:
     flow_map: pl.DataFrame  # (storage, charge_flow, discharge_flow)
     cs_bounds: pl.DataFrame  # (storage, time, cs_lb, cs_ub) — absolute values
 
+    def validate(self) -> None:
+        from fluxopt.validation import validate_storage_params, validate_storage_time_params
+
+        validate_storage_params(self.params)
+        validate_storage_time_params(self.time_params)
+
     @classmethod
     def from_elements(cls, storages: list[Storage], timesteps: pl.Series) -> StoragesTable:
         index = pl.DataFrame({'storage': [s.id for s in storages]})
@@ -434,6 +445,9 @@ def build_model_data(
     converters_table = ConvertersTable.from_elements(converters, ts_series)
     effects_table = EffectsTable.from_elements(effects, flows, ts_series)
     storages_table = StoragesTable.from_elements(storages or [], ts_series)
+
+    flows_table.validate()
+    storages_table.validate()
 
     timesteps_df = pl.DataFrame({'time': ts_series})
     dt_df = pl.DataFrame({'time': ts_series, 'dt': dt_series})
