@@ -9,15 +9,28 @@ if TYPE_CHECKING:
 
 @dataclass(eq=False)
 class Flow:
+    """A single energy flow on a bus.
+
+    ``id`` is optional: leave empty for the common single-flow-per-bus case and
+    the parent component will default it to the bus name.  Set it explicitly to
+    disambiguate when a component has multiple flows on the same bus::
+
+        Flow(bus='elec')  # → boiler(elec)
+        Flow(bus='elec', id='base')  # → chp(base)
+
+    After the parent component's ``__post_init__`` runs, ``id`` is expanded to
+    the qualified form ``{component.id}({id or bus})``.  For storage flows the
+    default is ``charge`` / ``discharge`` instead of the bus name.
+    """
+
     bus: str
+    id: str = ''
     size: float | None = None  # P̄_f  [MW]
     relative_minimum: TimeSeries = 0.0  # p̲_f  [-]
     relative_maximum: TimeSeries = 1.0  # p̄_f  [-]
     fixed_relative_profile: TimeSeries | None = None  # π_f  [-]
     effects_per_flow_hour: dict[str, TimeSeries] = field(default_factory=dict)  # c_{f,k}  [varies]
 
-    # Set by parent component's __post_init__
-    id: str = field(default='', init=False)
     _is_input: bool = field(default=False, init=False, repr=False)
 
 
@@ -58,7 +71,7 @@ class Storage:
     relative_maximum_charge_state: TimeSeries = 1.0  # ē_s  [-]
 
     def __post_init__(self) -> None:
-        self.charging.id = f'{self.id}(charge)'
+        self.charging.id = f'{self.id}({self.charging.id or "charge"})'
         self.charging._is_input = True  # charging takes energy from the bus
-        self.discharging.id = f'{self.id}(discharge)'
+        self.discharging.id = f'{self.id}({self.discharging.id or "discharge"})'
         self.discharging._is_input = False  # discharging puts energy to the bus

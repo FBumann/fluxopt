@@ -16,10 +16,10 @@ class Port:
 
     def __post_init__(self) -> None:
         for f in self.imports:
-            f.id = f'{self.id}({f.bus})'
+            f.id = f'{self.id}({f.id or f.bus})'
             f._is_input = False
         for f in self.exports:
-            f.id = f'{self.id}({f.bus})'
+            f.id = f'{self.id}({f.id or f.bus})'
             f._is_input = True
 
 
@@ -38,10 +38,10 @@ class Converter:
 
     def __post_init__(self) -> None:
         for f in self.inputs:
-            f.id = f'{self.id}({f.bus})'
+            f.id = f'{self.id}({f.id or f.bus})'
             f._is_input = True
         for f in self.outputs:
-            f.id = f'{self.id}({f.bus})'
+            f.id = f'{self.id}({f.id or f.bus})'
             f._is_input = False
 
     @classmethod
