@@ -5,6 +5,14 @@ repo_name: FBumann/fluxopt
 
 nav:
   - Home: index.md
+  - Math:
+    - Notation: math/notation.md
+    - Objective: math/objective.md
+    - Bus Balance: math/bus-balance.md
+    - Flow Bounds: math/flow-bounds.md
+    - Converters: math/converters.md
+    - Storage: math/storage.md
+    - Effects: math/effects.md
 
 theme:
   name: material
@@ -61,6 +69,8 @@ markdown_extensions:
       anchor_linenums: true
       use_pygments: true
   - pymdownx.inlinehilite
+  - pymdownx.arithmatex:
+      generic: true
   - pymdownx.superfences
   - pymdownx.details
   - pymdownx.tabbed:
@@ -87,6 +97,10 @@ plugins:
             line_length: 80
             modernize_annotations: true
             merge_init_into_class: true
+
+extra_javascript:
+  - javascripts/mathjax.js
+  - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
 
 watch:
   - src/fluxopt

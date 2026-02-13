@@ -30,6 +30,11 @@ class EnergySystemModel:
         return SolvedModel.from_model(self)
 
     def _create_flow_variables(self) -> None:
+        """Create flow rate variables and apply bounds.
+
+        Sized: P̄_f · p̲_{f,t} <= P_{f,t} <= P̄_f · p̄_{f,t}
+        Fixed: P_{f,t} = P̄_f · π_{f,t}
+        """
         d = self.data
         m = self.m
 
@@ -49,6 +54,7 @@ class EnergySystemModel:
             m.flow_fix = m.flow_rate.drop_extras() == fixed_param
 
     def _create_bus_balance(self) -> None:
+        """Bus balance: sum_f(coeff_{b,f} · P_{f,t}) = 0  for all b, t."""
         d = self.data
         m = self.m
 
@@ -59,6 +65,7 @@ class EnergySystemModel:
         m.bus_balance = (pf.Param(d.buses.flow_coefficients) * m.flow_rate).sum('flow') == 0
 
     def _create_converter_constraints(self) -> None:
+        """Conversion: sum_f(a_f · P_{f,t}) = 0  for all converter, eq_idx, t."""
         d = self.data
         m = self.m
 
@@ -69,6 +76,7 @@ class EnergySystemModel:
         m.conversion = (pf.Param(d.converters.flow_coefficients) * m.flow_rate).sum('flow') == 0
 
     def _create_effects(self) -> None:
+        """Effect tracking: Φ_{k,t} = sum_f(c_{f,k,t} · P_{f,t} · Δt), Φ_k = sum_t(Φ_{k,t} · w_t)."""
         d = self.data
         m = self.m
 
@@ -114,6 +122,7 @@ class EnergySystemModel:
             m.effect_max_ph = m.effect_per_timestep.drop_extras() <= pf.Param(d.effects.time_bounds_ub)
 
     def _create_storage(self) -> None:
+        """Storage dynamics: E_{s,t+1} = E_{s,t}(1 - δΔt) + P^c η^c Δt - P^d/η^d Δt."""
         d = self.data
         m = self.m
 
@@ -199,6 +208,7 @@ class EnergySystemModel:
                 setattr(m, f'cs_init_{stor}', cs_first == float(initial_abs))
 
     def _set_objective(self) -> None:
+        """Objective: min Φ_{k*} where k* is the effect with is_objective=True."""
         d = self.data
         m = self.m
 

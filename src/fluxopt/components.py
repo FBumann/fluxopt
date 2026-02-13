@@ -32,10 +32,16 @@ class Sink:
 
 @dataclass
 class LinearConverter:
+    """Linear conversion between input and output flows.
+
+    Conversion equation (per equation index):
+        sum_f(a_f * P_{f,t}) = 0   for all t
+    """
+
     label: str
     inputs: list[Flow]
     outputs: list[Flow]
-    conversion_factors: list[dict[str, TimeSeries]] = field(default_factory=list)
+    conversion_factors: list[dict[str, TimeSeries]] = field(default_factory=list)  # a_f
 
     def __post_init__(self) -> None:
         for f in self.inputs:

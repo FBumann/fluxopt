@@ -11,11 +11,11 @@ if TYPE_CHECKING:
 class Flow:
     label: str
     bus: str
-    size: float | None = None
-    relative_minimum: TimeSeries = 0.0
-    relative_maximum: TimeSeries = 1.0
-    fixed_relative_profile: TimeSeries | None = None
-    effects_per_flow_hour: dict[str, TimeSeries] = field(default_factory=dict)
+    size: float | None = None  # P̄_f  [MW]
+    relative_minimum: TimeSeries = 0.0  # p̲_f  [-]
+    relative_maximum: TimeSeries = 1.0  # p̄_f  [-]
+    fixed_relative_profile: TimeSeries | None = None  # π_f  [-]
+    effects_per_flow_hour: dict[str, TimeSeries] = field(default_factory=dict)  # c_{f,k}  [varies]
 
     # Set internally by components
     _component: str | None = field(default=None, repr=False, compare=False)
@@ -33,24 +33,30 @@ class Effect:
     label: str
     unit: str = ''
     is_objective: bool = False
-    maximum_total: float | None = None
-    minimum_total: float | None = None
-    maximum_per_hour: TimeSeries | None = None
-    minimum_per_hour: TimeSeries | None = None
+    maximum_total: float | None = None  # Φ̄_k  [unit]
+    minimum_total: float | None = None  # Φ̲_k  [unit]
+    maximum_per_hour: TimeSeries | None = None  # Φ̄_{k,t}  [unit]
+    minimum_per_hour: TimeSeries | None = None  # Φ̲_{k,t}  [unit]
 
 
 @dataclass
 class Storage:
+    """Energy storage with charge dynamics.
+
+    Charge balance:
+        E_{s,t+1} = E_{s,t} (1 - δ Δt) + P^c η^c Δt - P^d / η^d Δt
+    """
+
     label: str
     charging: Flow
     discharging: Flow
-    capacity: float | None = None
-    eta_charge: TimeSeries = 1.0
-    eta_discharge: TimeSeries = 1.0
-    relative_loss_per_hour: TimeSeries = 0.0
-    initial_charge_state: float | str | None = 0.0
-    relative_minimum_charge_state: TimeSeries = 0.0
-    relative_maximum_charge_state: TimeSeries = 1.0
+    capacity: float | None = None  # Ē_s  [MWh]
+    eta_charge: TimeSeries = 1.0  # η^c_s  [-]
+    eta_discharge: TimeSeries = 1.0  # η^d_s  [-]
+    relative_loss_per_hour: TimeSeries = 0.0  # δ_s  [1/h]
+    initial_charge_state: float | str | None = 0.0  # E_{s,0}  [MWh]
+    relative_minimum_charge_state: TimeSeries = 0.0  # e̲_s  [-]
+    relative_maximum_charge_state: TimeSeries = 1.0  # ē_s  [-]
 
     def __post_init__(self) -> None:
         self.charging._component = self.label
