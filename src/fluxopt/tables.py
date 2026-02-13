@@ -222,6 +222,9 @@ class EffectsTable:
         time_dtype = timesteps.dtype
 
         objective_effects = [e for e in effects if e.is_objective]
+        if not objective_effects:
+            msg = 'No objective effect found. Include an Effect with is_objective=True.'
+            raise ValueError(msg)
         objective_effect = objective_effects[0].id
 
         # Bounds

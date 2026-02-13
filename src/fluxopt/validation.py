@@ -16,11 +16,11 @@ def validate_system(
     buses: list[Bus],
     effects: list[Effect],
     ports: list[Port],
-    converters: list[Converter],
+    converters: list[Converter] | None,
     storages: list[Storage] | None,
     flows: list[Flow],
 ) -> None:
-    _check_id_uniqueness(buses, effects, ports, converters, storages or [])
+    _check_id_uniqueness(buses, effects, ports, converters or [], storages or [])
     _check_bus_references(buses, flows)
     _check_objective(effects)
     _check_flow_uniqueness(flows)

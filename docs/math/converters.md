@@ -2,7 +2,7 @@
 
 ## Formulation
 
-A `LinearConverter` enforces linear coupling between its input and output flows.
+A `Converter` enforces linear coupling between its input and output flows.
 Each conversion equation requires:
 
 \[
@@ -17,7 +17,7 @@ devices like CHP plants.
 
 | Symbol | Description | Reference |
 |---|---|---|
-| \(a_f\) | Conversion coefficient | `LinearConverter.conversion_factors` |
+| \(a_f\) | Conversion coefficient | `Converter.conversion_factors` |
 | \(P_{f,t}\) | Flow rate variable | `flow_rate[flow, time]` |
 
 See [Notation](notation.md) for the full symbol table.
@@ -44,8 +44,8 @@ A gas boiler with thermal efficiency \(\eta_{\text{th}} = 0.9\):
 So 10 MW gas input produces 9 MW thermal output.
 
 ```python
-LinearConverter.boiler("boiler", thermal_efficiency=0.9, fuel_flow=gas, thermal_flow=th)
-# conversion_factors = [{gas.label: 0.9, th.label: -1}]
+Converter.boiler("boiler", thermal_efficiency=0.9, fuel_flow=gas, thermal_flow=th)
+# conversion_factors = [{gas.id: 0.9, th.id: -1}]
 ```
 
 ### Heat Pump
@@ -63,8 +63,8 @@ A heat pump with COP = 3.5:
 So 1 MW electrical input produces 3.5 MW thermal output.
 
 ```python
-LinearConverter.heat_pump("hp", cop=3.5, electrical_flow=el, thermal_flow=th)
-# conversion_factors = [{el.label: 3.5, th.label: -1}]
+Converter.heat_pump("hp", cop=3.5, electrical_flow=el, thermal_flow=th)
+# conversion_factors = [{el.id: 3.5, th.id: -1}]
 ```
 
 ### CHP (Combined Heat and Power)
@@ -83,11 +83,11 @@ conversion equations:
 So 10 MW fuel input produces 4 MW electrical + 5 MW thermal.
 
 ```python
-LinearConverter.chp("chp", eta_el=0.4, eta_th=0.5,
+Converter.chp("chp", eta_el=0.4, eta_th=0.5,
                      fuel_flow=fuel, electrical_flow=el, thermal_flow=th)
 # conversion_factors = [
-#     {fuel.label: 0.4, el.label: -1},
-#     {fuel.label: 0.5, th.label: -1},
+#     {fuel.id: 0.4, el.id: -1},
+#     {fuel.id: 0.5, th.id: -1},
 # ]
 ```
 
@@ -98,5 +98,5 @@ weather data). Pass a list or array instead of a scalar:
 
 ```python
 cop_profile = [3.2, 3.5, 3.8, 3.1]  # one value per timestep
-LinearConverter.heat_pump("hp", cop=cop_profile, electrical_flow=el, thermal_flow=th)
+Converter.heat_pump("hp", cop=cop_profile, electrical_flow=el, thermal_flow=th)
 ```
