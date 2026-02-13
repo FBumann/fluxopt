@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import contextlib
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import polars as pl
 
@@ -18,20 +18,18 @@ if TYPE_CHECKING:
     from fluxopt.tables import ModelData
 
 
-def _require_xarray() -> Any:
-    """Import and return xarray, raising a helpful error if missing. Also checks netCDF4."""
+def _require_xarray() -> None:
+    """Check that xarray and netCDF4 are importable, raising a helpful error if not."""
     try:
-        import xarray
+        import xarray  # noqa: F401
     except ModuleNotFoundError:
         msg = "xarray is required for NetCDF IO. Install it with: pip install 'fluxopt[io]'"
         raise ModuleNotFoundError(msg) from None
     try:
-        import netCDF4
+        import netCDF4  # noqa: F401
     except ModuleNotFoundError:
         msg = "netCDF4 is required for NetCDF IO. Install it with: pip install 'fluxopt[io]'"
         raise ModuleNotFoundError(msg) from None
-    _ = netCDF4  # ensure it's not flagged as unused
-    return xarray
 
 
 def _time_dtype_label(dtype: pl.DataType) -> str:
@@ -53,9 +51,11 @@ def _polars_long_to_dataarray(
     name: str,
 ) -> xr.DataArray:
     """Convert a Polars long-format DataFrame to a sparse xarray DataArray (NaN fill)."""
-    _xr = _require_xarray()
+    import xarray
+
+    _require_xarray()
     if len(df) == 0:
-        return _xr.DataArray(name=name)
+        return xarray.DataArray(name=name)
     pdf = df.to_pandas()
     series = pdf.set_index(dims)[value_col]
     da: xr.DataArray = series.to_xarray()
@@ -89,7 +89,9 @@ def _dataarray_to_polars_long(
 
 def solved_model_to_xarray(result: SolvedModel) -> xr.Dataset:
     """Convert solution data to an xarray Dataset (root group contents)."""
-    _xr = _require_xarray()
+    import xarray
+
+    _require_xarray()
 
     data_vars: dict[str, xr.DataArray] = {}
 
@@ -122,7 +124,7 @@ def solved_model_to_xarray(result: SolvedModel) -> xr.Dataset:
             result.contributions, ['source', 'contributor', 'effect', 'time'], 'solution', 'contributions'
         )
 
-    ds = _xr.Dataset(data_vars)
+    ds = xarray.Dataset(data_vars)
 
     # Attrs
     ds.attrs['objective_value'] = result.objective_value
@@ -144,7 +146,9 @@ def solved_model_to_xarray(result: SolvedModel) -> xr.Dataset:
 
 def _write_model_data(data: ModelData, path: str | Path) -> None:
     """Append a 'model' group to an existing NetCDF file with model input data."""
-    _xr = _require_xarray()
+    import xarray
+
+    _require_xarray()
 
     data_vars: dict[str, xr.DataArray] = {}
 
@@ -154,7 +158,7 @@ def _write_model_data(data: ModelData, path: str | Path) -> None:
 
     # charge_state_times -- store as a coordinate-only variable
     cs_times = data.charge_state_times['time'].to_list()
-    data_vars['charge_state_times'] = _xr.DataArray(cs_times, dims=['cs_time'], name='charge_state_times')
+    data_vars['charge_state_times'] = xarray.DataArray(cs_times, dims=['cs_time'], name='charge_state_times')
 
     # Flow bounds (flow, time)
     if len(data.flows.relative_bounds) > 0:
@@ -275,7 +279,7 @@ def _write_model_data(data: ModelData, path: str | Path) -> None:
         )
 
     # Objective effect
-    ds = _xr.Dataset(data_vars)
+    ds = xarray.Dataset(data_vars)
     ds.attrs['objective_effect'] = data.effects.objective_effect
 
     # Write to the 'model' group
@@ -284,7 +288,9 @@ def _write_model_data(data: ModelData, path: str | Path) -> None:
 
 def _read_model_data(path: str | Path, time_dtype: pl.DataType) -> ModelData:
     """Read ModelData from the 'model' group of a NetCDF file."""
-    _xr = _require_xarray()
+    import xarray
+
+    _require_xarray()
     from fluxopt.tables import (
         BusesTable,
         ConvertersTable,
@@ -294,7 +300,7 @@ def _read_model_data(path: str | Path, time_dtype: pl.DataType) -> ModelData:
         StoragesTable,
     )
 
-    ds = _xr.open_dataset(path, group='model')
+    ds = xarray.open_dataset(path, group='model')
     objective_effect: str = ds.attrs['objective_effect']
 
     # Helper to read a DataArray back to Polars
@@ -527,13 +533,15 @@ def solved_model_to_netcdf(result: SolvedModel, path: str | Path) -> None:
 
 def solved_model_from_netcdf(path: str | Path) -> SolvedModel:
     """Read a SolvedModel from a NetCDF file."""
-    _xr = _require_xarray()
+    import xarray
+
+    _require_xarray()
     from fluxopt.results import SolvedModel
 
     path = Path(path)
 
     # Read solution from root group
-    ds = _xr.open_dataset(path)
+    ds = xarray.open_dataset(path)
 
     objective_value: float = float(ds.attrs['objective_value'])
     time_dtype_label: str = ds.attrs.get('time_dtype', 'datetime')
