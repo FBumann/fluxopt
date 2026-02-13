@@ -59,13 +59,17 @@ class FlowSystemModel:
         index = d.flows.bounds.select('flow', 'time')
         m.flow_rate = pf.Variable(index, lb=0)
 
-        # Apply bounds as constraints
-        lb_param = pf.Param(d.flows.bounds.select('flow', 'time', pl.col('lb').alias('value')))
-        ub_param = pf.Param(d.flows.bounds.select('flow', 'time', pl.col('ub').alias('value')))
-        m.flow_lb = m.flow_rate >= lb_param
-        m.flow_ub = m.flow_rate <= ub_param
+        # Apply bounds as constraints (exclude fixed-profile flows — equality constraint handles them)
+        fixed_flows = d.flows.fixed.select('flow').unique()
+        variable_bounds = d.flows.bounds.join(fixed_flows, on='flow', how='anti')
 
-        # Fix profile flows (lb == ub == fixed value)
+        if len(variable_bounds) > 0:
+            lb_param = pf.Param(variable_bounds.select('flow', 'time', pl.col('lb').alias('value')))
+            ub_param = pf.Param(variable_bounds.select('flow', 'time', pl.col('ub').alias('value')))
+            m.flow_lb = m.flow_rate.drop_extras() >= lb_param
+            m.flow_ub = m.flow_rate.drop_extras() <= ub_param
+
+        # Fix profile flows (P_{f,t} = P̄_f · π_{f,t})
         if len(d.flows.fixed) > 0:
             fixed_param = pf.Param(d.flows.fixed)
             m.flow_fix = m.flow_rate.drop_extras() == fixed_param
@@ -186,11 +190,18 @@ class FlowSystemModel:
             cap_expanded = cap_df.join(d.charge_state_times, how='cross').select('storage', 'time', 'value')
             m.cs_cap = m.charge_state <= pf.Param(cap_expanded)
 
+        # Extend cs_bounds to cover all charge_state_times (N+1 points)
+        # Replicate last timestep's bounds for the final charge state time
+        cs_bounds = d.storages.cs_bounds
+        if len(cs_bounds) > 0:
+            last_ts = d.timesteps['time'][-1]
+            end_ts = d.charge_state_times['time'][-1]
+            extra = cs_bounds.filter(pl.col('time') == last_ts).with_columns(pl.lit(end_ts).alias('time'))
+            cs_bounds = pl.concat([cs_bounds, extra])
+
         # Time-varying charge state bounds — vectorized using pre-computed absolute bounds
-        cs_lb_df = d.storages.cs_bounds.filter(pl.col('cs_lb') > 0).select(
-            'storage', 'time', pl.col('cs_lb').alias('value')
-        )
-        cs_ub_active = d.storages.cs_bounds.join(d.storages.params.select('storage', 'capacity'), on='storage').filter(
+        cs_lb_df = cs_bounds.filter(pl.col('cs_lb') > 0).select('storage', 'time', pl.col('cs_lb').alias('value'))
+        cs_ub_active = cs_bounds.join(d.storages.params.select('storage', 'capacity'), on='storage').filter(
             pl.col('cs_ub') < pl.col('capacity')
         )
         cs_ub_df = cs_ub_active.select('storage', 'time', pl.col('cs_ub').alias('value'))
