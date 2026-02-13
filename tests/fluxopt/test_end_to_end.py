@@ -43,7 +43,7 @@ class TestEndToEnd:
 
         # Verify gas = heat / eta
         for i, hd in enumerate(heat_demand):
-            gas_rate = result.flow_rate('boiler(gas)')['value'][i]
+            gas_rate = result.flow_rate('boiler(gas)')['solution'][i]
             assert gas_rate == pytest.approx(hd / eta, abs=1e-6)
 
         # Verify cost
@@ -79,8 +79,8 @@ class TestEndToEnd:
         )
 
         # Verify the optimizer uses more gas in cheap hours
-        gas_t0 = result.flow_rate('grid(gas)')['value'][0]
-        gas_t1 = result.flow_rate('grid(gas)')['value'][1]
+        gas_t0 = result.flow_rate('grid(gas)')['solution'][0]
+        gas_t1 = result.flow_rate('grid(gas)')['solution'][1]
         assert gas_t0 > gas_t1  # More gas bought in cheap hour
 
     def test_modified_data(self, timesteps_3):
@@ -102,7 +102,7 @@ class TestEndToEnd:
         model.build()
         result = model.solve()
 
-        source_rates = result.flow_rate('grid(elec)')['value'].to_list()
+        source_rates = result.flow_rate('grid(elec)')['solution'].to_list()
         for rate in source_rates:
             assert rate == pytest.approx(70.0, abs=1e-6)
 
@@ -120,12 +120,12 @@ class TestEndToEnd:
 
         # flow_rate accessor
         sr = result.flow_rate('grid(elec)')
-        assert set(sr.columns) == {'time', 'value'}
+        assert set(sr.columns) == {'time', 'solution'}
         assert len(sr) == 3
 
         # effects DataFrame
         assert 'effect' in result.effects.columns
-        assert 'total' in result.effects.columns
+        assert 'solution' in result.effects.columns
 
         # effects_per_timestep
         assert 'effect' in result.effects_per_timestep.columns

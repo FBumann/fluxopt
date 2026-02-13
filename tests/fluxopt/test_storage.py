@@ -27,8 +27,8 @@ class TestStorage:
             storages=[battery],
         )
 
-        charge = result.flow_rate('battery(charge)')['value'].to_list()
-        discharge = result.flow_rate('battery(discharge)')['value'].to_list()
+        charge = result.flow_rate('battery(charge)')['solution'].to_list()
+        discharge = result.flow_rate('battery(discharge)')['solution'].to_list()
 
         # Should charge in cheap hours (t0, t2) and discharge in expensive (t1, t3)
         assert charge[0] > 0  # t0: cheap
@@ -63,7 +63,7 @@ class TestStorage:
         cs = result.charge_state('battery')
         # First row is the initial charge state (first timestep)
         first_time = cs['time'][0]
-        assert cs.filter(cs['time'] == first_time)['value'][0] == pytest.approx(0.0, abs=1e-6)
+        assert cs.filter(cs['time'] == first_time)['solution'][0] == pytest.approx(0.0, abs=1e-6)
 
     def test_cyclic_storage(self):
         """Cyclic constraint: charge state at end == start."""
@@ -90,8 +90,8 @@ class TestStorage:
         )
 
         cs = result.charge_state('battery')
-        first = cs['value'][0]
-        last = cs['value'][-1]
+        first = cs['solution'][0]
+        last = cs['solution'][-1]
         assert last == pytest.approx(first, abs=1e-6)
 
     def test_storage_with_efficiency(self, timesteps_3):
@@ -120,10 +120,10 @@ class TestStorage:
 
         # With charging efficiency, stored energy = charge_rate * eta_c
         cs = result.charge_state('battery')
-        charge_t0 = result.flow_rate('battery(charge)')['value'][0]
-        cs_t1 = cs['value'][1]
-        cs_t0 = cs['value'][0]
+        charge_t0 = result.flow_rate('battery(charge)')['solution'][0]
+        cs_t1 = cs['solution'][1]
+        cs_t0 = cs['solution'][0]
         # cs[t1] = cs[t0] + charge[t0] * eta_c - discharge[t0] / eta_d
-        discharge_t0 = result.flow_rate('battery(discharge)')['value'][0]
+        discharge_t0 = result.flow_rate('battery(discharge)')['solution'][0]
         expected_cs_t1 = cs_t0 + charge_t0 * eta_c - discharge_t0
         assert cs_t1 == pytest.approx(expected_cs_t1, abs=1e-6)

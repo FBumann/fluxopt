@@ -15,9 +15,8 @@ if TYPE_CHECKING:
 @dataclass
 class _TemporalSource:
     name: str  # e.g., 'flow' → variable named 'contributions(flow)'
-    index: pl.DataFrame  # sparse index, e.g., (flow, effect, time)
-    expression: pf.Expression  # the contribution expression with native dims
-    sum_dim: str  # dim to sum over → (effect, time), e.g., 'flow'
+    index: pl.DataFrame  # sparse index, (contributor, effect, time)
+    expression: pf.Expression  # contribution expression, already renamed to 'contributor' dim
 
 
 class FlowSystemModel:
@@ -31,9 +30,8 @@ class FlowSystemModel:
         name: str,
         index: pl.DataFrame,
         expression: pf.Expression,
-        sum_dim: str,
     ) -> None:
-        self._temporal_sources.append(_TemporalSource(name=name, index=index, expression=expression, sum_dim=sum_dim))
+        self._temporal_sources.append(_TemporalSource(name=name, index=index, expression=expression))
 
     def build(self) -> None:
         self._create_flow_variables()
@@ -77,9 +75,8 @@ class FlowSystemModel:
             expr = pf.Param(d.flows.effect_coefficients) * m.flow_rate * pf.Param(d.dt)
             self.add_temporal_contribution(
                 name='flow',
-                index=d.flows.effect_coefficients.select('flow', 'effect', 'time'),
-                expression=expr,
-                sum_dim='flow',
+                index=d.flows.effect_coefficients.select(pl.col('flow').alias('contributor'), 'effect', 'time'),
+                expression=expr.rename({'flow': 'contributor'}),
             )
 
     def _create_bus_balance(self) -> None:
@@ -135,7 +132,7 @@ class FlowSystemModel:
             acc: pf.Expression | None = None
             for src in self._temporal_sources:
                 var = getattr(m, f'contributions({src.name})')
-                summed = var.sum(src.sum_dim)
+                summed = var.sum('contributor')
                 acc = summed if acc is None else acc.keep_extras() + summed.keep_extras()
             m.effect_per_timestep_tracking = m.effect_per_timestep == acc
         else:

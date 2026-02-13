@@ -25,9 +25,9 @@ class TestEffects:
         # Verify per-flow contributions are available
         contribs = result.contributions
         assert len(contribs) > 0
-        assert set(contribs.columns) == {'source', 'contributor', 'effect', 'time', 'value'}
+        assert set(contribs.columns) == {'source', 'contributor', 'effect', 'time', 'solution'}
         flow_contribs = contribs.filter(contribs['source'] == 'flow')
-        assert flow_contribs['value'].sum() == pytest.approx(expected, abs=1e-6)
+        assert flow_contribs['solution'].sum() == pytest.approx(expected, abs=1e-6)
 
     def test_multiple_effects(self, timesteps_3):
         """Track cost and CO2 simultaneously, minimize cost."""
@@ -54,7 +54,7 @@ class TestEffects:
         expected_co2 = demand_total * 0.5
 
         assert result.objective_value == pytest.approx(expected_cost, abs=1e-6)
-        co2_total = result.effects.filter(result.effects['effect'] == 'co2')['total'][0]
+        co2_total = result.effects.filter(result.effects['effect'] == 'co2')['solution'][0]
         assert co2_total == pytest.approx(expected_co2, abs=1e-6)
 
     def test_effect_maximum_total(self, timesteps_3):
@@ -76,7 +76,7 @@ class TestEffects:
             ],
         )
 
-        co2_total = result.effects.filter(result.effects['effect'] == 'co2')['total'][0]
+        co2_total = result.effects.filter(result.effects['effect'] == 'co2')['solution'][0]
         assert co2_total <= co2_limit + 1e-6
 
     def test_time_varying_cost(self, timesteps_3):

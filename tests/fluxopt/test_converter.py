@@ -27,7 +27,7 @@ class TestBoiler:
             converters=[Converter.boiler('boiler', eta, fuel, heat)],
         )
 
-        gas_rates = result.flow_rate('boiler(gas)')['value'].to_list()
+        gas_rates = result.flow_rate('boiler(gas)')['solution'].to_list()
         for gas, h in zip(gas_rates, heat_demand, strict=False):
             assert gas == pytest.approx(h / eta, abs=1e-6)
 
@@ -80,9 +80,9 @@ class TestCHP:
             converters=[Converter.chp('chp', eta_el, eta_th, fuel_flow, elec_flow, heat_flow)],
         )
 
-        gas_rates = result.flow_rate('chp(gas)')['value'].to_list()
-        elec_rates = result.flow_rate('chp(elec)')['value'].to_list()
-        heat_rates = result.flow_rate('chp(heat)')['value'].to_list()
+        gas_rates = result.flow_rate('chp(gas)')['solution'].to_list()
+        elec_rates = result.flow_rate('chp(elec)')['solution'].to_list()
+        heat_rates = result.flow_rate('chp(heat)')['solution'].to_list()
 
         for gas, elec, heat in zip(gas_rates, elec_rates, heat_rates, strict=False):
             assert elec == pytest.approx(gas * eta_el, abs=1e-6)
