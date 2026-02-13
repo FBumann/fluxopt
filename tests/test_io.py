@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 from datetime import datetime
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import polars as pl
 import pytest
 
+from fluxopt import Bus, Converter, Effect, Flow, Port, Storage, solve
+from fluxopt.results import SolvedModel
+
 xr = pytest.importorskip('xarray')
 
-from fluxopt import Bus, Converter, Effect, Flow, Port, Storage, solve
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @pytest.fixture
@@ -16,8 +20,8 @@ def tmp_nc(tmp_path: Path) -> Path:
     return tmp_path / 'result.nc'
 
 
-def _solve_simple(timesteps: list[datetime] | list[int]) -> solve:
-    """Simple source → demand system with cost tracking."""
+def _solve_simple(timesteps: list[datetime] | list[int]) -> SolvedModel:
+    """Simple source -> demand system with cost tracking."""
     demand = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.8, 0.6])
     source = Flow(bus='elec', size=200, effects_per_flow_hour={'cost': 0.04})
     return solve(
@@ -28,8 +32,8 @@ def _solve_simple(timesteps: list[datetime] | list[int]) -> solve:
     )
 
 
-def _solve_with_converter(timesteps: list[datetime]) -> solve:
-    """Gas source → boiler → heat demand with cost tracking."""
+def _solve_with_converter(timesteps: list[datetime]) -> SolvedModel:
+    """Gas source -> boiler -> heat demand with cost tracking."""
     demand = Flow(bus='heat', size=100, fixed_relative_profile=[0.4, 0.7, 0.5])
     gas_source = Flow(bus='gas', size=500, effects_per_flow_hour={'cost': 0.04})
     fuel = Flow(bus='gas', size=300)
@@ -43,7 +47,7 @@ def _solve_with_converter(timesteps: list[datetime]) -> solve:
     )
 
 
-def _solve_with_storage(timesteps: list[datetime]) -> solve:
+def _solve_with_storage(timesteps: list[datetime]) -> SolvedModel:
     """Boiler + storage system."""
     demand = Flow(bus='heat', size=100, fixed_relative_profile=[0.5, 0.5, 0.5])
     gas_source = Flow(bus='gas', size=500, effects_per_flow_hour={'cost': [0.02, 0.08, 0.02]})
@@ -69,7 +73,7 @@ class TestRoundtrip:
         result = _solve_simple(ts)
 
         result.to_netcdf(tmp_nc)
-        loaded = type(result).from_netcdf(tmp_nc)
+        loaded = SolvedModel.from_netcdf(tmp_nc)
 
         assert loaded.objective_value == pytest.approx(result.objective_value, abs=1e-6)
         assert loaded.flow_rates['solution'].to_list() == pytest.approx(
@@ -85,7 +89,7 @@ class TestRoundtrip:
         result = _solve_simple([0, 1, 2])
 
         result.to_netcdf(tmp_nc)
-        loaded = type(result).from_netcdf(tmp_nc)
+        loaded = SolvedModel.from_netcdf(tmp_nc)
 
         assert loaded.objective_value == pytest.approx(result.objective_value, abs=1e-6)
         assert loaded.flow_rates['time'].dtype == pl.Int64
@@ -96,7 +100,7 @@ class TestRoundtrip:
         result = _solve_with_converter(ts)
 
         result.to_netcdf(tmp_nc)
-        loaded = type(result).from_netcdf(tmp_nc)
+        loaded = SolvedModel.from_netcdf(tmp_nc)
 
         assert loaded.objective_value == pytest.approx(result.objective_value, abs=1e-6)
         assert len(loaded.flow_rates) == len(result.flow_rates)
@@ -108,7 +112,7 @@ class TestRoundtrip:
         result = _solve_with_storage(ts)
 
         result.to_netcdf(tmp_nc)
-        loaded = type(result).from_netcdf(tmp_nc)
+        loaded = SolvedModel.from_netcdf(tmp_nc)
 
         assert loaded.objective_value == pytest.approx(result.objective_value, abs=1e-6)
         assert len(loaded.charge_states) == len(result.charge_states)
@@ -123,7 +127,7 @@ class TestRoundtrip:
         assert len(result.contributions) > 0
 
         result.to_netcdf(tmp_nc)
-        loaded = type(result).from_netcdf(tmp_nc)
+        loaded = SolvedModel.from_netcdf(tmp_nc)
 
         # Same shape
         assert len(loaded.contributions) == len(result.contributions)
@@ -175,7 +179,7 @@ class TestModelDataRoundtrip:
         assert result.data is not None
 
         result.to_netcdf(tmp_nc)
-        loaded = type(result).from_netcdf(tmp_nc)
+        loaded = SolvedModel.from_netcdf(tmp_nc)
 
         assert loaded.data is not None
         assert loaded.data.effects.objective_effect == result.data.effects.objective_effect
@@ -189,7 +193,7 @@ class TestModelDataRoundtrip:
         assert result.data is not None
 
         result.to_netcdf(tmp_nc)
-        loaded = type(result).from_netcdf(tmp_nc)
+        loaded = SolvedModel.from_netcdf(tmp_nc)
 
         assert loaded.data is not None
         assert len(loaded.data.storages.params) == len(result.data.storages.params)
@@ -204,7 +208,7 @@ class TestEdgeCases:
         result.data = None
 
         result.to_netcdf(tmp_nc)
-        loaded = type(result).from_netcdf(tmp_nc)
+        loaded = SolvedModel.from_netcdf(tmp_nc)
 
         assert loaded.objective_value == pytest.approx(result.objective_value, abs=1e-6)
         # Model data is None since it wasn't written
