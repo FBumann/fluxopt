@@ -15,3 +15,8 @@ venv/
 temp-plot.html
 .cache
 site/
+.coverage
+coverage.xml
+htmlcov/
+.mypy_cache/
+.pytest_cache/
