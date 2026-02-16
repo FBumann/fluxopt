@@ -127,6 +127,12 @@ def as_dataarray(
 
     # --- existing DataArray: align + optionally broadcast ---
     if isinstance(value, xr.DataArray):
+        foreign = [str(d) for d in value.dims if d not in coord_idx]
+        if foreign:
+            raise ValueError(
+                f'DataArray has dims {foreign} not in target coords {list(coord_idx)}. '
+                f'Rename before calling as_dataarray().'
+            )
         da = value.rename(name)
         if broadcast:
             for dim, idx in coord_idx.items():

@@ -7,16 +7,10 @@ import xarray as xr
 from linopy import Model, Variable
 
 from fluxopt.results import SolvedModel
+from fluxopt.types import as_dataarray
 
 if TYPE_CHECKING:
     from fluxopt.model_data import ModelData
-
-
-def _to_values(v: Any) -> Any:
-    """Strip xr.DataArray to plain numpy for linopy bounds."""
-    if isinstance(v, xr.DataArray):
-        return v.values
-    return v
 
 
 class FlowSystemModel:
@@ -37,17 +31,17 @@ class FlowSystemModel:
     ) -> Variable:
         """Wrapper around linopy Model.add_variables that aligns bounds to coords.
 
-        linopy doesn't align DataArray bounds to the provided coords, which can
-        introduce spurious extra dimensions.  This helper coerces DataArray
-        bounds to plain numpy arrays so that the only dimensions come from
-        *coords*.
+        Bounds are converted to DataArrays aligned with the target *coords* via
+        :func:`~fluxopt.types.as_dataarray`, preventing spurious extra dimensions
+        that linopy can introduce when raw DataArray bounds carry mismatched dims.
         """
+        coord_dict = {str(c.dims[0]): c.values for c in coords}
         kwargs: dict[str, Any] = {'coords': coords, 'name': name, 'binary': binary}
         if not binary:
             if lower is not None:
-                kwargs['lower'] = _to_values(lower)
+                kwargs['lower'] = as_dataarray(lower, coord_dict, broadcast=True)
             if upper is not None:
-                kwargs['upper'] = _to_values(upper)
+                kwargs['upper'] = as_dataarray(upper, coord_dict, broadcast=True)
         return self.m.add_variables(**kwargs)
 
     def build(self) -> None:
@@ -83,7 +77,8 @@ class FlowSystemModel:
             assert fds.sizing_mandatory is not None
             sizing_ids = fds.sizing_min.coords['sizing_flow'].values
             flow_coord = xr.DataArray(sizing_ids, dims=['flow'])
-            self.flow_size = self._add_variables(lower=0, upper=fds.sizing_max, coords=[flow_coord], name='flow--size')
+            upper = fds.sizing_max.rename({'sizing_flow': 'flow'})
+            self.flow_size = self._add_variables(lower=0, upper=upper, coords=[flow_coord], name='flow--size')
             mandatory = fds.sizing_mandatory
             optional_ids = sizing_ids[~mandatory.values]
             if len(optional_ids):
@@ -100,8 +95,9 @@ class FlowSystemModel:
             assert sds.sizing_mandatory is not None
             sizing_ids = sds.sizing_min.coords['sizing_storage'].values
             stor_coord = xr.DataArray(sizing_ids, dims=['storage'])
+            upper = sds.sizing_max.rename({'sizing_storage': 'storage'})
             self.storage_capacity = self._add_variables(
-                lower=0, upper=sds.sizing_max, coords=[stor_coord], name='storage--capacity'
+                lower=0, upper=upper, coords=[stor_coord], name='storage--capacity'
             )
             mandatory = sds.sizing_mandatory
             optional_ids = sizing_ids[~mandatory.values]

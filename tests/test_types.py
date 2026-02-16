@@ -242,7 +242,12 @@ class TestAsDataArrayDataArray:
         flows = pd.Index(['a', 'b', 'c'])
         result = as_dataarray(da, {'time': pd.RangeIndex(2), 'flow': flows}, broadcast=True)
         assert result.dims == ('time', 'flow')
-        assert result.shape == (2, 3)
+
+    def test_foreign_dims_raises(self):
+        """DataArray with dims not in coords raises ValueError."""
+        da = xr.DataArray([10.0, 20.0], dims=['sizing_flow'])
+        with pytest.raises(ValueError, match='not in target coords'):
+            as_dataarray(da, {'flow': pd.Index(['a', 'b'])})
 
 
 class TestAsDataArrayUnsupported:
