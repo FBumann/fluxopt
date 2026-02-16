@@ -1,15 +1,22 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import xarray as xr
-from linopy import Model
+from linopy import Model, Variable
 
 from fluxopt.results import SolvedModel
 
 if TYPE_CHECKING:
     from fluxopt.model_data import ModelData
+
+
+def _to_values(v: Any) -> Any:
+    """Strip xr.DataArray to plain numpy for linopy bounds."""
+    if isinstance(v, xr.DataArray):
+        return v.values
+    return v
 
 
 class FlowSystemModel:
@@ -19,12 +26,37 @@ class FlowSystemModel:
         self.silent = silent
         self.m = Model()
 
+    def _add_variables(
+        self,
+        *,
+        lower: Any = None,
+        upper: Any = None,
+        coords: list[xr.DataArray],
+        name: str,
+        binary: bool = False,
+    ) -> Variable:
+        """Wrapper around linopy Model.add_variables that aligns bounds to coords.
+
+        linopy doesn't align DataArray bounds to the provided coords, which can
+        introduce spurious extra dimensions.  This helper coerces DataArray
+        bounds to plain numpy arrays so that the only dimensions come from
+        *coords*.
+        """
+        kwargs: dict[str, Any] = {'coords': coords, 'name': name, 'binary': binary}
+        if not binary:
+            if lower is not None:
+                kwargs['lower'] = _to_values(lower)
+            if upper is not None:
+                kwargs['upper'] = _to_values(upper)
+        return self.m.add_variables(**kwargs)
+
     def build(self) -> None:
         self._create_flow_variables()
+        self._create_sizing()
         self._create_bus_balance()
         self._create_converter_constraints()
-        self._create_effects()
         self._create_storage()
+        self._create_effects()
         self._set_objective()
 
     def solve(self, silent: bool = True) -> SolvedModel:
@@ -36,6 +68,8 @@ class FlowSystemModel:
 
         Sized: P̄_f · p̲_{f,t} <= P_{f,t} <= P̄_f · p̄_{f,t}
         Fixed: P_{f,t} = P̄_f · π_{f,t}
+
+        Investable flows (sizing_min.notnull()) are handled in _create_sizing().
         """
         d = self.data
         ds = d.flows
@@ -51,24 +85,89 @@ class FlowSystemModel:
         rel_ub = ds['rel_ub']  # (flow, time)
         fixed = ds['fixed_profile']  # (flow, time) — NaN where not fixed
 
-        sized_mask = size.notnull()  # (flow,) bool
+        fixed_sized = size.notnull()  # (flow,) bool — float size only
+        has_sizing = 'sizing_min' in ds
+        investable = ds['sizing_min'].notnull() if has_sizing else xr.DataArray(False)
         has_fixed = fixed.notnull().any('time')  # (flow,) bool
 
-        # Variable (non-fixed) sized flows: apply bounds
-        variable_sized = sized_mask & ~has_fixed  # (flow,)
+        # Variable (non-fixed) sized flows: apply bounds (exclude investable)
+        variable_sized = fixed_sized & ~has_fixed  # (flow,)
         if variable_sized.any():
-            lb = rel_lb * size  # broadcasts (flow,time) * (flow,) -> (flow,time)
+            lb = rel_lb * size
             ub = rel_ub * size
-            mask_2d = variable_sized.broadcast_like(rel_lb)  # (flow, time)
+            mask_2d = variable_sized.broadcast_like(rel_lb)
             self.m.add_constraints(self.flow_rate >= lb, name='flow_lb', mask=mask_2d)
             self.m.add_constraints(self.flow_rate <= ub, name='flow_ub', mask=mask_2d)
 
-        # Fixed profile flows
-        if has_fixed.any():
-            # Multiply by size where sized, else use as-is
-            abs_fixed = xr.where(sized_mask, fixed * size, fixed)
-            mask_fixed = has_fixed.broadcast_like(fixed) & fixed.notnull()
+        # Fixed profile flows (only for non-investable; investable handled in _create_sizing)
+        fixed_non_invest = has_fixed & ~investable
+        if fixed_non_invest.any():
+            abs_fixed = xr.where(fixed_sized, fixed * size, fixed)
+            mask_fixed = fixed_non_invest.broadcast_like(fixed) & fixed.notnull()
             self.m.add_constraints(self.flow_rate == abs_fixed, name='flow_fix', mask=mask_fixed)
+
+    def _create_sizing(self) -> None:
+        """Create size variables and investment constraints for investable flows.
+
+        For mandatory sizing: S_f ∈ [min, max] (continuous).
+        For optional sizing: binary indicator_f gates S_f in {0} union [min, max].
+        Flow rate bounds: P_{f,t} ∈ [p̲ · S_f, p̄ · S_f].
+        """
+        ds = self.data.flows
+        if 'sizing_min' not in ds:
+            return
+        investable = ds['sizing_min'].notnull()
+        if not investable.any():
+            return
+
+        invest_ids = ds.coords['flow'].values[investable.values]
+        invest_flow_coord = xr.DataArray(invest_ids, dims=['flow'])
+
+        # 1. Size variable: flow--size[flow] ∈ [0, max]
+        self.flow_size = self._add_variables(
+            lower=0,
+            upper=ds['sizing_max'].sel(flow=invest_ids),
+            coords=[invest_flow_coord],
+            name='flow--size',
+        )
+
+        # 2. Binary size indicator (non-mandatory only)
+        mandatory = ds['sizing_mandatory'].sel(flow=invest_ids)
+        optional_ids = invest_ids[~mandatory.values]
+        if len(optional_ids):
+            optional_flow_coord = xr.DataArray(optional_ids, dims=['flow'])
+            self.flow_size_indicator = self._add_variables(
+                binary=True, coords=[optional_flow_coord], name='flow--size_indicator'
+            )
+            smin = ds['sizing_min'].sel(flow=optional_ids)
+            smax = ds['sizing_max'].sel(flow=optional_ids)
+            fs = self.flow_size.sel(flow=optional_ids)
+            self.m.add_constraints(fs >= smin * self.flow_size_indicator, name='invest_lb')
+            self.m.add_constraints(fs <= smax * self.flow_size_indicator, name='invest_ub')
+
+        # 3. Mandatory: enforce min/max directly
+        mandatory_ids = invest_ids[mandatory.values]
+        if len(mandatory_ids):
+            self.m.add_constraints(
+                self.flow_size.sel(flow=mandatory_ids) >= ds['sizing_min'].sel(flow=mandatory_ids),
+                name='invest_mand_lb',
+            )
+
+        # 4. Flow rate bounds: P_{f,t} ∈ [p̲ · S_f, p̄ · S_f]
+        rel_lb = ds['rel_lb'].sel(flow=invest_ids)
+        rel_ub = ds['rel_ub'].sel(flow=invest_ids)
+        fixed = ds['fixed_profile'].sel(flow=invest_ids)
+        has_fixed = fixed.notnull().any('time')
+        fr = self.flow_rate.sel(flow=invest_ids)
+
+        var_mask = (~has_fixed).broadcast_like(rel_lb)
+        if var_mask.any():
+            self.m.add_constraints(fr >= rel_lb * self.flow_size, name='flow_lb_invest', mask=var_mask)
+            self.m.add_constraints(fr <= rel_ub * self.flow_size, name='flow_ub_invest', mask=var_mask)
+
+        if has_fixed.any():
+            fix_mask = has_fixed.broadcast_like(fixed) & fixed.notnull()
+            self.m.add_constraints(fr == fixed * self.flow_size, name='flow_fix_invest', mask=fix_mask)
 
     def _create_bus_balance(self) -> None:
         """Bus balance: sum_f(coeff_{b,f} · P_{f,t}) = 0  for all b, t."""
@@ -131,10 +230,41 @@ class FlowSystemModel:
         else:
             self.m.add_constraints(self.effect_per_timestep == 0, name='effect_per_ts_eq')
 
-        # effect_total[effect] = sum_t(effect_per_timestep * weight)
+        # effect_total[effect] = sum_t(ept * w) + investment contributions
         self.effect_total = self.m.add_variables(coords=[effect_ids], name='effect--total')
-        weighted_sum = (self.effect_per_timestep * d.weights).sum('time')
-        self.m.add_constraints(self.effect_total == weighted_sum, name='effect_total_eq')
+        rhs = (self.effect_per_timestep * d.weights).sum('time')
+
+        # Flow sizing: per-size costs
+        if hasattr(self, 'flow_size'):
+            invest_flow_ids = list(self.flow_size.coords['flow'].values)
+            eps_flow = d.flows['sizing_effects_per_size'].sel(flow=invest_flow_ids)
+            if (eps_flow != 0).any():
+                rhs = rhs + (eps_flow * self.flow_size).sum('flow')
+
+        # Flow sizing: fixed costs (binary * cost)
+        if hasattr(self, 'flow_size_indicator'):
+            optional_flow_ids = list(self.flow_size_indicator.coords['flow'].values)
+            ef_flow = d.flows['sizing_effects_fixed'].sel(flow=optional_flow_ids)
+            if (ef_flow != 0).any():
+                rhs = rhs + (ef_flow * self.flow_size_indicator).sum('flow')
+
+        # Storage sizing: per-size costs
+        if hasattr(self, 'storage_capacity'):
+            sizing_stor_ids = list(self.storage_capacity.coords['storage'].values)
+            if 'sizing_effects_per_size' in d.storages and 'effect' in d.storages.coords:
+                eps_stor = d.storages['sizing_effects_per_size'].sel(storage=sizing_stor_ids)
+                if (eps_stor != 0).any():
+                    rhs = rhs + (eps_stor * self.storage_capacity).sum('storage')
+
+        # Storage sizing: fixed costs
+        if hasattr(self, 'storage_size_indicator'):
+            optional_stor_ids = list(self.storage_size_indicator.coords['storage'].values)
+            if 'sizing_effects_fixed' in d.storages and 'effect' in d.storages.coords:
+                ef_stor = d.storages['sizing_effects_fixed'].sel(storage=optional_stor_ids)
+                if (ef_stor != 0).any():
+                    rhs = rhs + (ef_stor * self.storage_size_indicator).sum('storage')
+
+        self.m.add_constraints(self.effect_total == rhs, name='effect_total_eq')
 
         # Bounds on effect_total
         min_total = ds['min_total']  # (effect,) — NaN = unbounded
@@ -173,31 +303,97 @@ class FlowSystemModel:
         # storage_level[storage, time_extra] >= 0
         self.storage_level = self.m.add_variables(lower=0, coords=[stor_ids, time_extra], name='storage--level')
 
-        # Capacity upper bound — only for storages with capacity
-        cap = ds['capacity']  # (storage,) — NaN for uncapped
-        has_cap = cap.notnull()
-        if has_cap.any():
+        # --- Capacity sizing ---
+        stor_sizing = ds['sizing_min'].notnull() if 'sizing_min' in ds else xr.DataArray(False)
+        if stor_sizing.any():
+            sizing_ids = stor_ids.values[stor_sizing.values]
+            sizing_stor_coord = xr.DataArray(sizing_ids, dims=['storage'])
+            self.storage_capacity = self._add_variables(
+                lower=0,
+                upper=ds['sizing_max'].sel(storage=sizing_ids),
+                coords=[sizing_stor_coord],
+                name='storage--capacity',
+            )
+
+            mandatory = ds['sizing_mandatory'].sel(storage=sizing_ids)
+            optional_ids = sizing_ids[~mandatory.values]
+            if len(optional_ids):
+                optional_stor_coord = xr.DataArray(optional_ids, dims=['storage'])
+                self.storage_size_indicator = self._add_variables(
+                    binary=True, coords=[optional_stor_coord], name='storage--size_indicator'
+                )
+                smin = ds['sizing_min'].sel(storage=optional_ids)
+                smax = ds['sizing_max'].sel(storage=optional_ids)
+                sc = self.storage_capacity.sel(storage=optional_ids)
+                self.m.add_constraints(sc >= smin * self.storage_size_indicator, name='stor_invest_lb')
+                self.m.add_constraints(sc <= smax * self.storage_size_indicator, name='stor_invest_ub')
+
+            mandatory_ids = sizing_ids[mandatory.values]
+            if len(mandatory_ids):
+                self.m.add_constraints(
+                    self.storage_capacity.sel(storage=mandatory_ids) >= ds['sizing_min'].sel(storage=mandatory_ids),
+                    name='stor_invest_mand_lb',
+                )
+
+        # --- Capacity bounds on storage_level ---
+        cap = ds['capacity']  # (storage,) — NaN for uncapped/investable
+        has_fixed_cap = cap.notnull()
+
+        # Fixed-capacity storages: level <= capacity (parameter)
+        if has_fixed_cap.any():
             cap_2d = cap.broadcast_like(
                 xr.DataArray(np.nan, dims=['storage', 'time_extra'], coords=[stor_ids, time_extra])
             )
-            mask_cap = has_cap.broadcast_like(cap_2d)
+            mask_cap = has_fixed_cap.broadcast_like(cap_2d)
             self.m.add_constraints(self.storage_level <= cap_2d, name='cs_cap', mask=mask_cap)
 
-        # Relative charge state bounds — only where capacity exists
-        if has_cap.any():
-            rel_cs_lb = ds['rel_cs_lb']  # (storage, time_extra)
+        # Investable storages: level <= capacity (variable)
+        if stor_sizing.any():
+            sizing_ids_list = list(sizing_ids)
+            cs_invest = self.storage_level.sel(storage=sizing_ids_list)
+            self.m.add_constraints(cs_invest <= self.storage_capacity, name='cs_cap_invest')
+
+        # --- Relative charge state bounds ---
+        # For fixed-capacity storages
+        if has_fixed_cap.any():
+            rel_cs_lb = ds['rel_cs_lb']
             rel_cs_ub = ds['rel_cs_ub']
 
             abs_cs_lb = rel_cs_lb * cap
-            has_cs_lb = has_cap.broadcast_like(rel_cs_lb) & (abs_cs_lb > 1e-12)
+            has_cs_lb = has_fixed_cap.broadcast_like(rel_cs_lb) & (abs_cs_lb > 1e-12)
             if has_cs_lb.any():
                 self.m.add_constraints(self.storage_level >= abs_cs_lb, name='cs_lb', mask=has_cs_lb)
 
             abs_cs_ub = rel_cs_ub * cap
             cap_2d_check = cap.broadcast_like(rel_cs_ub)
-            has_cs_ub = has_cap.broadcast_like(rel_cs_ub) & (abs_cs_ub < cap_2d_check - 1e-12)
+            has_cs_ub = has_fixed_cap.broadcast_like(rel_cs_ub) & (abs_cs_ub < cap_2d_check - 1e-12)
             if has_cs_ub.any():
                 self.m.add_constraints(self.storage_level <= abs_cs_ub, name='cs_ub', mask=has_cs_ub)
+
+        # For investable storages: relative bounds use capacity variable
+        if stor_sizing.any():
+            sizing_ids_list = list(sizing_ids)
+            rel_cs_lb_inv = ds['rel_cs_lb'].sel(storage=sizing_ids_list)
+            rel_cs_ub_inv = ds['rel_cs_ub'].sel(storage=sizing_ids_list)
+            cs_invest = self.storage_level.sel(storage=sizing_ids_list)
+
+            has_lb = (rel_cs_lb_inv > 1e-12).any('time_extra')
+            if has_lb.any():
+                lb_mask = has_lb.broadcast_like(rel_cs_lb_inv) & (rel_cs_lb_inv > 1e-12)
+                self.m.add_constraints(
+                    cs_invest >= rel_cs_lb_inv * self.storage_capacity,
+                    name='cs_lb_invest',
+                    mask=lb_mask,
+                )
+
+            has_ub = (rel_cs_ub_inv < 1 - 1e-12).any('time_extra')
+            if has_ub.any():
+                ub_mask = has_ub.broadcast_like(rel_cs_ub_inv) & (rel_cs_ub_inv < 1 - 1e-12)
+                self.m.add_constraints(
+                    cs_invest <= rel_cs_ub_inv * self.storage_capacity,
+                    name='cs_ub_invest',
+                    mask=ub_mask,
+                )
 
         # Map charge/discharge flows to storage dimension via sel + rename
         charge_fids = [str(v) for v in ds['charge_flow'].values]

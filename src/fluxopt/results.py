@@ -29,6 +29,14 @@ class SolvedModel:
         return self.solution['storage--level'] if 'storage--level' in self.solution else xr.DataArray()
 
     @property
+    def sizes(self) -> xr.DataArray:
+        return self.solution['flow--size'] if 'flow--size' in self.solution else xr.DataArray()
+
+    @property
+    def storage_capacities(self) -> xr.DataArray:
+        return self.solution['storage--capacity'] if 'storage--capacity' in self.solution else xr.DataArray()
+
+    @property
     def effect_totals(self) -> xr.DataArray:
         return self.solution['effect--total']
 
@@ -72,6 +80,14 @@ class SolvedModel:
 
         if hasattr(model, 'storage_level'):
             sol_vars['storage--level'] = model.storage_level.solution
+        if hasattr(model, 'flow_size'):
+            sol_vars['flow--size'] = model.flow_size.solution
+        if hasattr(model, 'flow_size_indicator'):
+            sol_vars['flow--size_indicator'] = model.flow_size_indicator.solution
+        if hasattr(model, 'storage_capacity'):
+            sol_vars['storage--capacity'] = model.storage_capacity.solution
+        if hasattr(model, 'storage_size_indicator'):
+            sol_vars['storage--size_indicator'] = model.storage_size_indicator.solution
 
         obj_effect = model.data.effects.attrs['objective_effect']
         obj_val = float(sol_vars['effect--total'].sel(effect=obj_effect).values)

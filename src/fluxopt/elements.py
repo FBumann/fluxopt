@@ -7,6 +7,24 @@ if TYPE_CHECKING:
     from fluxopt.types import TimeSeries
 
 
+@dataclass
+class Sizing:
+    """Capacity optimization parameters.
+
+    The solver decides the optimal size within [min_size, max_size].
+
+    - ``mandatory=True`` → continuous variable, size ∈ [min, max], no binary
+    - ``mandatory=False`` → binary indicator gates size: 0 or [min, max]
+    - ``min_size == max_size`` → binary invest at exact size (yes/no)
+    """
+
+    min_size: float
+    max_size: float
+    mandatory: bool = False
+    effects_per_size: dict[str, float] = field(default_factory=dict)
+    effects_fixed: dict[str, float] = field(default_factory=dict)
+
+
 @dataclass(eq=False)
 class Flow:
     """A single energy flow on a bus.
@@ -25,7 +43,7 @@ class Flow:
 
     bus: str
     id: str = ''
-    size: float | None = None  # P̄_f  [MW]
+    size: float | Sizing | None = None  # P̄_f  [MW]
     relative_minimum: TimeSeries = 0.0  # p̲_f  [-]
     relative_maximum: TimeSeries = 1.0  # p̄_f  [-]
     fixed_relative_profile: TimeSeries | None = None  # π_f  [-]
@@ -62,7 +80,7 @@ class Storage:
     id: str
     charging: Flow
     discharging: Flow
-    capacity: float | None = None  # Ē_s  [MWh]
+    capacity: float | Sizing | None = None  # Ē_s  [MWh]
     eta_charge: TimeSeries = 1.0  # η^c_s  [-]
     eta_discharge: TimeSeries = 1.0  # η^d_s  [-]
     relative_loss_per_hour: TimeSeries = 0.0  # δ_s  [1/h]

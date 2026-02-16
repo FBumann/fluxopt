@@ -1,5 +1,5 @@
 from fluxopt.components import Converter, Port
-from fluxopt.elements import Bus, Effect, Flow, Storage
+from fluxopt.elements import Bus, Effect, Flow, Sizing, Storage
 from fluxopt.model import FlowSystemModel
 from fluxopt.model_data import ModelData, build_model_data
 from fluxopt.results import SolvedModel
@@ -33,6 +33,7 @@ __all__ = [
     'IdList',
     'ModelData',
     'Port',
+    'Sizing',
     'SolvedModel',
     'Storage',
     'TimeSeries',
