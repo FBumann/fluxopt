@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-from fluxopt.types import normalize_timesteps, to_data_array
+from fluxopt.types import as_dataarray, normalize_timesteps
 
 if TYPE_CHECKING:
     from fluxopt.components import Converter, Port
@@ -166,8 +166,8 @@ class FlowsData:
         sizing_items: list[tuple[str, Sizing]] = []
 
         for i, f in enumerate(flows):
-            lb_da = to_data_array(f.relative_minimum, time)
-            ub_da = to_data_array(f.relative_maximum, time)
+            lb_da = as_dataarray(f.relative_minimum, {'time': time})
+            ub_da = as_dataarray(f.relative_maximum, {'time': time})
             rel_lb[i] = lb_da.values
             rel_ub[i] = ub_da.values
 
@@ -177,7 +177,7 @@ class FlowsData:
                 size[i] = float(f.size)
 
             if f.fixed_relative_profile is not None:
-                profile = to_data_array(f.fixed_relative_profile, time)
+                profile = as_dataarray(f.fixed_relative_profile, {'time': time})
                 fixed_profile[i] = profile.values
                 bound_type.append('profile')
             elif f.size is None:
@@ -188,7 +188,7 @@ class FlowsData:
             for effect_label, factor in f.effects_per_flow_hour.items():
                 if effect_label in effect_ids:
                     j = effect_ids.index(effect_label)
-                    factor_da = to_data_array(factor, time)
+                    factor_da = as_dataarray(factor, {'time': time})
                     effect_coeff[i, j] = factor_da.values
 
         sz = _SizingArrays.build(sizing_items, effect_ids, dim='sizing_flow')
@@ -281,7 +281,7 @@ class ConvertersData:
                 eq_mask[ci, eq_idx] = True
                 for flow_obj, factor in equation.items():
                     fi = all_flow_ids.index(flow_obj.id)
-                    factor_da = to_data_array(factor, time)
+                    factor_da = as_dataarray(factor, {'time': time})
                     coeff[ci, eq_idx, fi, :] = factor_da.values
 
         return cls(
@@ -351,9 +351,9 @@ class EffectsData:
             if e.maximum_total is not None:
                 max_total[i] = e.maximum_total
             if e.minimum_per_hour is not None:
-                min_per_hour[i] = to_data_array(e.minimum_per_hour, time).values
+                min_per_hour[i] = as_dataarray(e.minimum_per_hour, {'time': time}).values
             if e.maximum_per_hour is not None:
-                max_per_hour[i] = to_data_array(e.maximum_per_hour, time).values
+                max_per_hour[i] = as_dataarray(e.maximum_per_hour, {'time': time}).values
             is_objective[i] = e.is_objective
 
         return cls(
@@ -451,13 +451,13 @@ class StoragesData:
             elif s.capacity is not None:
                 capacity[i] = s.capacity
 
-            eta_c[i] = to_data_array(s.eta_charge, time).values
-            eta_d[i] = to_data_array(s.eta_discharge, time).values
-            loss[i] = to_data_array(s.relative_loss_per_hour, time).values
+            eta_c[i] = as_dataarray(s.eta_charge, {'time': time}).values
+            eta_d[i] = as_dataarray(s.eta_discharge, {'time': time}).values
+            loss[i] = as_dataarray(s.relative_loss_per_hour, {'time': time}).values
 
             # Charge state bounds — broadcast to time_extra (replicate last for extra point)
-            cs_lb_t = to_data_array(s.relative_minimum_charge_state, time).values
-            cs_ub_t = to_data_array(s.relative_maximum_charge_state, time).values
+            cs_lb_t = as_dataarray(s.relative_minimum_charge_state, {'time': time}).values
+            cs_ub_t = as_dataarray(s.relative_maximum_charge_state, {'time': time}).values
             rel_cs_lb[i, :n_time] = cs_lb_t
             rel_cs_lb[i, n_time:] = cs_lb_t[-1]
             rel_cs_ub[i, :n_time] = cs_ub_t

@@ -39,9 +39,9 @@ class FlowSystemModel:
         kwargs: dict[str, Any] = {'coords': coords, 'name': name, 'binary': binary}
         if not binary:
             if lower is not None:
-                kwargs['lower'] = as_dataarray(lower, coord_dict, broadcast=True)
+                kwargs['lower'] = as_dataarray(lower, coord_dict)
             if upper is not None:
-                kwargs['upper'] = as_dataarray(upper, coord_dict, broadcast=True)
+                kwargs['upper'] = as_dataarray(upper, coord_dict)
         return self.m.add_variables(**kwargs)
 
     def build(self) -> None:

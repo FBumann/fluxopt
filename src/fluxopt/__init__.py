@@ -10,7 +10,6 @@ from fluxopt.types import (
     as_dataarray,
     compute_dt,
     normalize_timesteps,
-    to_data_array,
 )
 
 
@@ -50,5 +49,4 @@ __all__ = [
     'compute_dt',
     'normalize_timesteps',
     'solve',
-    'to_data_array',
 ]

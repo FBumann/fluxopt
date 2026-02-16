@@ -64,39 +64,12 @@ class IdList[T: Identified]:
         return f'IdList({list(self._items)!r})'
 
 
-def to_data_array(value: TimeSeries, time: pd.Index, name: str = 'value') -> xr.DataArray:
-    """Convert any TimeSeries input to an xr.DataArray aligned with time.
-
-    Scalar -> broadcast, list -> length-check, Series -> align.
-    """
-    n = len(time)
-    if isinstance(value, xr.DataArray):
-        if len(value) != n:
-            raise ValueError(f'DataArray length {len(value)} does not match timesteps length {n}')
-        return value.rename(name)
-    if isinstance(value, (int, float)):
-        return xr.DataArray(np.full(n, float(value)), dims=['time'], coords={'time': time}, name=name)
-    if isinstance(value, list):
-        if len(value) != n:
-            raise ValueError(f'List length {len(value)} does not match timesteps length {n}')
-        return xr.DataArray([float(v) for v in value], dims=['time'], coords={'time': time}, name=name)
-    if isinstance(value, np.ndarray):
-        if len(value) != n:
-            raise ValueError(f'Array length {len(value)} does not match timesteps length {n}')
-        return xr.DataArray(value.astype(float), dims=['time'], coords={'time': time}, name=name)
-    if isinstance(value, pd.Series):
-        if len(value) != n:
-            raise ValueError(f'Series length {len(value)} does not match timesteps length {n}')
-        return xr.DataArray(value.values.astype(float), dims=['time'], coords={'time': time}, name=name)
-    raise TypeError(f'Unsupported TimeSeries type: {type(value)}')
-
-
 def as_dataarray(
     value: TimeSeries,
     coords: Mapping[str, Any],
     *,
     name: str = 'value',
-    broadcast: bool = False,
+    broadcast: bool = True,
 ) -> xr.DataArray:
     """Convert a TimeSeries to a DataArray aligned to the given coordinates.
 
@@ -109,7 +82,8 @@ def as_dataarray(
     name
         Name for the resulting DataArray.
     broadcast
-        If True, expand the result to span *all* dimensions in *coords*.
+        Expand the result to span *all* dimensions in *coords* (default True).
+        Pass False to keep only the matched dimension.
     """
     coord_idx = {k: v if isinstance(v, pd.Index) else pd.Index(v) for k, v in coords.items()}
 
