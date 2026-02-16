@@ -132,6 +132,7 @@ def as_dataarray(
             for dim, idx in coord_idx.items():
                 if dim not in da.dims:
                     da = da.expand_dims({dim: idx})
+            da = da.transpose(*coord_idx)
         return da
 
     # --- 1D: list / ndarray / Series ---
@@ -160,6 +161,7 @@ def as_dataarray(
         for d, idx in coord_idx.items():
             if d not in da.dims:
                 da = da.expand_dims({d: idx})
+        da = da.transpose(*coord_idx)
     return da
 
 

@@ -183,9 +183,16 @@ class TestAsDataArrayList:
         flows = pd.Index(['a', 'b'])
         time = pd.RangeIndex(3)
         result = as_dataarray([10.0, 20.0, 30.0], {'flow': flows, 'time': time}, broadcast=True)
-        assert set(result.dims) == {'flow', 'time'}
-        assert result.sizes['time'] == 3
-        assert result.sizes['flow'] == 2
+        assert result.dims == ('flow', 'time')
+        assert result.shape == (2, 3)
+
+    def test_broadcast_preserves_coord_order(self):
+        """Data matches 'time' but coords list it second — dims must follow coords order."""
+        time = pd.RangeIndex(3)
+        flows = pd.Index(['a', 'b'])
+        result = as_dataarray([1.0, 2.0, 3.0], {'time': time, 'flow': flows}, broadcast=True)
+        assert result.dims == ('time', 'flow')
+        assert result.shape == (3, 2)
 
     def test_ambiguous_length_raises(self):
         c1 = pd.RangeIndex(3)
@@ -226,9 +233,16 @@ class TestAsDataArrayDataArray:
         da = xr.DataArray([1.0, 2.0], dims=['time'], coords={'time': [0, 1]})
         flows = pd.Index(['a', 'b', 'c'])
         result = as_dataarray(da, {'flow': flows, 'time': pd.RangeIndex(2)}, broadcast=True)
-        assert set(result.dims) == {'flow', 'time'}
-        assert result.sizes['flow'] == 3
-        assert result.sizes['time'] == 2
+        assert result.dims == ('flow', 'time')
+        assert result.shape == (3, 2)
+
+    def test_broadcast_preserves_coord_order(self):
+        """Data has dim 'time' but coords list it first — dims must follow coords order."""
+        da = xr.DataArray([1.0, 2.0], dims=['time'], coords={'time': [0, 1]})
+        flows = pd.Index(['a', 'b', 'c'])
+        result = as_dataarray(da, {'time': pd.RangeIndex(2), 'flow': flows}, broadcast=True)
+        assert result.dims == ('time', 'flow')
+        assert result.shape == (2, 3)
 
 
 class TestAsDataArrayUnsupported:
