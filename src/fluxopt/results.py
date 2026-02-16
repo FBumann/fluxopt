@@ -8,7 +8,7 @@ import xarray as xr
 
 if TYPE_CHECKING:
     from fluxopt.model import FlowSystemModel
-    from fluxopt.tables import ModelData
+    from fluxopt.model_data import ModelData
 
 
 @dataclass
@@ -58,7 +58,7 @@ class SolvedModel:
     @classmethod
     def from_netcdf(cls, path: str | Path) -> SolvedModel:
         """Read a SolvedModel from a NetCDF file."""
-        from fluxopt.tables import ModelData
+        from fluxopt.model_data import ModelData
 
         p = Path(path)
         solution = xr.open_dataset(p, engine='netcdf4')

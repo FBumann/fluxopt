@@ -9,7 +9,7 @@ from linopy import Model
 from fluxopt.results import SolvedModel
 
 if TYPE_CHECKING:
-    from fluxopt.tables import ModelData
+    from fluxopt.model_data import ModelData
 
 
 class FlowSystemModel:

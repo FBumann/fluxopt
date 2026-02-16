@@ -1,8 +1,8 @@
 from fluxopt.components import Converter, Port
 from fluxopt.elements import Bus, Effect, Flow, Storage
 from fluxopt.model import FlowSystemModel
+from fluxopt.model_data import ModelData, build_model_data
 from fluxopt.results import SolvedModel
-from fluxopt.tables import ModelData, build_model_data
 from fluxopt.types import IdList, TimeSeries, Timesteps, compute_dt, normalize_timesteps, to_data_array
 
 
