@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import TYPE_CHECKING, Protocol, overload, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, overload, runtime_checkable
 
 import numpy as np
 import pandas as pd
 import xarray as xr
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Iterator
+    from collections.abc import Iterable, Iterator, Mapping
 
 type TimeSeries = float | int | list[float] | np.ndarray | pd.Series | xr.DataArray
 type Timesteps = list[datetime] | list[int] | pd.DatetimeIndex | np.ndarray
@@ -89,6 +89,78 @@ def to_data_array(value: TimeSeries, time: pd.Index, name: str = 'value') -> xr.
             raise ValueError(f'Series length {len(value)} does not match timesteps length {n}')
         return xr.DataArray(value.values.astype(float), dims=['time'], coords={'time': time}, name=name)
     raise TypeError(f'Unsupported TimeSeries type: {type(value)}')
+
+
+def as_dataarray(
+    value: TimeSeries,
+    coords: Mapping[str, Any],
+    *,
+    name: str = 'value',
+    broadcast: bool = False,
+) -> xr.DataArray:
+    """Convert a TimeSeries to a DataArray aligned to the given coordinates.
+
+    Parameters
+    ----------
+    value
+        Scalar, list, ndarray, Series, or DataArray.
+    coords
+        Target coordinates, e.g. ``{"time": idx}`` or ``{"flow": ids, "time": idx}``.
+    name
+        Name for the resulting DataArray.
+    broadcast
+        If True, expand the result to span *all* dimensions in *coords*.
+    """
+    coord_idx = {k: v if isinstance(v, pd.Index) else pd.Index(v) for k, v in coords.items()}
+
+    # --- scalar: 0-dim unless broadcast ---
+    if isinstance(value, (int, float)):
+        if not broadcast:
+            return xr.DataArray(float(value), name=name)
+        shape = tuple(len(v) for v in coord_idx.values())
+        return xr.DataArray(
+            np.full(shape, float(value)),
+            dims=list(coord_idx),
+            coords=coord_idx,
+            name=name,
+        )
+
+    # --- existing DataArray: align + optionally broadcast ---
+    if isinstance(value, xr.DataArray):
+        da = value.rename(name)
+        if broadcast:
+            for dim, idx in coord_idx.items():
+                if dim not in da.dims:
+                    da = da.expand_dims({dim: idx})
+        return da
+
+    # --- 1D: list / ndarray / Series ---
+    if isinstance(value, pd.Series):
+        arr = value.values.astype(float)
+    elif isinstance(value, np.ndarray):
+        arr = value.astype(float)
+    elif isinstance(value, list):
+        arr = np.array(value, dtype=float)
+    else:
+        raise TypeError(f'Unsupported TimeSeries type: {type(value)}')
+
+    n = len(arr)
+    matches = [k for k, v in coord_idx.items() if len(v) == n]
+    if len(matches) == 0:
+        lengths = ', '.join(f'{k}({len(v)})' for k, v in coord_idx.items())
+        raise ValueError(f'Length {n} does not match any coordinate: {lengths}')
+    if len(matches) > 1:
+        raise ValueError(
+            f'Length {n} matches multiple coordinates: {matches}. '
+            f'Pass an xr.DataArray with explicit dims to disambiguate.'
+        )
+    dim = matches[0]
+    da = xr.DataArray(arr, dims=[dim], coords={dim: coord_idx[dim]}, name=name)
+    if broadcast:
+        for d, idx in coord_idx.items():
+            if d not in da.dims:
+                da = da.expand_dims({d: idx})
+    return da
 
 
 def normalize_timesteps(timesteps: Timesteps) -> pd.Index:

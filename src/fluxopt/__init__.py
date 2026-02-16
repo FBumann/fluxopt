@@ -3,7 +3,15 @@ from fluxopt.elements import Bus, Effect, Flow, Sizing, Storage
 from fluxopt.model import FlowSystemModel
 from fluxopt.model_data import ModelData
 from fluxopt.results import SolvedModel
-from fluxopt.types import IdList, TimeSeries, Timesteps, compute_dt, normalize_timesteps, to_data_array
+from fluxopt.types import (
+    IdList,
+    TimeSeries,
+    Timesteps,
+    as_dataarray,
+    compute_dt,
+    normalize_timesteps,
+    to_data_array,
+)
 
 
 def solve(
@@ -38,6 +46,7 @@ __all__ = [
     'Storage',
     'TimeSeries',
     'Timesteps',
+    'as_dataarray',
     'compute_dt',
     'normalize_timesteps',
     'solve',

@@ -5,8 +5,9 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 import pytest
+import xarray as xr
 
-from fluxopt.types import compute_dt, normalize_timesteps, to_data_array
+from fluxopt.types import as_dataarray, compute_dt, normalize_timesteps, to_data_array
 
 
 @pytest.fixture
@@ -131,3 +132,106 @@ class TestComputeDt:
         ts = pd.DatetimeIndex([datetime(2024, 1, 1)])
         result = compute_dt(ts, None)
         assert list(result.values) == [1.0]
+
+
+class TestAsDataArrayScalar:
+    def test_no_broadcast_returns_0dim(self):
+        result = as_dataarray(5.0, {'time': pd.RangeIndex(3)})
+        assert result.shape == ()
+        assert float(result) == 5.0
+        assert result.name == 'value'
+
+    def test_int_no_broadcast(self):
+        result = as_dataarray(3, {'time': pd.RangeIndex(3)})
+        assert result.shape == ()
+        assert float(result) == 3.0
+
+    def test_broadcast_single_coord(self):
+        idx = pd.RangeIndex(3)
+        result = as_dataarray(5.0, {'time': idx}, broadcast=True)
+        assert result.shape == (3,)
+        assert list(result.values) == [5.0, 5.0, 5.0]
+        assert result.dims == ('time',)
+
+    def test_broadcast_multi_coord(self):
+        flows = pd.Index(['gas', 'elec'])
+        time = pd.RangeIndex(4)
+        result = as_dataarray(2.0, {'flow': flows, 'time': time}, broadcast=True)
+        assert result.shape == (2, 4)
+        assert result.dims == ('flow', 'time')
+        np.testing.assert_array_equal(result.values, np.full((2, 4), 2.0))
+
+    def test_custom_name(self):
+        result = as_dataarray(1.0, {'t': [0, 1]}, name='cost', broadcast=True)
+        assert result.name == 'cost'
+
+
+class TestAsDataArrayList:
+    def test_single_coord(self):
+        result = as_dataarray([1.0, 2.0, 3.0], {'time': pd.RangeIndex(3)})
+        assert result.dims == ('time',)
+        assert list(result.values) == [1.0, 2.0, 3.0]
+
+    def test_multi_coord_matches_correct_dim(self):
+        flows = pd.Index(['a', 'b'])
+        time = pd.RangeIndex(3)
+        result = as_dataarray([10.0, 20.0, 30.0], {'flow': flows, 'time': time})
+        assert result.dims == ('time',)
+        assert list(result.values) == [10.0, 20.0, 30.0]
+
+    def test_multi_coord_broadcast(self):
+        flows = pd.Index(['a', 'b'])
+        time = pd.RangeIndex(3)
+        result = as_dataarray([10.0, 20.0, 30.0], {'flow': flows, 'time': time}, broadcast=True)
+        assert set(result.dims) == {'flow', 'time'}
+        assert result.sizes['time'] == 3
+        assert result.sizes['flow'] == 2
+
+    def test_ambiguous_length_raises(self):
+        c1 = pd.RangeIndex(3)
+        c2 = pd.Index(['a', 'b', 'c'])
+        with pytest.raises(ValueError, match='matches multiple coordinates'):
+            as_dataarray([1.0, 2.0, 3.0], {'x': c1, 'y': c2})
+
+    def test_no_match_raises(self):
+        with pytest.raises(ValueError, match='does not match any coordinate'):
+            as_dataarray([1.0, 2.0], {'time': pd.RangeIndex(5)})
+
+
+class TestAsDataArrayNdarray:
+    def test_array(self):
+        arr = np.array([10.0, 20.0])
+        result = as_dataarray(arr, {'flow': pd.Index(['a', 'b'])})
+        assert result.dims == ('flow',)
+        assert list(result.values) == [10.0, 20.0]
+
+
+class TestAsDataArraySeries:
+    def test_series(self):
+        s = pd.Series([4.0, 5.0, 6.0])
+        result = as_dataarray(s, {'time': pd.RangeIndex(3)})
+        assert result.dims == ('time',)
+        assert list(result.values) == [4.0, 5.0, 6.0]
+
+
+class TestAsDataArrayDataArray:
+    def test_passthrough(self):
+        da = xr.DataArray([1.0, 2.0], dims=['time'], coords={'time': [0, 1]})
+        result = as_dataarray(da, {'time': pd.RangeIndex(2)})
+        assert result.name == 'value'
+        assert result.dims == ('time',)
+        assert list(result.values) == [1.0, 2.0]
+
+    def test_broadcast_expands_dims(self):
+        da = xr.DataArray([1.0, 2.0], dims=['time'], coords={'time': [0, 1]})
+        flows = pd.Index(['a', 'b', 'c'])
+        result = as_dataarray(da, {'flow': flows, 'time': pd.RangeIndex(2)}, broadcast=True)
+        assert set(result.dims) == {'flow', 'time'}
+        assert result.sizes['flow'] == 3
+        assert result.sizes['time'] == 2
+
+
+class TestAsDataArrayUnsupported:
+    def test_dict_raises(self):
+        with pytest.raises(TypeError, match='Unsupported'):
+            as_dataarray({}, {'time': pd.RangeIndex(3)})
