@@ -10,11 +10,10 @@ if TYPE_CHECKING:
     from fluxopt.types import TimeSeries
 
 
-def _qualify_flows(component_id: str, flows: list[Flow], *, is_input: bool) -> IdList[Flow]:
-    """Set qualified id and direction on each flow, return as IdList."""
+def _qualify_flows(component_id: str, flows: list[Flow]) -> IdList[Flow]:
+    """Set qualified id on each flow, return as IdList."""
     for f in flows:
-        f.id = f'{component_id}({f.id or f.bus})'
-        f._is_input = is_input
+        f.id = f'{component_id}({f.id})'
     return IdList(flows)
 
 
@@ -25,8 +24,8 @@ class Port:
     exports: list[Flow] | IdList[Flow] = field(default_factory=list)
 
     def __post_init__(self) -> None:
-        self.imports = _qualify_flows(self.id, list(self.imports), is_input=False)
-        self.exports = _qualify_flows(self.id, list(self.exports), is_input=True)
+        self.imports = _qualify_flows(self.id, list(self.imports))
+        self.exports = _qualify_flows(self.id, list(self.exports))
 
 
 @dataclass
@@ -43,8 +42,8 @@ class Converter:
     conversion_factors: list[dict[Flow, TimeSeries]] = field(default_factory=list)  # a_f
 
     def __post_init__(self) -> None:
-        self.inputs = _qualify_flows(self.id, list(self.inputs), is_input=True)
-        self.outputs = _qualify_flows(self.id, list(self.outputs), is_input=False)
+        self.inputs = _qualify_flows(self.id, list(self.inputs))
+        self.outputs = _qualify_flows(self.id, list(self.outputs))
 
     @classmethod
     def boiler(cls, id: str, thermal_efficiency: TimeSeries, fuel_flow: Flow, thermal_flow: Flow) -> Converter:

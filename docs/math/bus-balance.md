@@ -24,8 +24,8 @@ The sign convention uses coefficients: \(+1\) for flows producing into the bus a
 
 | Symbol | Description | Reference |
 |---|---|---|
-| \(\mathcal{F}_b^{\text{out}}\) | Flows producing into bus \(b\) | Flows with `_is_input=False` connected to bus |
-| \(\mathcal{F}_b^{\text{in}}\) | Flows consuming from bus \(b\) | Flows with `_is_input=True` connected to bus |
+| \(\mathcal{F}_b^{\text{out}}\) | Flows producing into bus \(b\) | `bus_coeff[f.id] = +1` (port imports, converter outputs, storage discharging) |
+| \(\mathcal{F}_b^{\text{in}}\) | Flows consuming from bus \(b\) | `bus_coeff[f.id] = -1` (port exports, converter inputs, storage charging) |
 | \(P_{f,t}\) | Flow rate variable | `flow_rate[flow, time]` |
 
 See [Notation](notation.md) for the full symbol table.

@@ -30,15 +30,14 @@ class Flow:
     """A single energy flow on a bus.
 
     ``id`` is optional: leave empty for the common single-flow-per-bus case and
-    the parent component will default it to the bus name.  Set it explicitly to
-    disambiguate when a component has multiple flows on the same bus::
+    it defaults to the bus name.  Set it explicitly to disambiguate when a
+    component has multiple flows on the same bus::
 
-        Flow(bus='elec')  # → boiler(elec)
+        Flow(bus='elec')  # id defaults to 'elec' → boiler(elec)
         Flow(bus='elec', id='base')  # → chp(base)
 
     After the parent component's ``__post_init__`` runs, ``id`` is expanded to
-    the qualified form ``{component.id}({id or bus})``.  For storage flows the
-    default is ``charge`` / ``discharge`` instead of the bus name.
+    the qualified form ``{component.id}({id})``.
     """
 
     bus: str
@@ -49,7 +48,9 @@ class Flow:
     fixed_relative_profile: TimeSeries | None = None  # π_f  [-]
     effects_per_flow_hour: dict[str, TimeSeries] = field(default_factory=dict)  # c_{f,k}  [varies]
 
-    _is_input: bool = field(default=False, init=False, repr=False)
+    def __post_init__(self) -> None:
+        if not self.id:
+            self.id = self.bus
 
 
 @dataclass
@@ -73,6 +74,13 @@ class Effect:
 class Storage:
     """Energy storage with charge dynamics.
 
+    Flow ids are qualified as ``{storage.id}({flow.id})``.  When both flows
+    connect to the same bus their ids would collide, so they are renamed to
+    ``charge`` / ``discharge`` before qualification::
+
+        Storage('bat', Flow(bus='elec'), Flow(bus='elec'))  # → bat(charge), bat(discharge)
+        Storage('bat', Flow(bus='elec'), Flow(bus='heat'))  # → bat(elec), bat(heat)
+
     Charge balance:
         E_{s,t+1} = E_{s,t} (1 - δ Δt) + P^c η^c Δt - P^d / η^d Δt
     """
@@ -89,7 +97,8 @@ class Storage:
     relative_maximum_charge_state: TimeSeries = 1.0  # ē_s  [-]
 
     def __post_init__(self) -> None:
-        self.charging.id = f'{self.id}({self.charging.id or "charge"})'
-        self.charging._is_input = True  # charging takes energy from the bus
-        self.discharging.id = f'{self.id}({self.discharging.id or "discharge"})'
-        self.discharging._is_input = False  # discharging puts energy to the bus
+        if self.charging.id == self.discharging.id:
+            self.charging.id = 'charge'
+            self.discharging.id = 'discharge'
+        self.charging.id = f'{self.id}({self.charging.id})'
+        self.discharging.id = f'{self.id}({self.discharging.id})'

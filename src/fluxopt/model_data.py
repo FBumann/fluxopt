@@ -224,7 +224,7 @@ class BusesData:
         return cls(flow_coeff=ds['flow_coeff'])
 
     @classmethod
-    def build(cls, buses: list[Bus], flows: list[Flow]) -> Self:
+    def build(cls, buses: list[Bus], flows: list[Flow], bus_coeff: dict[str, float]) -> Self:
         """Build BusesData with flow coefficients."""
         bus_ids = [b.id for b in buses]
         flow_ids = [f.id for f in flows]
@@ -234,7 +234,7 @@ class BusesData:
             if f.bus in bus_ids:
                 bi = bus_ids.index(f.bus)
                 fi = flow_ids.index(f.id)
-                coeff[bi, fi] = -1.0 if f._is_input else 1.0
+                coeff[bi, fi] = bus_coeff[f.id]
 
         return cls(
             flow_coeff=xr.DataArray(coeff, dims=['bus', 'flow'], coords={'bus': bus_ids, 'flow': flow_ids}),
@@ -584,14 +584,14 @@ class ModelData:
         time = normalize_timesteps(timesteps)
         dt_da = _compute_dt(time, dt)
 
-        flows = _collect_flows(ports, converters, stor_list)
+        flows, bus_coeff = _collect_flows(ports, converters, stor_list)
         _validate_system(buses, effects, ports, converters, stor_list, flows)
 
         time_extra = _compute_time_extra(time, dt_da)
         weights = xr.DataArray(np.ones(len(time)), dims=['time'], coords={'time': time}, name='weight')
 
         flows_data = FlowsData.build(flows, time, effects)
-        buses_data = BusesData.build(buses, flows)
+        buses_data = BusesData.build(buses, flows, bus_coeff)
         converters_data = ConvertersData.build(converters, time)
         effects_data = EffectsData.build(effects, time)
         storages_data = StoragesData.build(stor_list, time, time_extra, dt_da, effects)
@@ -613,18 +613,34 @@ def _collect_flows(
     ports: list[Port],
     converters: list[Converter],
     storages: list[Storage] | None,
-) -> list[Flow]:
+) -> tuple[list[Flow], dict[str, float]]:
+    """Gather all flows and assign bus-balance coefficients by direction.
+
+    Returns (flows, bus_coeff) where bus_coeff maps flow id → +1 (produces
+    into bus) or -1 (consumes from bus).
+    """
     flows: list[Flow] = []
+    bus_coeff: dict[str, float] = {}
     for port in ports:
-        flows.extend(port.imports)
-        flows.extend(port.exports)
+        for f in port.imports:
+            flows.append(f)
+            bus_coeff[f.id] = 1.0  # imports add energy to bus
+        for f in port.exports:
+            flows.append(f)
+            bus_coeff[f.id] = -1.0  # exports take energy from bus
     for conv in converters:
-        flows.extend(conv.inputs)
-        flows.extend(conv.outputs)
+        for f in conv.inputs:
+            flows.append(f)
+            bus_coeff[f.id] = -1.0  # converter consumes from bus
+        for f in conv.outputs:
+            flows.append(f)
+            bus_coeff[f.id] = 1.0  # converter produces to bus
     for s in storages or []:
         flows.append(s.charging)
+        bus_coeff[s.charging.id] = -1.0  # charging takes from bus
         flows.append(s.discharging)
-    return flows
+        bus_coeff[s.discharging.id] = 1.0  # discharging adds to bus
+    return flows, bus_coeff
 
 
 def _validate_system(
