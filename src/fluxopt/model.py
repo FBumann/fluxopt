@@ -172,7 +172,6 @@ class FlowSystemModel:
 
         stor_ids = ds.coords['storage']
         time_extra = d.time_extra
-        time_vals = list(d.time.values)
         te_vals = list(time_extra.values)
 
         # charge_state[storage, time_extra] >= 0
@@ -204,50 +203,32 @@ class FlowSystemModel:
             if has_cs_ub.any():
                 self.m.add_constraints(self.charge_state <= abs_cs_ub, name='cs_ub', mask=has_cs_ub)
 
-        # Build coefficient maps to select charge/discharge flows per storage
+        # Map charge/discharge flows to storage dimension via sel + rename
         charge_fids = [str(v) for v in ds['charge_flow'].values]
         discharge_fids = [str(v) for v in ds['discharge_flow'].values]
-        all_flow_ids = list(self.flow_rate.coords['flow'].values)
-        n_stor = len(stor_ids)
-        n_flows = len(all_flow_ids)
+        stor_vals = stor_ids.values
 
-        c_map = np.zeros((n_stor, n_flows))
-        d_map = np.zeros((n_stor, n_flows))
-        for i in range(n_stor):
-            c_map[i, all_flow_ids.index(charge_fids[i])] = 1.0
-            d_map[i, all_flow_ids.index(discharge_fids[i])] = 1.0
+        charge_rates = self.flow_rate.sel(flow=charge_fids).rename({'flow': 'storage'})
+        charge_rates = charge_rates.assign_coords({'storage': stor_vals})
+        discharge_rates = self.flow_rate.sel(flow=discharge_fids).rename({'flow': 'storage'})
+        discharge_rates = discharge_rates.assign_coords({'storage': stor_vals})
 
-        charge_coeff = xr.DataArray(c_map, dims=['storage', 'flow'], coords={'storage': stor_ids, 'flow': all_flow_ids})
-        discharge_coeff = xr.DataArray(
-            d_map, dims=['storage', 'flow'], coords={'storage': stor_ids, 'flow': all_flow_ids}
+        # Precompute pure-xarray coefficients (no linopy overhead)
+        loss_factor = 1 - ds['loss'] * d.dt  # (storage, time)
+        charge_factor = ds['eta_c'] * d.dt  # (storage, time)
+        discharge_factor = d.dt / ds['eta_d']  # (storage, time)
+
+        # Slice charge_state into cs[t] and cs[t+1], rename time_extra → time for alignment
+        cs_curr = self.charge_state.isel(time_extra=slice(None, -1)).rename({'time_extra': 'time'})
+        cs_curr = cs_curr.assign_coords({'time': d.time})
+        cs_next = self.charge_state.isel(time_extra=slice(1, None)).rename({'time_extra': 'time'})
+        cs_next = cs_next.assign_coords({'time': d.time})
+
+        # Fully vectorized energy balance over (storage, time)
+        balance_lhs = (
+            cs_next - cs_curr * loss_factor - charge_rates * charge_factor + discharge_rates * discharge_factor
         )
-
-        # charge_rate[storage, time] and discharge_rate[storage, time]
-        charge_rate = (charge_coeff * self.flow_rate).sum('flow')
-        discharge_rate = (discharge_coeff * self.flow_rate).sum('flow')
-
-        eta_c = ds['eta_c']  # (storage, time)
-        eta_d = ds['eta_d']  # (storage, time)
-        loss = ds['loss']  # (storage, time)
-
-        # Balance: vectorized over storages, per timestep
-        for ti, t in enumerate(time_vals):
-            t_next = te_vals[ti + 1]
-            dt_t = float(d.dt.sel(time=t).values)
-
-            loss_factor = 1.0 - loss.sel(time=t) * dt_t
-            charge_factor = eta_c.sel(time=t) * dt_t
-            discharge_factor = dt_t / eta_d.sel(time=t)
-
-            cs_next = self.charge_state.sel(time_extra=t_next)
-            cs_curr = self.charge_state.sel(time_extra=t)
-            cr = charge_rate.sel(time=t)
-            dr = discharge_rate.sel(time=t)
-
-            self.m.add_constraints(
-                cs_next == cs_curr * loss_factor + cr * charge_factor - dr * discharge_factor,
-                name=f'storage_bal_t{ti}',
-            )
+        self.m.add_constraints(balance_lhs == 0, name='storage_balance')
 
         # Initial/cyclic conditions (vectorized over storages)
         cyclic_mask = ds['cyclic'].values.astype(bool)
