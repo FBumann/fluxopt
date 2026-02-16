@@ -36,7 +36,7 @@ class TestBusBalance:
         )
 
         expected_cost = (50 + 80 + 60) * 0.04
-        assert result.objective_value == pytest.approx(expected_cost, abs=1e-6)
+        assert result.objective == pytest.approx(expected_cost, abs=1e-6)
 
     def test_two_sources_one_bus(self, timesteps_3):
         """Optimizer picks cheaper source."""

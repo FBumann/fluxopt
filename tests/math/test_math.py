@@ -60,7 +60,7 @@ class TestBusBalance:
                 Port('Src2', imports=[Flow(bus='Heat', effects_per_flow_hour={'costs': 2}, size=20)]),
             ],
         )
-        assert_allclose(result.objective_value, 80.0, rtol=1e-5)
+        assert_allclose(result.objective, 80.0, rtol=1e-5)
         src1 = result.flow_rate('Src1(Heat)').values
         src2 = result.flow_rate('Src2(Heat)').values
         assert_allclose(src1, [20, 20], rtol=1e-5)
@@ -90,7 +90,7 @@ class TestConversionEfficiency:
             ],
             converters=[Converter.boiler('Boiler', 0.8, fuel, thermal)],
         )
-        assert_allclose(result.objective_value, 50.0, rtol=1e-5)
+        assert_allclose(result.objective, 50.0, rtol=1e-5)
 
     def test_variable_efficiency(self):
         """Boiler eta=[0.5, 1.0], demand=[10,10]. fuel = 10/0.5 + 10/1.0 = 30.
@@ -109,7 +109,7 @@ class TestConversionEfficiency:
             ],
             converters=[Converter.boiler('Boiler', [0.5, 1.0], fuel, thermal)],
         )
-        assert_allclose(result.objective_value, 30.0, rtol=1e-5)
+        assert_allclose(result.objective, 30.0, rtol=1e-5)
 
     def test_chp_dual_output(self):
         """CHP eta_th=0.5, eta_el=0.4. demand=50 heat/ts. Elec sold at -2€/kWh.
@@ -131,7 +131,7 @@ class TestConversionEfficiency:
             ],
             converters=[Converter.chp('CHP', 0.4, 0.5, fuel, electrical, thermal)],
         )
-        assert_allclose(result.objective_value, 40.0, rtol=1e-5)
+        assert_allclose(result.objective, 40.0, rtol=1e-5)
 
 
 # ---------------------------------------------------------------------------
@@ -155,7 +155,7 @@ class TestEffects:
                 Port('HeatSrc', imports=[Flow(bus='Heat', effects_per_flow_hour={'costs': 2, 'CO2': 0.5})]),
             ],
         )
-        assert_allclose(result.objective_value, 60.0, rtol=1e-5)
+        assert_allclose(result.objective, 60.0, rtol=1e-5)
         co2 = float(result.effects.sel(effect='CO2').values)
         assert_allclose(co2, 15.0, rtol=1e-5)
 
@@ -175,7 +175,7 @@ class TestEffects:
                 Port('Clean', imports=[Flow(bus='Heat', effects_per_flow_hour={'costs': 10, 'CO2': 0})]),
             ],
         )
-        assert_allclose(result.objective_value, 65.0, rtol=1e-5)
+        assert_allclose(result.objective, 65.0, rtol=1e-5)
         co2 = float(result.effects.sel(effect='CO2').values)
         assert_allclose(co2, 15.0, rtol=1e-5)
 
@@ -198,7 +198,7 @@ class TestEffects:
         )
         co2 = float(result.effects.sel(effect='CO2').values)
         assert_allclose(co2, 25.0, rtol=1e-5)
-        assert_allclose(result.objective_value, 25.0, rtol=1e-5)
+        assert_allclose(result.objective, 25.0, rtol=1e-5)
 
     def test_effect_maximum_per_hour(self):
         """CO2 max_per_hour=8. Dirty: 1€+1kgCO2. Clean: 5€+0kgCO2.
@@ -217,7 +217,7 @@ class TestEffects:
                 Port('Clean', imports=[Flow(bus='Heat', effects_per_flow_hour={'costs': 5, 'CO2': 0})]),
             ],
         )
-        assert_allclose(result.objective_value, 48.0, rtol=1e-5)
+        assert_allclose(result.objective, 48.0, rtol=1e-5)
 
     def test_effect_minimum_per_hour(self):
         """CO2 min_per_hour=10. Dirty: 1€+1kgCO2. Demand=[5,5].
@@ -236,7 +236,7 @@ class TestEffects:
                 _waste('Heat'),
             ],
         )
-        assert_allclose(result.objective_value, 20.0, rtol=1e-5)
+        assert_allclose(result.objective, 20.0, rtol=1e-5)
         co2 = float(result.effects.sel(effect='CO2').values)
         assert_allclose(co2, 20.0, rtol=1e-5)
 
@@ -257,7 +257,7 @@ class TestEffects:
                 Port('Clean', imports=[Flow(bus='Heat', effects_per_flow_hour={'costs': 5, 'CO2': 0})]),
             ],
         )
-        assert_allclose(result.objective_value, 52.0, rtol=1e-5)
+        assert_allclose(result.objective, 52.0, rtol=1e-5)
         co2 = float(result.effects.sel(effect='CO2').values)
         assert_allclose(co2, 12.0, rtol=1e-5)
 
@@ -279,7 +279,7 @@ class TestEffects:
         )
         co2 = float(result.effects.sel(effect='CO2').values)
         assert_allclose(co2, 25.0, rtol=1e-5)
-        assert_allclose(result.objective_value, 25.0, rtol=1e-5)
+        assert_allclose(result.objective, 25.0, rtol=1e-5)
 
 
 # ---------------------------------------------------------------------------
@@ -307,7 +307,7 @@ class TestFlowConstraints:
             ],
             converters=[Converter.boiler('Boiler', 1.0, fuel, thermal)],
         )
-        assert_allclose(result.objective_value, 80.0, rtol=1e-5)
+        assert_allclose(result.objective, 80.0, rtol=1e-5)
         flow = result.flow_rate('Boiler(Heat)').values
         assert all(f >= 40.0 - 1e-5 for f in flow), f'Flow below relative_minimum: {flow}'
 
@@ -330,7 +330,7 @@ class TestFlowConstraints:
                 Port('ExpensiveSrc', imports=[Flow(bus='Heat', effects_per_flow_hour={'costs': 5})]),
             ],
         )
-        assert_allclose(result.objective_value, 200.0, rtol=1e-5)
+        assert_allclose(result.objective, 200.0, rtol=1e-5)
         flow = result.flow_rate('CheapSrc(Heat)').values
         assert all(f <= 50.0 + 1e-5 for f in flow), f'Flow above relative_maximum: {flow}'
 
@@ -368,7 +368,7 @@ class TestStorage:
                 ),
             ],
         )
-        assert_allclose(result.objective_value, 20.0, rtol=1e-5)
+        assert_allclose(result.objective, 20.0, rtol=1e-5)
 
     def test_storage_losses(self):
         """10% loss/h. Charge 100 at t=0, available after 1h = 90.
@@ -397,7 +397,7 @@ class TestStorage:
                 ),
             ],
         )
-        assert_allclose(result.objective_value, 100.0, rtol=1e-5)
+        assert_allclose(result.objective, 100.0, rtol=1e-5)
 
     def test_storage_eta_charge_discharge(self):
         """eta_c=0.9, eta_d=0.8. Need 72 out → stored=72/0.8=90, charge=90/0.9=100.
@@ -427,7 +427,7 @@ class TestStorage:
                 ),
             ],
         )
-        assert_allclose(result.objective_value, 100.0, rtol=1e-5)
+        assert_allclose(result.objective, 100.0, rtol=1e-5)
 
     def test_storage_soc_bounds(self):
         """Capacity=100, max SOC=0.5 → 50 usable. Demand=[0,60].
@@ -457,7 +457,7 @@ class TestStorage:
                 ),
             ],
         )
-        assert_allclose(result.objective_value, 1050.0, rtol=1e-5)
+        assert_allclose(result.objective, 1050.0, rtol=1e-5)
 
     def test_storage_cyclic_charge_state(self):
         """Cyclic: final SOC = initial SOC. Price=[1,100]. Demand=[0,50].
@@ -486,7 +486,7 @@ class TestStorage:
                 ),
             ],
         )
-        assert_allclose(result.objective_value, 50.0, rtol=1e-5)
+        assert_allclose(result.objective, 50.0, rtol=1e-5)
 
     def test_storage_relative_minimum_charge_state(self):
         """Capacity=100, initial=50, min SOC=0.3 (→30 abs).
@@ -518,4 +518,4 @@ class TestStorage:
                 ),
             ],
         )
-        assert_allclose(result.objective_value, 1050.0, rtol=1e-5)
+        assert_allclose(result.objective, 1050.0, rtol=1e-5)

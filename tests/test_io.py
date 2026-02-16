@@ -58,7 +58,7 @@ class TestRoundtrip:
         result.to_netcdf(tmp_nc)
         loaded = SolvedModel.from_netcdf(tmp_nc)
 
-        assert loaded.objective_value == pytest.approx(result.objective_value, abs=1e-6)
+        assert loaded.objective == pytest.approx(result.objective, abs=1e-6)
 
     def test_with_storage(self, tmp_nc: Path) -> None:
         """Roundtrip: model with storage."""
@@ -68,7 +68,7 @@ class TestRoundtrip:
         result.to_netcdf(tmp_nc)
         loaded = SolvedModel.from_netcdf(tmp_nc)
 
-        assert loaded.objective_value == pytest.approx(result.objective_value, abs=1e-6)
+        assert loaded.objective == pytest.approx(result.objective, abs=1e-6)
 
     def test_model_data_preserved(self, tmp_nc: Path) -> None:
         """ModelData survives a NetCDF roundtrip."""
@@ -109,7 +109,7 @@ class TestRoundtrip:
         model = FlowSystemModel(loaded.data)
         model.build()
         result2 = model.solve()
-        assert result2.objective_value == pytest.approx(result.objective_value, abs=1e-6)
+        assert result2.objective == pytest.approx(result.objective, abs=1e-6)
 
 
 class TestXarrayDataset:
@@ -121,7 +121,7 @@ class TestXarrayDataset:
         ds = result.to_xarray()
         assert isinstance(ds, xr.Dataset)
         assert 'flow_rates' in ds
-        assert ds.attrs['objective_value'] == pytest.approx(result.objective_value)
+        assert ds.attrs['objective'] == pytest.approx(result.objective)
 
 
 class TestEdgeCases:
@@ -134,4 +134,4 @@ class TestEdgeCases:
         result.to_netcdf(tmp_nc)
         loaded = SolvedModel.from_netcdf(tmp_nc)
 
-        assert loaded.objective_value == pytest.approx(result.objective_value, abs=1e-6)
+        assert loaded.objective == pytest.approx(result.objective, abs=1e-6)

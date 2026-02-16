@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import timedelta
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -15,6 +16,14 @@ if TYPE_CHECKING:
     from fluxopt.elements import Bus, Effect, Flow, Storage
     from fluxopt.types import Timesteps
 
+_NC_GROUPS = {
+    'flows': 'model/flows',
+    'buses': 'model/buses',
+    'converters': 'model/conv',
+    'effects': 'model/effects',
+    'storages': 'model/stor',
+}
+
 
 @dataclass
 class ModelData:
@@ -23,10 +32,45 @@ class ModelData:
     converters: xr.Dataset
     effects: xr.Dataset
     storages: xr.Dataset
-    time: pd.Index
     dt: xr.DataArray  # (time,)
     weights: xr.DataArray  # (time,)
-    time_extra: pd.Index  # N+1 times for storage charge state
+    time: pd.Index = field(repr=False)
+    time_extra: pd.Index = field(repr=False)
+
+    def to_netcdf(self, path: str | Path, *, mode: str = 'a') -> None:
+        """Write model data as NetCDF groups under /model/."""
+        p = Path(path)
+        for name, group in _NC_GROUPS.items():
+            ds: xr.Dataset = getattr(self, name)
+            if ds.data_vars:
+                ds.to_netcdf(p, mode=mode, group=group, engine='netcdf4')
+        meta = xr.Dataset({'dt': self.dt, 'weights': self.weights})
+        meta.to_netcdf(p, mode='a', group='model/meta', engine='netcdf4')
+
+    @classmethod
+    def from_netcdf(cls, path: str | Path) -> ModelData | None:
+        """Read model data from NetCDF groups. Returns None if not present."""
+        p = Path(path)
+        try:
+            meta = xr.open_dataset(p, group='model/meta', engine='netcdf4')
+        except OSError:
+            return None
+
+        datasets: dict[str, xr.Dataset] = {}
+        for name, group in _NC_GROUPS.items():
+            try:
+                datasets[name] = xr.open_dataset(p, group=group, engine='netcdf4')
+            except OSError:
+                datasets[name] = xr.Dataset()
+
+        dt = meta['dt']
+        time = pd.Index(dt.coords['time'].values)
+        if 'time_extra' in datasets['storages'].coords:
+            time_extra = pd.Index(datasets['storages'].coords['time_extra'].values)
+            time_extra.name = 'time_extra'
+        else:
+            time_extra = _compute_time_extra(time, dt)
+        return cls(**datasets, dt=dt, weights=meta['weights'], time=time, time_extra=time_extra)
 
 
 def build_flows_dataset(flows: list[Flow], time: pd.Index, effects: list[Effect]) -> xr.Dataset:
@@ -370,8 +414,8 @@ def build_model_data(
         converters=converters_ds,
         effects=effects_ds,
         storages=storages_ds,
-        time=time,
         dt=dt_da,
         weights=weights,
+        time=time,
         time_extra=time_extra,
     )

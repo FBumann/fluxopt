@@ -77,7 +77,7 @@ print(result.effects)
 print(result.effects_per_timestep)
 
 # Objective value (shortcut for the objective effect's total)
-print(result.objective_value)
+print(result.objective)
 
 # Per-source contributions: which flows contributed what to each effect
 print(result.contributions)
@@ -124,7 +124,7 @@ result = solve(
     ],
 )
 
-print(f"Total cost: {result.objective_value:.2f}")
+print(f"Total cost: {result.objective:.2f}")
 print(result.effects)
 print(result.contributions)
 ```

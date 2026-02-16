@@ -48,7 +48,7 @@ class TestEndToEnd:
         # Verify cost
         total_gas = sum(h / eta for h in heat_demand)
         expected_cost = total_gas * 0.04
-        assert result.objective_value == pytest.approx(expected_cost, abs=1e-6)
+        assert result.objective == pytest.approx(expected_cost, abs=1e-6)
 
     def test_boiler_plus_storage(self):
         """Boiler + thermal storage: store heat in cheap hours."""
@@ -148,7 +148,7 @@ class TestEndToEnd:
             converters=[Converter.boiler('boiler', 0.9, fuel, heat)],
         )
 
-        assert result.objective_value > 0
+        assert result.objective > 0
         sr = result.flow_rate('boiler(gas)')
         assert sr.dims == ('time',)
         assert len(sr) == 4

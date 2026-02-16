@@ -32,7 +32,7 @@ result = solve(
     converters=[Converter.boiler('boiler', thermal_efficiency=0.9, fuel_flow=fuel, thermal_flow=heat)],
 )
 
-print(f"Total cost: {result.objective_value:.2f}")
+print(f"Total cost: {result.objective:.2f}")
 print(result.flow_rates)
 ```
 

@@ -52,7 +52,7 @@ class TestBoiler:
         )
 
         expected = (50 / eta + 80 / eta + 60 / eta) * 0.04
-        assert result.objective_value == pytest.approx(expected, abs=1e-6)
+        assert result.objective == pytest.approx(expected, abs=1e-6)
 
 
 class TestCHP:

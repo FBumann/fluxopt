@@ -20,7 +20,7 @@ class TestEffects:
         )
 
         expected = sum(d * 0.04 for d in demand)
-        assert result.objective_value == pytest.approx(expected, abs=1e-6)
+        assert result.objective == pytest.approx(expected, abs=1e-6)
 
     def test_multiple_effects(self, timesteps_3):
         """Track cost and CO2 simultaneously, minimize cost."""
@@ -46,7 +46,7 @@ class TestEffects:
         expected_cost = demand_total * 0.04
         expected_co2 = demand_total * 0.5
 
-        assert result.objective_value == pytest.approx(expected_cost, abs=1e-6)
+        assert result.objective == pytest.approx(expected_cost, abs=1e-6)
         co2_total = float(result.effects.sel(effect='co2').values)
         assert co2_total == pytest.approx(expected_co2, abs=1e-6)
 
@@ -86,4 +86,4 @@ class TestEffects:
         )
 
         expected = 50 * 0.02 + 50 * 0.08 + 50 * 0.04
-        assert result.objective_value == pytest.approx(expected, abs=1e-6)
+        assert result.objective == pytest.approx(expected, abs=1e-6)

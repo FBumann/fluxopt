@@ -93,7 +93,7 @@ result = solve(
 
 ```python
 # Objective value (total cost)
-print(result.objective_value)
+print(result.objective)
 
 # Flow rates for a specific flow
 print(result.flow_rate('boiler(gas)'))
