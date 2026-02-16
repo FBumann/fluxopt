@@ -61,8 +61,8 @@ class TestBusBalance:
             ],
         )
         assert_allclose(result.objective_value, 80.0, rtol=1e-5)
-        src1 = result.flow_rate('Src1(Heat)')['solution'].to_list()
-        src2 = result.flow_rate('Src2(Heat)')['solution'].to_list()
+        src1 = result.flow_rate('Src1(Heat)').values
+        src2 = result.flow_rate('Src2(Heat)').values
         assert_allclose(src1, [20, 20], rtol=1e-5)
         assert_allclose(src2, [10, 10], rtol=1e-5)
 
@@ -156,7 +156,7 @@ class TestEffects:
             ],
         )
         assert_allclose(result.objective_value, 60.0, rtol=1e-5)
-        co2 = result.effects.filter(result.effects['effect'] == 'CO2')['solution'][0]
+        co2 = float(result.effects.sel(effect='CO2').values)
         assert_allclose(co2, 15.0, rtol=1e-5)
 
     def test_effect_maximum_total(self):
@@ -176,7 +176,7 @@ class TestEffects:
             ],
         )
         assert_allclose(result.objective_value, 65.0, rtol=1e-5)
-        co2 = result.effects.filter(result.effects['effect'] == 'CO2')['solution'][0]
+        co2 = float(result.effects.sel(effect='CO2').values)
         assert_allclose(co2, 15.0, rtol=1e-5)
 
     def test_effect_minimum_total(self):
@@ -196,7 +196,7 @@ class TestEffects:
                 _waste('Heat'),
             ],
         )
-        co2 = result.effects.filter(result.effects['effect'] == 'CO2')['solution'][0]
+        co2 = float(result.effects.sel(effect='CO2').values)
         assert_allclose(co2, 25.0, rtol=1e-5)
         assert_allclose(result.objective_value, 25.0, rtol=1e-5)
 
@@ -237,7 +237,7 @@ class TestEffects:
             ],
         )
         assert_allclose(result.objective_value, 20.0, rtol=1e-5)
-        co2 = result.effects.filter(result.effects['effect'] == 'CO2')['solution'][0]
+        co2 = float(result.effects.sel(effect='CO2').values)
         assert_allclose(co2, 20.0, rtol=1e-5)
 
     def test_effect_maximum_temporal(self):
@@ -258,7 +258,7 @@ class TestEffects:
             ],
         )
         assert_allclose(result.objective_value, 52.0, rtol=1e-5)
-        co2 = result.effects.filter(result.effects['effect'] == 'CO2')['solution'][0]
+        co2 = float(result.effects.sel(effect='CO2').values)
         assert_allclose(co2, 12.0, rtol=1e-5)
 
     def test_effect_minimum_temporal(self):
@@ -277,7 +277,7 @@ class TestEffects:
                 _waste('Heat'),
             ],
         )
-        co2 = result.effects.filter(result.effects['effect'] == 'CO2')['solution'][0]
+        co2 = float(result.effects.sel(effect='CO2').values)
         assert_allclose(co2, 25.0, rtol=1e-5)
         assert_allclose(result.objective_value, 25.0, rtol=1e-5)
 
@@ -308,7 +308,7 @@ class TestFlowConstraints:
             converters=[Converter.boiler('Boiler', 1.0, fuel, thermal)],
         )
         assert_allclose(result.objective_value, 80.0, rtol=1e-5)
-        flow = result.flow_rate('Boiler(Heat)')['solution'].to_list()
+        flow = result.flow_rate('Boiler(Heat)').values
         assert all(f >= 40.0 - 1e-5 for f in flow), f'Flow below relative_minimum: {flow}'
 
     def test_relative_maximum(self):
@@ -331,7 +331,7 @@ class TestFlowConstraints:
             ],
         )
         assert_allclose(result.objective_value, 200.0, rtol=1e-5)
-        flow = result.flow_rate('CheapSrc(Heat)')['solution'].to_list()
+        flow = result.flow_rate('CheapSrc(Heat)').values
         assert all(f <= 50.0 + 1e-5 for f in flow), f'Flow above relative_maximum: {flow}'
 
 

@@ -19,7 +19,7 @@ class TestBusBalance:
             ports=[Port('grid', imports=[source_flow]), Port('demand', exports=[sink_flow])],
         )
 
-        source_rates = result.flow_rate('grid(elec)')['solution'].to_list()
+        source_rates = result.flow_rate('grid(elec)').values
         for actual, expected in zip(source_rates, demand, strict=False):
             assert actual == pytest.approx(expected, abs=1e-6)
 
@@ -55,8 +55,8 @@ class TestBusBalance:
             ],
         )
 
-        cheap_rates = result.flow_rate('cheap_src(elec)')['solution'].to_list()
-        exp_rates = result.flow_rate('exp_src(elec)')['solution'].to_list()
+        cheap_rates = result.flow_rate('cheap_src(elec)').values
+        exp_rates = result.flow_rate('exp_src(elec)').values
         for rate in cheap_rates:
             assert rate == pytest.approx(50.0, abs=1e-6)
         for rate in exp_rates:

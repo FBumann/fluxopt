@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from datetime import datetime
 
-import polars as pl
 import pytest
 
 from fluxopt import (
@@ -42,9 +41,9 @@ class TestEndToEnd:
         )
 
         # Verify gas = heat / eta
-        for i, hd in enumerate(heat_demand):
-            gas_rate = result.flow_rate('boiler(gas)')['solution'][i]
-            assert gas_rate == pytest.approx(hd / eta, abs=1e-6)
+        gas_rates = result.flow_rate('boiler(gas)').values
+        for gas, hd in zip(gas_rates, heat_demand, strict=False):
+            assert gas == pytest.approx(hd / eta, abs=1e-6)
 
         # Verify cost
         total_gas = sum(h / eta for h in heat_demand)
@@ -79,9 +78,8 @@ class TestEndToEnd:
         )
 
         # Verify the optimizer uses more gas in cheap hours
-        gas_t0 = result.flow_rate('grid(gas)')['solution'][0]
-        gas_t1 = result.flow_rate('grid(gas)')['solution'][1]
-        assert gas_t0 > gas_t1  # More gas bought in cheap hour
+        gas_rates = result.flow_rate('grid(gas)').values
+        assert gas_rates[0] > gas_rates[1]  # More gas bought in cheap hour
 
     def test_modified_data(self, timesteps_3):
         """Build data, modify bounds, solve -- verify modified result."""
@@ -96,13 +94,13 @@ class TestEndToEnd:
         )
 
         # Change demand from 0.5 to 0.7 (relative); absolute = 0.7 * 100 = 70
-        data.flows.fixed = data.flows.fixed.with_columns(pl.lit(0.7).alias('value'))
+        data.flows['fixed_profile'].loc[{'flow': 'demand(elec)'}] = 0.7
 
         model = FlowSystemModel(data)
         model.build()
         result = model.solve()
 
-        source_rates = result.flow_rate('grid(elec)')['solution'].to_list()
+        source_rates = result.flow_rate('grid(elec)').values
         for rate in source_rates:
             assert rate == pytest.approx(70.0, abs=1e-6)
 
@@ -120,16 +118,15 @@ class TestEndToEnd:
 
         # flow_rate accessor
         sr = result.flow_rate('grid(elec)')
-        assert set(sr.columns) == {'time', 'solution'}
+        assert 'time' in sr.dims
         assert len(sr) == 3
 
-        # effects DataFrame
-        assert 'effect' in result.effects.columns
-        assert 'solution' in result.effects.columns
+        # effects DataArray
+        assert 'effect' in result.effects.dims
 
         # effects_per_timestep
-        assert 'effect' in result.effects_per_timestep.columns
-        assert 'time' in result.effects_per_timestep.columns
+        assert 'effect' in result.effects_per_timestep.dims
+        assert 'time' in result.effects_per_timestep.dims
 
     def test_int_timesteps(self):
         """Smoke test: int timesteps work end-to-end."""
@@ -153,5 +150,5 @@ class TestEndToEnd:
 
         assert result.objective_value > 0
         sr = result.flow_rate('boiler(gas)')
-        assert sr['time'].dtype == pl.Int64
+        assert sr.dims == ('time',)
         assert len(sr) == 4

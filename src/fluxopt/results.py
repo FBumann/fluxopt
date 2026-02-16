@@ -3,12 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-import polars as pl
+import xarray as xr
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-    import xarray as xr
 
     from fluxopt.model import FlowSystemModel
     from fluxopt.tables import ModelData
@@ -17,68 +15,33 @@ if TYPE_CHECKING:
 @dataclass
 class SolvedModel:
     objective_value: float
-    flow_rates: pl.DataFrame  # (flow, time, solution)
-    charge_states: pl.DataFrame  # (storage, time, solution)
-    effects: pl.DataFrame  # (effect, solution)
-    effects_per_timestep: pl.DataFrame  # (effect, time, solution)
-    contributions: pl.DataFrame  # (source, contributor, effect, time, solution)
+    flow_rates: xr.DataArray  # (flow, time)
+    charge_states: xr.DataArray  # (storage, time_extra)
+    effects: xr.DataArray  # (effect,)
+    effects_per_timestep: xr.DataArray  # (effect, time)
     data: ModelData | None = field(default=None, repr=False)
 
-    def flow_rate(self, id: str) -> pl.DataFrame:
+    def flow_rate(self, id: str) -> xr.DataArray:
         """Get time series for a single flow."""
-        return self.flow_rates.filter(pl.col('flow') == id).select('time', 'solution')
+        return self.flow_rates.sel(flow=id)
 
-    def charge_state(self, id: str) -> pl.DataFrame:
+    def charge_state(self, id: str) -> xr.DataArray:
         """Get time series for a single storage."""
-        return self.charge_states.filter(pl.col('storage') == id).select('time', 'solution')
+        return self.charge_states.sel(storage=id)
 
     @classmethod
     def from_model(cls, model: FlowSystemModel) -> SolvedModel:
-        m = model.m
+        """Extract solution from a solved linopy model."""
         d = model.data
-        time_dtype = d.timesteps.schema['time']
 
-        # Extract flow rates
-        flow_sol = m.flow_rate.solution
+        # linopy .solution returns xr.DataArray directly
+        flow_sol = model.flow_rate.solution
+        cs_sol = model.charge_state.solution if hasattr(model, 'charge_state') else xr.DataArray()
+        effect_total_sol = model.effect_total.solution if hasattr(model, 'effect_total') else xr.DataArray()
+        effect_ts_sol = model.effect_per_timestep.solution if hasattr(model, 'effect_per_timestep') else xr.DataArray()
 
-        # Extract charge states (if storages exist)
-        if len(d.storages.index) > 0:
-            cs_sol = m.charge_state.solution
-        else:
-            cs_sol = pl.DataFrame(schema={'storage': pl.String, 'time': time_dtype, 'solution': pl.Float64})
-
-        # Extract effects
-        if len(d.effects.index) > 0:
-            effect_total_sol = m.effect_total.solution
-            effect_ts_sol = m.effect_per_timestep.solution
-        else:
-            effect_total_sol = pl.DataFrame(schema={'effect': pl.String, 'solution': pl.Float64})
-            effect_ts_sol = pl.DataFrame(schema={'effect': pl.String, 'time': time_dtype, 'solution': pl.Float64})
-
-        # Extract per-source contributions
-        contrib_frames: list[pl.DataFrame] = []
-        for src in model._temporal_sources:
-            var_name = f'contributions({src.name})'
-            var = getattr(m, var_name)
-            sol = var.solution.with_columns(pl.lit(src.name).alias('source'))
-            contrib_frames.append(sol.select('source', 'contributor', 'effect', 'time', 'solution'))
-
-        if contrib_frames:
-            contributions = pl.concat(contrib_frames)
-        else:
-            contributions = pl.DataFrame(
-                schema={
-                    'source': pl.String,
-                    'contributor': pl.String,
-                    'effect': pl.String,
-                    'time': time_dtype,
-                    'solution': pl.Float64,
-                }
-            )
-
-        # Objective value
-        obj_effect = d.effects.objective_effect
-        obj_val = effect_total_sol.filter(pl.col('effect') == obj_effect)['solution'][0]
+        obj_effect = d.effects.attrs['objective_effect']
+        obj_val = float(effect_total_sol.sel(effect=obj_effect).values)
 
         return cls(
             objective_value=obj_val,
@@ -86,7 +49,6 @@ class SolvedModel:
             charge_states=cs_sol,
             effects=effect_total_sol,
             effects_per_timestep=effect_ts_sol,
-            contributions=contributions,
             data=model.data,
         )
 
@@ -97,7 +59,7 @@ class SolvedModel:
         return solved_model_to_xarray(self)
 
     def to_netcdf(self, path: str | Path) -> None:
-        """Write solution + model data to a NetCDF file."""
+        """Write solution to a NetCDF file."""
         from fluxopt.io import solved_model_to_netcdf
 
         solved_model_to_netcdf(self, path)

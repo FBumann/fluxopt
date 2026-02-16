@@ -1,17 +1,17 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import TYPE_CHECKING, Protocol, overload, runtime_checkable
 
-import polars as pl
+import numpy as np
+import pandas as pd
+import xarray as xr
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
 
-    import pandas as pd
-
-type TimeSeries = float | int | list[float] | pl.Series | pd.Series
-type Timesteps = list[datetime] | list[int] | pl.Series | pd.DatetimeIndex
+type TimeSeries = float | int | list[float] | np.ndarray | pd.Series | xr.DataArray
+type Timesteps = list[datetime] | list[int] | pd.DatetimeIndex | np.ndarray
 
 
 @runtime_checkable
@@ -64,105 +64,92 @@ class IdList[T: Identified]:
         return f'IdList({list(self._items)!r})'
 
 
-def to_polars_series(value: TimeSeries, timesteps: pl.Series, name: str = 'value') -> pl.Series:
-    """Convert any TimeSeries input to a pl.Series aligned with timesteps.
+def to_data_array(value: TimeSeries, time: pd.Index, name: str = 'value') -> xr.DataArray:
+    """Convert any TimeSeries input to an xr.DataArray aligned with time.
 
-    Scalar -> broadcast, list -> length-check, Series -> rename/align.
+    Scalar -> broadcast, list -> length-check, Series -> align.
     """
-    n = len(timesteps)
+    n = len(time)
+    if isinstance(value, xr.DataArray):
+        if len(value) != n:
+            raise ValueError(f'DataArray length {len(value)} does not match timesteps length {n}')
+        return value.rename(name)
     if isinstance(value, (int, float)):
-        return pl.Series(name, [float(value)] * n)
+        return xr.DataArray(np.full(n, float(value)), dims=['time'], coords={'time': time}, name=name)
     if isinstance(value, list):
         if len(value) != n:
             raise ValueError(f'List length {len(value)} does not match timesteps length {n}')
-        return pl.Series(name, [float(v) for v in value])
-    if not isinstance(value, pl.Series):
-        try:
-            value = pl.from_pandas(value)
-        except TypeError:
-            raise TypeError(f'Unsupported TimeSeries type: {type(value)}') from None
-    if len(value) != n:
-        raise ValueError(f'Series length {len(value)} does not match timesteps length {n}')
-    return value.alias(name).cast(pl.Float64)
+        return xr.DataArray([float(v) for v in value], dims=['time'], coords={'time': time}, name=name)
+    if isinstance(value, np.ndarray):
+        if len(value) != n:
+            raise ValueError(f'Array length {len(value)} does not match timesteps length {n}')
+        return xr.DataArray(value.astype(float), dims=['time'], coords={'time': time}, name=name)
+    if isinstance(value, pd.Series):
+        if len(value) != n:
+            raise ValueError(f'Series length {len(value)} does not match timesteps length {n}')
+        return xr.DataArray(value.values.astype(float), dims=['time'], coords={'time': time}, name=name)
+    raise TypeError(f'Unsupported TimeSeries type: {type(value)}')
 
 
-def normalize_timesteps(timesteps: Timesteps) -> pl.Series:
-    """Convert any Timesteps input to a pl.Series named 'time'.
+def normalize_timesteps(timesteps: Timesteps) -> pd.Index:
+    """Convert any Timesteps input to a pd.Index.
 
-    Supports pl.Datetime and pl.Int64 dtypes. Strings are not supported.
+    Supports datetime and integer timesteps. Strings are not supported.
     """
-    if isinstance(timesteps, pl.Series):
-        if timesteps.dtype == pl.String:
-            raise TypeError('String timesteps are not supported. Use datetime or integer timesteps.')
-        return timesteps.alias('time')
+    if isinstance(timesteps, pd.DatetimeIndex):
+        return timesteps
 
-    # pandas DatetimeIndex
-    if not isinstance(timesteps, list):
-        try:
-            return pl.Series('time', timesteps.to_pydatetime().tolist(), dtype=pl.Datetime)
-        except AttributeError:
-            raise TypeError(f'Unsupported Timesteps type: {type(timesteps)}') from None
+    if isinstance(timesteps, np.ndarray):
+        if np.issubdtype(timesteps.dtype, np.datetime64):
+            return pd.DatetimeIndex(timesteps)
+        return pd.Index(timesteps)
 
     # list[datetime] or list[int]
+    if not isinstance(timesteps, list):
+        raise TypeError(f'Unsupported Timesteps type: {type(timesteps)}')
+
     if len(timesteps) == 0:
-        return pl.Series('time', [], dtype=pl.Datetime)
+        return pd.DatetimeIndex([])
+
     if isinstance(timesteps[0], datetime):
-        return pl.Series('time', timesteps, dtype=pl.Datetime)
+        return pd.DatetimeIndex(timesteps)
     if isinstance(timesteps[0], int):
-        return pl.Series('time', timesteps, dtype=pl.Int64)
+        return pd.Index(timesteps, dtype=np.int64)
     raise TypeError(f'Unsupported timestep element type: {type(timesteps[0])}. Use datetime or int.')
 
 
-def compute_dt(timesteps: pl.Series, dt: float | list[float] | pl.Series | None) -> pl.Series:
-    """Compute dt (hours) for each timestep.
+def compute_dt(timesteps: pd.Index, dt: float | list[float] | None) -> xr.DataArray:
+    """Compute dt (hours) for each timestep as an xr.DataArray.
 
     - dt=None + datetime: derive from consecutive differences in hours; last = second-to-last.
-    - dt=None + string: broadcast 1.0.
-    - dt provided: validate length, return as pl.Series.
+    - dt=None + integer: broadcast 1.0.
+    - dt provided: validate length, return as DataArray.
     - Single timestep: default to 1.0.
     """
     n = len(timesteps)
 
     if dt is not None:
         if isinstance(dt, (int, float)):
-            return pl.Series('dt', [float(dt)] * n)
-        if isinstance(dt, pl.Series):
+            values = np.full(n, float(dt))
+        elif isinstance(dt, list):
             if len(dt) != n:
                 raise ValueError(f'dt length {len(dt)} does not match timesteps length {n}')
-            return dt.alias('dt').cast(pl.Float64)
-        # list
-        if len(dt) != n:
-            raise ValueError(f'dt length {len(dt)} does not match timesteps length {n}')
-        return pl.Series('dt', [float(v) for v in dt])
+            values = np.array([float(v) for v in dt])
+        else:
+            raise TypeError(f'Unsupported dt type: {type(dt)}')
+        return xr.DataArray(values, dims=['time'], coords={'time': timesteps}, name='dt')
 
     # Auto-derive
     if n <= 1:
-        return pl.Series('dt', [1.0] * n)
+        return xr.DataArray(np.ones(n), dims=['time'], coords={'time': timesteps}, name='dt')
 
-    if timesteps.dtype.is_integer():
-        return pl.Series('dt', [1.0] * n)
+    if not isinstance(timesteps, pd.DatetimeIndex):
+        # Integer timesteps: default to 1.0
+        return xr.DataArray(np.ones(n), dims=['time'], coords={'time': timesteps}, name='dt')
 
     # Datetime: derive from diff in hours
-    diffs = timesteps.diff().dt.total_seconds() / 3600.0
-    dt_values = diffs.to_list()
-    # First element is None from diff(); use the second element
-    dt_values[0] = dt_values[1]
-    # Extend last: already correct from diff, but last element uses second-to-last
-    # Actually diff() gives [None, d1, d2, ..., d_{n-1}] so we have n values
-    # dt_values[0] = dt_values[1] already handles first
-    # The last value is the diff between last and second-to-last, which is correct
-    return pl.Series('dt', dt_values)
-
-
-def compute_end_time(timesteps: pl.Series, dt_series: pl.Series) -> datetime | int:
-    """Return the time value one step past the last timestep.
-
-    For datetime: last_time + timedelta(hours=last_dt).
-    For integer: last + 1.
-    """
-    if timesteps.dtype.is_integer():
-        last: int = timesteps[-1]
-        return last + 1
-    last_time: datetime = timesteps[-1]
-    last_dt: float = dt_series[-1]
-    return last_time + timedelta(hours=last_dt)
+    diffs = np.diff(timesteps.values) / np.timedelta64(1, 'h')
+    dt_values = np.empty(n)
+    dt_values[0] = diffs[0]
+    dt_values[1:] = diffs
+    return xr.DataArray(dt_values, dims=['time'], coords={'time': timesteps}, name='dt')

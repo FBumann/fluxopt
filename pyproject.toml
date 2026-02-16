@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "fluxopt"
 dynamic = ["version"]
-description = "Energy system optimization with pyoframe — progressive modeling, from simple to complex."
+description = "Energy system optimization with linopy — progressive modeling, from simple to complex."
 readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"
@@ -15,7 +15,7 @@ authors = [
 maintainers = [
     { name = "Felix Bumann", email = "felixbumann387@gmail.com" },
 ]
-keywords = ["optimization", "energy systems", "pyoframe", "linear programming"]
+keywords = ["optimization", "energy systems", "linopy", "linear programming"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Programming Language :: Python :: 3.12",
@@ -26,9 +26,11 @@ classifiers = [
     "Topic :: Scientific/Engineering",
 ]
 dependencies = [
-    "highsbox>=1.13.1",
-    "polars>=1.38.1",
-    "pyoframe>=1.1.0",
+    "highspy>=1.13.1",
+    "linopy>=0.6",
+    "numpy>=1.26",
+    "pandas>=2.1",
+    "xarray>=2024.1.0",
 ]
 
 [project.urls]
@@ -45,7 +47,6 @@ include = ["src/fluxopt/", "LICENSE", "README.md"]
 
 [project.optional-dependencies]
 io = [
-    "xarray>=2024.1.0",
     "netcdf4>=1.6.0",
 ]
 
@@ -135,11 +136,11 @@ warn_unused_configs = true
 
 [[tool.mypy.overrides]]
 module = [
-    "pyoframe.*",
     "pyoptinterface.*",
     "highsbox.*",
-    "xarray.*",
+    "linopy.*",
     "netCDF4.*",
+    "xarray.*",
 ]
 ignore_missing_imports = true
 
