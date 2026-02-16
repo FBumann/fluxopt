@@ -15,6 +15,7 @@ class TestFlowsTable:
         assert list(lb) == [0.2, 0.2, 0.2]
         assert list(ub) == [0.8, 0.8, 0.8]
         assert float(ds.size.sel(flow='src(b)').values) == 100.0
+        assert str(ds.bound_type.sel(flow='src(b)').values) == 'bounded'
 
     def test_fixed_profile(self, timesteps_3):
         flow = Flow(bus='b', size=100, fixed_relative_profile=[0.5, 0.8, 0.6])
@@ -26,6 +27,17 @@ class TestFlowsTable:
         )
         fixed = data.flows.fixed_profile.sel(flow='sink(b)').values
         assert list(fixed) == [0.5, 0.8, 0.6]
+        assert str(data.flows.bound_type.sel(flow='sink(b)').values) == 'profile'
+
+    def test_unsized_flow(self, timesteps_3):
+        flow = Flow(bus='b')
+        data = build_model_data(
+            timesteps_3,
+            [Bus('b')],
+            [Effect('cost', is_objective=True)],
+            ports=[Port('src', imports=[flow])],
+        )
+        assert str(data.flows.bound_type.sel(flow='src(b)').values) == 'unsized'
 
 
 class TestBusesTable:

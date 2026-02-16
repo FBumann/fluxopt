@@ -124,19 +124,19 @@ class FlowSystemModel:
         rel_lb = ds.rel_lb
         rel_ub = ds.rel_ub
         fixed = ds.fixed_profile
-        fixed_sized = size.notnull()
-        has_fixed = fixed.notnull().any('time')
+        is_bounded = ds.bound_type == 'bounded'
+        is_profile = ds.bound_type == 'profile'
 
         # --- Fixed-size flows (parameter capacity) ---
-        var_sized = fixed_sized & ~has_fixed
-        if var_sized.any():
-            mask = var_sized.broadcast_like(rel_lb)
+        fixed_bounded = is_bounded & size.notnull()
+        if fixed_bounded.any():
+            mask = fixed_bounded.broadcast_like(rel_lb)
             self.m.add_constraints(self.flow_rate >= size * rel_lb, name='flow_lb', mask=mask)
             self.m.add_constraints(self.flow_rate <= size * rel_ub, name='flow_ub', mask=mask)
 
-        fix_sized = fixed_sized & has_fixed
-        if fix_sized.any():
-            mask = fix_sized.broadcast_like(fixed) & fixed.notnull()
+        fixed_profile = is_profile & size.notnull()
+        if fixed_profile.any():
+            mask = fixed_profile.broadcast_like(fixed) & fixed.notnull()
             self.m.add_constraints(self.flow_rate == size * fixed, name='flow_fix', mask=mask)
 
         # --- Investable flows (variable capacity) ---
@@ -146,15 +146,16 @@ class FlowSystemModel:
             rl = rel_lb.sel(flow=invest_ids)
             ru = rel_ub.sel(flow=invest_ids)
             fp = fixed.sel(flow=invest_ids)
-            has_fp = fp.notnull().any('time')
+            inv_bounded = is_bounded.sel(flow=invest_ids)
+            inv_profile = is_profile.sel(flow=invest_ids)
 
-            var_mask = (~has_fp).broadcast_like(rl)
+            var_mask = inv_bounded.broadcast_like(rl)
             if var_mask.any():
                 self.m.add_constraints(fr >= rl * self.flow_size, name='flow_lb_invest', mask=var_mask)
                 self.m.add_constraints(fr <= ru * self.flow_size, name='flow_ub_invest', mask=var_mask)
 
-            if has_fp.any():
-                fix_mask = has_fp.broadcast_like(fp) & fp.notnull()
+            if inv_profile.any():
+                fix_mask = inv_profile.broadcast_like(fp) & fp.notnull()
                 self.m.add_constraints(fr == fp * self.flow_size, name='flow_fix_invest', mask=fix_mask)
 
     def _constrain_sizing(self) -> None:

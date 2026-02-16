@@ -44,6 +44,7 @@ def _to_dataset(obj: object) -> xr.Dataset:
 
 @dataclass
 class FlowsData:
+    bound_type: xr.DataArray  # (flow,) — 'unsized' | 'bounded' | 'profile'
     rel_lb: xr.DataArray  # (flow, time)
     rel_ub: xr.DataArray  # (flow, time)
     fixed_profile: xr.DataArray  # (flow, time) — NaN where not fixed
@@ -219,6 +220,7 @@ def build_flows_data(flows: list[Flow], time: pd.Index, effects: list[Effect]) -
     n_flows = len(flows)
     n_effects = len(effect_ids)
 
+    bound_type: list[str] = []
     rel_lb = np.zeros((n_flows, n_time))
     rel_ub = np.zeros((n_flows, n_time))
     fixed_profile = np.full((n_flows, n_time), np.nan)
@@ -267,6 +269,11 @@ def build_flows_data(flows: list[Flow], time: pd.Index, effects: list[Effect]) -
         if f.fixed_relative_profile is not None:
             profile = to_data_array(f.fixed_relative_profile, time)
             fixed_profile[i] = profile.values
+            bound_type.append('profile')
+        elif f.size is None:
+            bound_type.append('unsized')
+        else:
+            bound_type.append('bounded')
 
         for effect_label, factor in f.effects_per_flow_hour.items():
             if effect_label in effect_ids:
@@ -307,6 +314,7 @@ def build_flows_data(flows: list[Flow], time: pd.Index, effects: list[Effect]) -
         )
 
     return FlowsData(
+        bound_type=xr.DataArray(bound_type, dims=['flow'], coords={'flow': flow_ids}),
         rel_lb=xr.DataArray(rel_lb, dims=['flow', 'time'], coords={'flow': flow_ids, 'time': time}),
         rel_ub=xr.DataArray(rel_ub, dims=['flow', 'time'], coords={'flow': flow_ids, 'time': time}),
         fixed_profile=xr.DataArray(fixed_profile, dims=['flow', 'time'], coords={'flow': flow_ids, 'time': time}),
