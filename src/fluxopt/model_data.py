@@ -64,6 +64,131 @@ class FlowsData:
         kwargs: dict[str, xr.DataArray | None] = {f.name: ds.get(f.name) for f in fields(cls)}
         return cls(**kwargs)
 
+    @classmethod
+    def build(cls, flows: list[Flow], time: pd.Index, effects: list[Effect]) -> Self:
+        """Build FlowsData from element objects."""
+        from fluxopt.elements import Sizing
+
+        flow_ids = [f.id for f in flows]
+        effect_ids = [e.id for e in effects]
+        effect_set = set(effect_ids)
+        n_time = len(time)
+        n_flows = len(flows)
+        n_effects = len(effect_ids)
+
+        bound_type: list[str] = []
+        rel_lb = np.zeros((n_flows, n_time))
+        rel_ub = np.zeros((n_flows, n_time))
+        fixed_profile = np.full((n_flows, n_time), np.nan)
+        size = np.full(n_flows, np.nan)
+        effect_coeff = np.zeros((n_flows, n_effects, n_time))
+
+        # Sizing — collected only for investable flows
+        sz_ids: list[str] = []
+        sz_min: list[float] = []
+        sz_max: list[float] = []
+        sz_mandatory: list[bool] = []
+        sz_eps: list[np.ndarray] = []
+        sz_ef: list[np.ndarray] = []
+
+        for i, f in enumerate(flows):
+            lb_da = to_data_array(f.relative_minimum, time)
+            ub_da = to_data_array(f.relative_maximum, time)
+            rel_lb[i] = lb_da.values
+            rel_ub[i] = ub_da.values
+
+            if isinstance(f.size, Sizing):
+                s = f.size
+                if s.min_size < 0:
+                    raise ValueError(f'Sizing.min_size < 0 on flow {f.id!r}')
+                if s.max_size < s.min_size:
+                    raise ValueError(f'Sizing.max_size < min_size on flow {f.id!r}')
+                sz_ids.append(f.id)
+                sz_min.append(s.min_size)
+                sz_max.append(s.max_size)
+                sz_mandatory.append(s.mandatory)
+                eps_row = np.zeros(n_effects)
+                ef_row = np.zeros(n_effects)
+                for ek, ev in s.effects_per_size.items():
+                    if ek not in effect_set:
+                        raise ValueError(f'Unknown effect {ek!r} in Sizing.effects_per_size on flow {f.id!r}')
+                    eps_row[effect_ids.index(ek)] = ev
+                for ek, ev in s.effects_fixed.items():
+                    if ek not in effect_set:
+                        raise ValueError(f'Unknown effect {ek!r} in Sizing.effects_fixed on flow {f.id!r}')
+                    ef_row[effect_ids.index(ek)] = ev
+                sz_eps.append(eps_row)
+                sz_ef.append(ef_row)
+            elif f.size is not None:
+                size[i] = float(f.size)
+
+            if f.fixed_relative_profile is not None:
+                profile = to_data_array(f.fixed_relative_profile, time)
+                fixed_profile[i] = profile.values
+                bound_type.append('profile')
+            elif f.size is None:
+                bound_type.append('unsized')
+            else:
+                bound_type.append('bounded')
+
+            for effect_label, factor in f.effects_per_flow_hour.items():
+                if effect_label in effect_ids:
+                    j = effect_ids.index(effect_label)
+                    factor_da = to_data_array(factor, time)
+                    effect_coeff[i, j] = factor_da.values
+
+        # Validate
+        if np.any(rel_lb < -1e-12):
+            bad = [flow_ids[i] for i in range(n_flows) if np.any(rel_lb[i] < -1e-12)]
+            raise ValueError(f'Negative lower bounds on flows: {bad}')
+        if np.any(rel_lb > rel_ub + 1e-12):
+            bad = [flow_ids[i] for i in range(n_flows) if np.any(rel_lb[i] > rel_ub[i] + 1e-12)]
+            raise ValueError(f'Lower bound > upper bound on flows: {bad}')
+
+        coords: dict[str, object] = {'flow': flow_ids, 'time': time, 'effect': effect_ids}
+
+        sizing_min = None
+        sizing_max = None
+        sizing_mandatory = None
+        sizing_effects_per_size = None
+        sizing_effects_fixed = None
+
+        if sz_ids:
+            coords['sizing_flow'] = sz_ids
+            sizing_min = xr.DataArray(np.array(sz_min), dims=['sizing_flow'], coords={'sizing_flow': sz_ids})
+            sizing_max = xr.DataArray(np.array(sz_max), dims=['sizing_flow'], coords={'sizing_flow': sz_ids})
+            sizing_mandatory = xr.DataArray(
+                np.array(sz_mandatory), dims=['sizing_flow'], coords={'sizing_flow': sz_ids}
+            )
+            sizing_effects_per_size = xr.DataArray(
+                np.array(sz_eps),
+                dims=['sizing_flow', 'effect'],
+                coords={'sizing_flow': sz_ids, 'effect': effect_ids},
+            )
+            sizing_effects_fixed = xr.DataArray(
+                np.array(sz_ef),
+                dims=['sizing_flow', 'effect'],
+                coords={'sizing_flow': sz_ids, 'effect': effect_ids},
+            )
+
+        return cls(
+            bound_type=xr.DataArray(bound_type, dims=['flow'], coords={'flow': flow_ids}),
+            rel_lb=xr.DataArray(rel_lb, dims=['flow', 'time'], coords={'flow': flow_ids, 'time': time}),
+            rel_ub=xr.DataArray(rel_ub, dims=['flow', 'time'], coords={'flow': flow_ids, 'time': time}),
+            fixed_profile=xr.DataArray(fixed_profile, dims=['flow', 'time'], coords={'flow': flow_ids, 'time': time}),
+            size=xr.DataArray(size, dims=['flow'], coords={'flow': flow_ids}),
+            effect_coeff=xr.DataArray(
+                effect_coeff,
+                dims=['flow', 'effect', 'time'],
+                coords={'flow': flow_ids, 'effect': effect_ids, 'time': time},
+            ),
+            sizing_min=sizing_min,
+            sizing_max=sizing_max,
+            sizing_mandatory=sizing_mandatory,
+            sizing_effects_per_size=sizing_effects_per_size,
+            sizing_effects_fixed=sizing_effects_fixed,
+        )
+
 
 @dataclass
 class BusesData:
@@ -75,6 +200,23 @@ class BusesData:
     @classmethod
     def from_dataset(cls, ds: xr.Dataset) -> Self:
         return cls(flow_coeff=ds['flow_coeff'])
+
+    @classmethod
+    def build(cls, buses: list[Bus], flows: list[Flow]) -> Self:
+        """Build BusesData with flow coefficients."""
+        bus_ids = [b.id for b in buses]
+        flow_ids = [f.id for f in flows]
+
+        coeff = np.full((len(bus_ids), len(flow_ids)), np.nan)
+        for f in flows:
+            if f.bus in bus_ids:
+                bi = bus_ids.index(f.bus)
+                fi = flow_ids.index(f.id)
+                coeff[bi, fi] = -1.0 if f._is_input else 1.0
+
+        return cls(
+            flow_coeff=xr.DataArray(coeff, dims=['bus', 'flow'], coords={'bus': bus_ids, 'flow': flow_ids}),
+        )
 
 
 @dataclass
@@ -88,6 +230,55 @@ class ConvertersData:
     @classmethod
     def from_dataset(cls, ds: xr.Dataset) -> Self:
         return cls(flow_coeff=ds['flow_coeff'], eq_mask=ds['eq_mask'])
+
+    @classmethod
+    def build(cls, converters: list[Converter], time: pd.Index) -> Self | None:
+        """Build ConvertersData with conversion coefficients."""
+        if not converters:
+            return None
+
+        conv_ids = [c.id for c in converters]
+        # Collect all flow ids across all converters
+        all_flow_ids: list[str] = []
+        for c in converters:
+            for f in c.inputs:
+                if f.id not in all_flow_ids:
+                    all_flow_ids.append(f.id)
+            for f in c.outputs:
+                if f.id not in all_flow_ids:
+                    all_flow_ids.append(f.id)
+
+        max_eq = max(len(c.conversion_factors) for c in converters)
+        n_time = len(time)
+
+        coeff = np.full((len(conv_ids), max_eq, len(all_flow_ids), n_time), np.nan)
+        eq_mask = np.zeros((len(conv_ids), max_eq), dtype=bool)
+
+        for ci, conv in enumerate(converters):
+            for eq_idx, equation in enumerate(conv.conversion_factors):
+                eq_mask[ci, eq_idx] = True
+                for flow_obj, factor in equation.items():
+                    fi = all_flow_ids.index(flow_obj.id)
+                    factor_da = to_data_array(factor, time)
+                    coeff[ci, eq_idx, fi, :] = factor_da.values
+
+        return cls(
+            flow_coeff=xr.DataArray(
+                coeff,
+                dims=['converter', 'eq_idx', 'flow', 'time'],
+                coords={
+                    'converter': conv_ids,
+                    'eq_idx': list(range(max_eq)),
+                    'flow': all_flow_ids,
+                    'time': time,
+                },
+            ),
+            eq_mask=xr.DataArray(
+                eq_mask,
+                dims=['converter', 'eq_idx'],
+                coords={'converter': conv_ids, 'eq_idx': list(range(max_eq))},
+            ),
+        )
 
 
 @dataclass
@@ -108,6 +299,52 @@ class EffectsData:
             f.name: ds[f.name] if f.name in ds.data_vars else ds.attrs[f.name] for f in fields(cls)
         }
         return cls(**kwargs)  # type: ignore[arg-type]
+
+    @classmethod
+    def build(cls, effects: list[Effect], time: pd.Index) -> Self:
+        """Build EffectsData."""
+        effect_ids = [e.id for e in effects]
+        n = len(effects)
+        n_time = len(time)
+
+        # Find objective
+        objective_effects = [e for e in effects if e.is_objective]
+        if not objective_effects:
+            raise ValueError('No objective effect found. Include an Effect with is_objective=True.')
+        if len(objective_effects) > 1:
+            ids = [e.id for e in objective_effects]
+            raise ValueError(f'Multiple objective effects: {ids}. Only one is allowed.')
+        objective_effect = objective_effects[0].id
+
+        min_total = np.full(n, np.nan)
+        max_total = np.full(n, np.nan)
+        min_per_hour = np.full((n, n_time), np.nan)
+        max_per_hour = np.full((n, n_time), np.nan)
+        is_objective = np.zeros(n, dtype=bool)
+
+        for i, e in enumerate(effects):
+            if e.minimum_total is not None:
+                min_total[i] = e.minimum_total
+            if e.maximum_total is not None:
+                max_total[i] = e.maximum_total
+            if e.minimum_per_hour is not None:
+                min_per_hour[i] = to_data_array(e.minimum_per_hour, time).values
+            if e.maximum_per_hour is not None:
+                max_per_hour[i] = to_data_array(e.maximum_per_hour, time).values
+            is_objective[i] = e.is_objective
+
+        return cls(
+            min_total=xr.DataArray(min_total, dims=['effect'], coords={'effect': effect_ids}),
+            max_total=xr.DataArray(max_total, dims=['effect'], coords={'effect': effect_ids}),
+            min_per_hour=xr.DataArray(
+                min_per_hour, dims=['effect', 'time'], coords={'effect': effect_ids, 'time': time}
+            ),
+            max_per_hour=xr.DataArray(
+                max_per_hour, dims=['effect', 'time'], coords={'effect': effect_ids, 'time': time}
+            ),
+            is_objective=xr.DataArray(is_objective, dims=['effect'], coords={'effect': effect_ids}),
+            objective_effect=objective_effect,
+        )
 
 
 @dataclass
@@ -135,6 +372,152 @@ class StoragesData:
     def from_dataset(cls, ds: xr.Dataset) -> Self:
         kwargs: dict[str, xr.DataArray | None] = {f.name: ds.get(f.name) for f in fields(cls)}
         return cls(**kwargs)
+
+    @classmethod
+    def build(
+        cls,
+        storages: list[Storage],
+        time: pd.Index,
+        time_extra: pd.Index,
+        dt: xr.DataArray,
+        effects: list[Effect] | None = None,
+    ) -> Self | None:
+        """Build StoragesData."""
+        from fluxopt.elements import Sizing
+
+        if not storages:
+            return None
+
+        effect_ids = [e.id for e in effects] if effects else []
+        effect_set = set(effect_ids)
+        stor_ids = [s.id for s in storages]
+        n = len(storages)
+        n_time = len(time)
+        n_extra = len(time_extra)
+        n_effects = len(effect_ids)
+
+        capacity = np.full(n, np.nan)
+        eta_c = np.ones((n, n_time))
+        eta_d = np.ones((n, n_time))
+        loss = np.zeros((n, n_time))
+        rel_cs_lb = np.zeros((n, n_extra))
+        rel_cs_ub = np.ones((n, n_extra))
+        initial_charge = np.zeros(n)
+        cyclic = np.zeros(n, dtype=bool)
+        charge_flow: list[str] = []
+        discharge_flow: list[str] = []
+
+        # Sizing — collected only for investable storages
+        sz_ids: list[str] = []
+        sz_min: list[float] = []
+        sz_max: list[float] = []
+        sz_mandatory: list[bool] = []
+        sz_eps: list[np.ndarray] = []
+        sz_ef: list[np.ndarray] = []
+
+        for i, s in enumerate(storages):
+            if isinstance(s.capacity, Sizing):
+                sz = s.capacity
+                if sz.min_size < 0:
+                    raise ValueError(f'Sizing.min_size < 0 on storage {s.id!r}')
+                if sz.max_size < sz.min_size:
+                    raise ValueError(f'Sizing.max_size < min_size on storage {s.id!r}')
+                sz_ids.append(s.id)
+                sz_min.append(sz.min_size)
+                sz_max.append(sz.max_size)
+                sz_mandatory.append(sz.mandatory)
+                eps_row = np.zeros(n_effects)
+                ef_row = np.zeros(n_effects)
+                for ek, ev in sz.effects_per_size.items():
+                    if ek not in effect_set:
+                        raise ValueError(f'Unknown effect {ek!r} in Sizing.effects_per_size on storage {s.id!r}')
+                    eps_row[effect_ids.index(ek)] = ev
+                for ek, ev in sz.effects_fixed.items():
+                    if ek not in effect_set:
+                        raise ValueError(f'Unknown effect {ek!r} in Sizing.effects_fixed on storage {s.id!r}')
+                    ef_row[effect_ids.index(ek)] = ev
+                sz_eps.append(eps_row)
+                sz_ef.append(ef_row)
+            elif s.capacity is not None:
+                capacity[i] = s.capacity
+
+            eta_c[i] = to_data_array(s.eta_charge, time).values
+            eta_d[i] = to_data_array(s.eta_discharge, time).values
+            loss[i] = to_data_array(s.relative_loss_per_hour, time).values
+
+            # Charge state bounds — broadcast to time_extra (replicate last for extra point)
+            cs_lb_t = to_data_array(s.relative_minimum_charge_state, time).values
+            cs_ub_t = to_data_array(s.relative_maximum_charge_state, time).values
+            rel_cs_lb[i, :n_time] = cs_lb_t
+            rel_cs_lb[i, n_time:] = cs_lb_t[-1]
+            rel_cs_ub[i, :n_time] = cs_ub_t
+            rel_cs_ub[i, n_time:] = cs_ub_t[-1]
+
+            is_cyclic = s.initial_charge_state == 'cyclic'
+            cyclic[i] = is_cyclic
+            if not is_cyclic:
+                initial_charge[i] = float(s.initial_charge_state) if s.initial_charge_state is not None else 0.0
+
+            charge_flow.append(s.charging.id)
+            discharge_flow.append(s.discharging.id)
+
+        # Validate
+        bad_cap = [stor_ids[i] for i in range(n) if not np.isnan(capacity[i]) and capacity[i] < 0]
+        if bad_cap:
+            raise ValueError(f'Negative capacity on storages: {bad_cap}')
+        bad_eta_c = [stor_ids[i] for i in range(n) if np.any(eta_c[i] <= 0) or np.any(eta_c[i] > 1)]
+        if bad_eta_c:
+            raise ValueError(f'eta_charge must be in (0, 1] on storages: {bad_eta_c}')
+        bad_eta_d = [stor_ids[i] for i in range(n) if np.any(eta_d[i] <= 0) or np.any(eta_d[i] > 1)]
+        if bad_eta_d:
+            raise ValueError(f'eta_discharge must be in (0, 1] on storages: {bad_eta_d}')
+        bad_loss = [stor_ids[i] for i in range(n) if np.any(loss[i] < 0)]
+        if bad_loss:
+            raise ValueError(f'Negative relative_loss_per_hour on storages: {bad_loss}')
+
+        coords_time: dict[str, object] = {'storage': stor_ids, 'time': time}
+        coords_extra: dict[str, object] = {'storage': stor_ids, 'time_extra': time_extra}
+
+        sizing_min = None
+        sizing_max = None
+        sizing_mandatory = None
+        sizing_effects_per_size = None
+        sizing_effects_fixed = None
+
+        if sz_ids:
+            sizing_min = xr.DataArray(np.array(sz_min), dims=['sizing_storage'], coords={'sizing_storage': sz_ids})
+            sizing_max = xr.DataArray(np.array(sz_max), dims=['sizing_storage'], coords={'sizing_storage': sz_ids})
+            sizing_mandatory = xr.DataArray(
+                np.array(sz_mandatory), dims=['sizing_storage'], coords={'sizing_storage': sz_ids}
+            )
+            sizing_effects_per_size = xr.DataArray(
+                np.array(sz_eps),
+                dims=['sizing_storage', 'effect'],
+                coords={'sizing_storage': sz_ids, 'effect': effect_ids},
+            )
+            sizing_effects_fixed = xr.DataArray(
+                np.array(sz_ef),
+                dims=['sizing_storage', 'effect'],
+                coords={'sizing_storage': sz_ids, 'effect': effect_ids},
+            )
+
+        return cls(
+            capacity=xr.DataArray(capacity, dims=['storage'], coords={'storage': stor_ids}),
+            eta_c=xr.DataArray(eta_c, dims=['storage', 'time'], coords=coords_time),
+            eta_d=xr.DataArray(eta_d, dims=['storage', 'time'], coords=coords_time),
+            loss=xr.DataArray(loss, dims=['storage', 'time'], coords=coords_time),
+            rel_cs_lb=xr.DataArray(rel_cs_lb, dims=['storage', 'time_extra'], coords=coords_extra),
+            rel_cs_ub=xr.DataArray(rel_cs_ub, dims=['storage', 'time_extra'], coords=coords_extra),
+            initial_charge=xr.DataArray(initial_charge, dims=['storage'], coords={'storage': stor_ids}),
+            cyclic=xr.DataArray(cyclic, dims=['storage'], coords={'storage': stor_ids}),
+            charge_flow=xr.DataArray(charge_flow, dims=['storage'], coords={'storage': stor_ids}),
+            discharge_flow=xr.DataArray(discharge_flow, dims=['storage'], coords={'storage': stor_ids}),
+            sizing_min=sizing_min,
+            sizing_max=sizing_max,
+            sizing_mandatory=sizing_mandatory,
+            sizing_effects_per_size=sizing_effects_per_size,
+            sizing_effects_fixed=sizing_effects_fixed,
+        )
 
 
 @dataclass
@@ -207,382 +590,6 @@ class ModelData:
             time=time,
             time_extra=time_extra,
         )
-
-
-def build_flows_data(flows: list[Flow], time: pd.Index, effects: list[Effect]) -> FlowsData:
-    """Build FlowsData from element objects."""
-    from fluxopt.elements import Sizing
-
-    flow_ids = [f.id for f in flows]
-    effect_ids = [e.id for e in effects]
-    effect_set = set(effect_ids)
-    n_time = len(time)
-    n_flows = len(flows)
-    n_effects = len(effect_ids)
-
-    bound_type: list[str] = []
-    rel_lb = np.zeros((n_flows, n_time))
-    rel_ub = np.zeros((n_flows, n_time))
-    fixed_profile = np.full((n_flows, n_time), np.nan)
-    size = np.full(n_flows, np.nan)
-    effect_coeff = np.zeros((n_flows, n_effects, n_time))
-
-    # Sizing — collected only for investable flows
-    sz_ids: list[str] = []
-    sz_min: list[float] = []
-    sz_max: list[float] = []
-    sz_mandatory: list[bool] = []
-    sz_eps: list[np.ndarray] = []
-    sz_ef: list[np.ndarray] = []
-
-    for i, f in enumerate(flows):
-        lb_da = to_data_array(f.relative_minimum, time)
-        ub_da = to_data_array(f.relative_maximum, time)
-        rel_lb[i] = lb_da.values
-        rel_ub[i] = ub_da.values
-
-        if isinstance(f.size, Sizing):
-            s = f.size
-            if s.min_size < 0:
-                raise ValueError(f'Sizing.min_size < 0 on flow {f.id!r}')
-            if s.max_size < s.min_size:
-                raise ValueError(f'Sizing.max_size < min_size on flow {f.id!r}')
-            sz_ids.append(f.id)
-            sz_min.append(s.min_size)
-            sz_max.append(s.max_size)
-            sz_mandatory.append(s.mandatory)
-            eps_row = np.zeros(n_effects)
-            ef_row = np.zeros(n_effects)
-            for ek, ev in s.effects_per_size.items():
-                if ek not in effect_set:
-                    raise ValueError(f'Unknown effect {ek!r} in Sizing.effects_per_size on flow {f.id!r}')
-                eps_row[effect_ids.index(ek)] = ev
-            for ek, ev in s.effects_fixed.items():
-                if ek not in effect_set:
-                    raise ValueError(f'Unknown effect {ek!r} in Sizing.effects_fixed on flow {f.id!r}')
-                ef_row[effect_ids.index(ek)] = ev
-            sz_eps.append(eps_row)
-            sz_ef.append(ef_row)
-        elif f.size is not None:
-            size[i] = float(f.size)
-
-        if f.fixed_relative_profile is not None:
-            profile = to_data_array(f.fixed_relative_profile, time)
-            fixed_profile[i] = profile.values
-            bound_type.append('profile')
-        elif f.size is None:
-            bound_type.append('unsized')
-        else:
-            bound_type.append('bounded')
-
-        for effect_label, factor in f.effects_per_flow_hour.items():
-            if effect_label in effect_ids:
-                j = effect_ids.index(effect_label)
-                factor_da = to_data_array(factor, time)
-                effect_coeff[i, j] = factor_da.values
-
-    # Validate
-    if np.any(rel_lb < -1e-12):
-        bad = [flow_ids[i] for i in range(n_flows) if np.any(rel_lb[i] < -1e-12)]
-        raise ValueError(f'Negative lower bounds on flows: {bad}')
-    if np.any(rel_lb > rel_ub + 1e-12):
-        bad = [flow_ids[i] for i in range(n_flows) if np.any(rel_lb[i] > rel_ub[i] + 1e-12)]
-        raise ValueError(f'Lower bound > upper bound on flows: {bad}')
-
-    coords: dict[str, object] = {'flow': flow_ids, 'time': time, 'effect': effect_ids}
-
-    sizing_min = None
-    sizing_max = None
-    sizing_mandatory = None
-    sizing_effects_per_size = None
-    sizing_effects_fixed = None
-
-    if sz_ids:
-        coords['sizing_flow'] = sz_ids
-        sizing_min = xr.DataArray(np.array(sz_min), dims=['sizing_flow'], coords={'sizing_flow': sz_ids})
-        sizing_max = xr.DataArray(np.array(sz_max), dims=['sizing_flow'], coords={'sizing_flow': sz_ids})
-        sizing_mandatory = xr.DataArray(np.array(sz_mandatory), dims=['sizing_flow'], coords={'sizing_flow': sz_ids})
-        sizing_effects_per_size = xr.DataArray(
-            np.array(sz_eps),
-            dims=['sizing_flow', 'effect'],
-            coords={'sizing_flow': sz_ids, 'effect': effect_ids},
-        )
-        sizing_effects_fixed = xr.DataArray(
-            np.array(sz_ef),
-            dims=['sizing_flow', 'effect'],
-            coords={'sizing_flow': sz_ids, 'effect': effect_ids},
-        )
-
-    return FlowsData(
-        bound_type=xr.DataArray(bound_type, dims=['flow'], coords={'flow': flow_ids}),
-        rel_lb=xr.DataArray(rel_lb, dims=['flow', 'time'], coords={'flow': flow_ids, 'time': time}),
-        rel_ub=xr.DataArray(rel_ub, dims=['flow', 'time'], coords={'flow': flow_ids, 'time': time}),
-        fixed_profile=xr.DataArray(fixed_profile, dims=['flow', 'time'], coords={'flow': flow_ids, 'time': time}),
-        size=xr.DataArray(size, dims=['flow'], coords={'flow': flow_ids}),
-        effect_coeff=xr.DataArray(
-            effect_coeff,
-            dims=['flow', 'effect', 'time'],
-            coords={'flow': flow_ids, 'effect': effect_ids, 'time': time},
-        ),
-        sizing_min=sizing_min,
-        sizing_max=sizing_max,
-        sizing_mandatory=sizing_mandatory,
-        sizing_effects_per_size=sizing_effects_per_size,
-        sizing_effects_fixed=sizing_effects_fixed,
-    )
-
-
-def build_buses_data(buses: list[Bus], flows: list[Flow]) -> BusesData:
-    """Build BusesData with flow coefficients."""
-    bus_ids = [b.id for b in buses]
-    flow_ids = [f.id for f in flows]
-
-    coeff = np.full((len(bus_ids), len(flow_ids)), np.nan)
-    for f in flows:
-        if f.bus in bus_ids:
-            bi = bus_ids.index(f.bus)
-            fi = flow_ids.index(f.id)
-            coeff[bi, fi] = -1.0 if f._is_input else 1.0
-
-    return BusesData(
-        flow_coeff=xr.DataArray(coeff, dims=['bus', 'flow'], coords={'bus': bus_ids, 'flow': flow_ids}),
-    )
-
-
-def build_converters_data(converters: list[Converter], time: pd.Index) -> ConvertersData | None:
-    """Build ConvertersData with conversion coefficients."""
-    if not converters:
-        return None
-
-    conv_ids = [c.id for c in converters]
-    # Collect all flow ids across all converters
-    all_flow_ids: list[str] = []
-    for c in converters:
-        for f in c.inputs:
-            if f.id not in all_flow_ids:
-                all_flow_ids.append(f.id)
-        for f in c.outputs:
-            if f.id not in all_flow_ids:
-                all_flow_ids.append(f.id)
-
-    max_eq = max(len(c.conversion_factors) for c in converters)
-    n_time = len(time)
-
-    coeff = np.full((len(conv_ids), max_eq, len(all_flow_ids), n_time), np.nan)
-    eq_mask = np.zeros((len(conv_ids), max_eq), dtype=bool)
-
-    for ci, conv in enumerate(converters):
-        for eq_idx, equation in enumerate(conv.conversion_factors):
-            eq_mask[ci, eq_idx] = True
-            for flow_obj, factor in equation.items():
-                fi = all_flow_ids.index(flow_obj.id)
-                factor_da = to_data_array(factor, time)
-                coeff[ci, eq_idx, fi, :] = factor_da.values
-
-    return ConvertersData(
-        flow_coeff=xr.DataArray(
-            coeff,
-            dims=['converter', 'eq_idx', 'flow', 'time'],
-            coords={
-                'converter': conv_ids,
-                'eq_idx': list(range(max_eq)),
-                'flow': all_flow_ids,
-                'time': time,
-            },
-        ),
-        eq_mask=xr.DataArray(
-            eq_mask,
-            dims=['converter', 'eq_idx'],
-            coords={'converter': conv_ids, 'eq_idx': list(range(max_eq))},
-        ),
-    )
-
-
-def build_effects_data(effects: list[Effect], time: pd.Index) -> EffectsData:
-    """Build EffectsData."""
-    effect_ids = [e.id for e in effects]
-    n = len(effects)
-    n_time = len(time)
-
-    # Find objective
-    objective_effects = [e for e in effects if e.is_objective]
-    if not objective_effects:
-        raise ValueError('No objective effect found. Include an Effect with is_objective=True.')
-    if len(objective_effects) > 1:
-        ids = [e.id for e in objective_effects]
-        raise ValueError(f'Multiple objective effects: {ids}. Only one is allowed.')
-    objective_effect = objective_effects[0].id
-
-    min_total = np.full(n, np.nan)
-    max_total = np.full(n, np.nan)
-    min_per_hour = np.full((n, n_time), np.nan)
-    max_per_hour = np.full((n, n_time), np.nan)
-    is_objective = np.zeros(n, dtype=bool)
-
-    for i, e in enumerate(effects):
-        if e.minimum_total is not None:
-            min_total[i] = e.minimum_total
-        if e.maximum_total is not None:
-            max_total[i] = e.maximum_total
-        if e.minimum_per_hour is not None:
-            min_per_hour[i] = to_data_array(e.minimum_per_hour, time).values
-        if e.maximum_per_hour is not None:
-            max_per_hour[i] = to_data_array(e.maximum_per_hour, time).values
-        is_objective[i] = e.is_objective
-
-    return EffectsData(
-        min_total=xr.DataArray(min_total, dims=['effect'], coords={'effect': effect_ids}),
-        max_total=xr.DataArray(max_total, dims=['effect'], coords={'effect': effect_ids}),
-        min_per_hour=xr.DataArray(min_per_hour, dims=['effect', 'time'], coords={'effect': effect_ids, 'time': time}),
-        max_per_hour=xr.DataArray(max_per_hour, dims=['effect', 'time'], coords={'effect': effect_ids, 'time': time}),
-        is_objective=xr.DataArray(is_objective, dims=['effect'], coords={'effect': effect_ids}),
-        objective_effect=objective_effect,
-    )
-
-
-def build_storages_data(
-    storages: list[Storage],
-    time: pd.Index,
-    time_extra: pd.Index,
-    dt: xr.DataArray,
-    effects: list[Effect] | None = None,
-) -> StoragesData | None:
-    """Build StoragesData."""
-    from fluxopt.elements import Sizing
-
-    if not storages:
-        return None
-
-    effect_ids = [e.id for e in effects] if effects else []
-    effect_set = set(effect_ids)
-    stor_ids = [s.id for s in storages]
-    n = len(storages)
-    n_time = len(time)
-    n_extra = len(time_extra)
-    n_effects = len(effect_ids)
-
-    capacity = np.full(n, np.nan)
-    eta_c = np.ones((n, n_time))
-    eta_d = np.ones((n, n_time))
-    loss = np.zeros((n, n_time))
-    rel_cs_lb = np.zeros((n, n_extra))
-    rel_cs_ub = np.ones((n, n_extra))
-    initial_charge = np.zeros(n)
-    cyclic = np.zeros(n, dtype=bool)
-    charge_flow: list[str] = []
-    discharge_flow: list[str] = []
-
-    # Sizing — collected only for investable storages
-    sz_ids: list[str] = []
-    sz_min: list[float] = []
-    sz_max: list[float] = []
-    sz_mandatory: list[bool] = []
-    sz_eps: list[np.ndarray] = []
-    sz_ef: list[np.ndarray] = []
-
-    for i, s in enumerate(storages):
-        if isinstance(s.capacity, Sizing):
-            sz = s.capacity
-            if sz.min_size < 0:
-                raise ValueError(f'Sizing.min_size < 0 on storage {s.id!r}')
-            if sz.max_size < sz.min_size:
-                raise ValueError(f'Sizing.max_size < min_size on storage {s.id!r}')
-            sz_ids.append(s.id)
-            sz_min.append(sz.min_size)
-            sz_max.append(sz.max_size)
-            sz_mandatory.append(sz.mandatory)
-            eps_row = np.zeros(n_effects)
-            ef_row = np.zeros(n_effects)
-            for ek, ev in sz.effects_per_size.items():
-                if ek not in effect_set:
-                    raise ValueError(f'Unknown effect {ek!r} in Sizing.effects_per_size on storage {s.id!r}')
-                eps_row[effect_ids.index(ek)] = ev
-            for ek, ev in sz.effects_fixed.items():
-                if ek not in effect_set:
-                    raise ValueError(f'Unknown effect {ek!r} in Sizing.effects_fixed on storage {s.id!r}')
-                ef_row[effect_ids.index(ek)] = ev
-            sz_eps.append(eps_row)
-            sz_ef.append(ef_row)
-        elif s.capacity is not None:
-            capacity[i] = s.capacity
-
-        eta_c[i] = to_data_array(s.eta_charge, time).values
-        eta_d[i] = to_data_array(s.eta_discharge, time).values
-        loss[i] = to_data_array(s.relative_loss_per_hour, time).values
-
-        # Charge state bounds — broadcast to time_extra (replicate last for extra point)
-        cs_lb_t = to_data_array(s.relative_minimum_charge_state, time).values
-        cs_ub_t = to_data_array(s.relative_maximum_charge_state, time).values
-        rel_cs_lb[i, :n_time] = cs_lb_t
-        rel_cs_lb[i, n_time:] = cs_lb_t[-1]
-        rel_cs_ub[i, :n_time] = cs_ub_t
-        rel_cs_ub[i, n_time:] = cs_ub_t[-1]
-
-        is_cyclic = s.initial_charge_state == 'cyclic'
-        cyclic[i] = is_cyclic
-        if not is_cyclic:
-            initial_charge[i] = float(s.initial_charge_state) if s.initial_charge_state is not None else 0.0
-
-        charge_flow.append(s.charging.id)
-        discharge_flow.append(s.discharging.id)
-
-    # Validate
-    bad_cap = [stor_ids[i] for i in range(n) if not np.isnan(capacity[i]) and capacity[i] < 0]
-    if bad_cap:
-        raise ValueError(f'Negative capacity on storages: {bad_cap}')
-    bad_eta_c = [stor_ids[i] for i in range(n) if np.any(eta_c[i] <= 0) or np.any(eta_c[i] > 1)]
-    if bad_eta_c:
-        raise ValueError(f'eta_charge must be in (0, 1] on storages: {bad_eta_c}')
-    bad_eta_d = [stor_ids[i] for i in range(n) if np.any(eta_d[i] <= 0) or np.any(eta_d[i] > 1)]
-    if bad_eta_d:
-        raise ValueError(f'eta_discharge must be in (0, 1] on storages: {bad_eta_d}')
-    bad_loss = [stor_ids[i] for i in range(n) if np.any(loss[i] < 0)]
-    if bad_loss:
-        raise ValueError(f'Negative relative_loss_per_hour on storages: {bad_loss}')
-
-    coords_time: dict[str, object] = {'storage': stor_ids, 'time': time}
-    coords_extra: dict[str, object] = {'storage': stor_ids, 'time_extra': time_extra}
-
-    sizing_min = None
-    sizing_max = None
-    sizing_mandatory = None
-    sizing_effects_per_size = None
-    sizing_effects_fixed = None
-
-    if sz_ids:
-        sizing_min = xr.DataArray(np.array(sz_min), dims=['sizing_storage'], coords={'sizing_storage': sz_ids})
-        sizing_max = xr.DataArray(np.array(sz_max), dims=['sizing_storage'], coords={'sizing_storage': sz_ids})
-        sizing_mandatory = xr.DataArray(
-            np.array(sz_mandatory), dims=['sizing_storage'], coords={'sizing_storage': sz_ids}
-        )
-        sizing_effects_per_size = xr.DataArray(
-            np.array(sz_eps),
-            dims=['sizing_storage', 'effect'],
-            coords={'sizing_storage': sz_ids, 'effect': effect_ids},
-        )
-        sizing_effects_fixed = xr.DataArray(
-            np.array(sz_ef),
-            dims=['sizing_storage', 'effect'],
-            coords={'sizing_storage': sz_ids, 'effect': effect_ids},
-        )
-
-    return StoragesData(
-        capacity=xr.DataArray(capacity, dims=['storage'], coords={'storage': stor_ids}),
-        eta_c=xr.DataArray(eta_c, dims=['storage', 'time'], coords=coords_time),
-        eta_d=xr.DataArray(eta_d, dims=['storage', 'time'], coords=coords_time),
-        loss=xr.DataArray(loss, dims=['storage', 'time'], coords=coords_time),
-        rel_cs_lb=xr.DataArray(rel_cs_lb, dims=['storage', 'time_extra'], coords=coords_extra),
-        rel_cs_ub=xr.DataArray(rel_cs_ub, dims=['storage', 'time_extra'], coords=coords_extra),
-        initial_charge=xr.DataArray(initial_charge, dims=['storage'], coords={'storage': stor_ids}),
-        cyclic=xr.DataArray(cyclic, dims=['storage'], coords={'storage': stor_ids}),
-        charge_flow=xr.DataArray(charge_flow, dims=['storage'], coords={'storage': stor_ids}),
-        discharge_flow=xr.DataArray(discharge_flow, dims=['storage'], coords={'storage': stor_ids}),
-        sizing_min=sizing_min,
-        sizing_max=sizing_max,
-        sizing_mandatory=sizing_mandatory,
-        sizing_effects_per_size=sizing_effects_per_size,
-        sizing_effects_fixed=sizing_effects_fixed,
-    )
 
 
 def _collect_flows(
@@ -675,11 +682,11 @@ def build_model_data(
     time_extra = _compute_time_extra(time, dt_da)
     weights = xr.DataArray(np.ones(len(time)), dims=['time'], coords={'time': time}, name='weight')
 
-    flows_data = build_flows_data(flows, time, effects)
-    buses_data = build_buses_data(buses, flows)
-    converters_data = build_converters_data(converters, time)
-    effects_data = build_effects_data(effects, time)
-    storages_data = build_storages_data(stor_list, time, time_extra, dt_da, effects)
+    flows_data = FlowsData.build(flows, time, effects)
+    buses_data = BusesData.build(buses, flows)
+    converters_data = ConvertersData.build(converters, time)
+    effects_data = EffectsData.build(effects, time)
+    storages_data = StoragesData.build(stor_list, time, time_extra, dt_da, effects)
 
     return ModelData(
         flows=flows_data,
