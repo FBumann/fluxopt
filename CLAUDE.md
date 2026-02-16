@@ -62,3 +62,10 @@ uv remove <pkg>          # Remove a dependency
 - **Dev/docs groups**: `[dependency-groups]` (PEP 735) — pinned with `==`, Dependabot bumps weekly
 - **User extras**: `[project.optional-dependencies]` — add via `uv add --optional <name> <pkg>`
 - Python >= 3.12 required
+
+## Code Style
+
+- **Docstrings**: Google style, brief, on all functions
+  - No types in docstrings (types live in signatures only)
+  - Always include `Args` section when there are parameters
+  - `Returns` / `Raises` only when non-obvious
