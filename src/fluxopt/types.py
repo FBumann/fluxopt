@@ -21,10 +21,15 @@ class Identified(Protocol):
 
 
 class IdList[T: Identified]:
-    """Frozen, ordered container with access by ``id`` (str) or position (int).
+    """Frozen, ordered container with access by id (str) or position (int).
 
-    Raises :class:`ValueError` on duplicate ids at construction time.
-    Supports concatenation via ``+`` (returns a new ``IdList``).
+    Supports concatenation via ``+``.
+
+    Args:
+        items: Elements to store. Must have unique ids.
+
+    Raises:
+        ValueError: On duplicate ids.
     """
 
     __slots__ = ('_by_id', '_items')
@@ -71,19 +76,13 @@ def as_dataarray(
     name: str = 'value',
     broadcast: bool = True,
 ) -> xr.DataArray:
-    """Convert a TimeSeries to a DataArray aligned to the given coordinates.
+    """Convert a TimeSeries to a DataArray aligned to given coordinates.
 
-    Parameters
-    ----------
-    value
-        Scalar, list, ndarray, Series, or DataArray.
-    coords
-        Target coordinates, e.g. ``{"time": idx}`` or ``{"flow": ids, "time": idx}``.
-    name
-        Name for the resulting DataArray.
-    broadcast
-        Expand the result to span *all* dimensions in *coords* (default True).
-        Pass False to keep only the matched dimension.
+    Args:
+        value: Scalar, list, ndarray, Series, or DataArray.
+        coords: Target coordinates, e.g. ``{"time": idx}``.
+        name: Name for the resulting DataArray.
+        broadcast: Expand result to span all dimensions in coords.
     """
     coord_idx = {k: v if isinstance(v, pd.Index) else pd.Index(v) for k, v in coords.items()}
 
@@ -148,7 +147,8 @@ def as_dataarray(
 def normalize_timesteps(timesteps: Timesteps) -> pd.Index:
     """Convert any Timesteps input to a pd.Index.
 
-    Supports datetime and integer timesteps. Strings are not supported.
+    Args:
+        timesteps: Datetime or integer timesteps.
     """
     if isinstance(timesteps, pd.DatetimeIndex):
         return timesteps
@@ -173,12 +173,16 @@ def normalize_timesteps(timesteps: Timesteps) -> pd.Index:
 
 
 def compute_dt(timesteps: pd.Index, dt: float | list[float] | None) -> xr.DataArray:
-    """Compute dt (hours) for each timestep as an xr.DataArray.
+    """Compute dt (hours) for each timestep as a DataArray.
 
-    - dt=None + datetime: derive from consecutive differences in hours; last = second-to-last.
-    - dt=None + integer: broadcast 1.0.
-    - dt provided: validate length, return as DataArray.
-    - Single timestep: default to 1.0.
+    When dt is None, auto-derives from timesteps:
+    - Datetime: consecutive differences in hours; last = second-to-last.
+    - Integer: 1.0 for all.
+    - Single timestep: 1.0.
+
+    Args:
+        timesteps: Time index.
+        dt: Override timestep duration. Validated against timesteps length.
     """
     n = len(timesteps)
 

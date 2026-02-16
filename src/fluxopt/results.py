@@ -18,42 +18,61 @@ class SolvedModel:
 
     @property
     def objective(self) -> float:
+        """Objective function value."""
         return float(self.solution.attrs['objective'])
 
     @property
     def flow_rates(self) -> xr.DataArray:
+        """All flow rates as (flow, time) DataArray."""
         return self.solution['flow--rate']
 
     @property
     def storage_levels(self) -> xr.DataArray:
+        """All storage levels as (storage, time_extra) DataArray."""
         return self.solution['storage--level'] if 'storage--level' in self.solution else xr.DataArray()
 
     @property
     def sizes(self) -> xr.DataArray:
+        """Optimized flow sizes as (flow,) DataArray."""
         return self.solution['flow--size'] if 'flow--size' in self.solution else xr.DataArray()
 
     @property
     def storage_capacities(self) -> xr.DataArray:
+        """Optimized storage capacities as (storage,) DataArray."""
         return self.solution['storage--capacity'] if 'storage--capacity' in self.solution else xr.DataArray()
 
     @property
     def effect_totals(self) -> xr.DataArray:
+        """Total effect values as (effect,) DataArray."""
         return self.solution['effect--total']
 
     @property
     def effects_per_timestep(self) -> xr.DataArray:
+        """Per-timestep effect values as (effect, time) DataArray."""
         return self.solution['effect--per_timestep']
 
     def flow_rate(self, id: str) -> xr.DataArray:
-        """Get time series for a single flow."""
+        """Get flow rate time series for a single flow.
+
+        Args:
+            id: Qualified flow id.
+        """
         return self.flow_rates.sel(flow=id)
 
     def storage_level(self, id: str) -> xr.DataArray:
-        """Get time series for a single storage."""
+        """Get charge state time series for a single storage.
+
+        Args:
+            id: Storage id.
+        """
         return self.storage_levels.sel(storage=id)
 
     def to_netcdf(self, path: str | Path) -> None:
-        """Write solution (+ model data if available) to NetCDF."""
+        """Write solution and model data to NetCDF.
+
+        Args:
+            path: Output file path.
+        """
         p = Path(path)
         self.solution.to_netcdf(p, mode='w', engine='netcdf4')
         if self.data is not None:
@@ -61,7 +80,11 @@ class SolvedModel:
 
     @classmethod
     def from_netcdf(cls, path: str | Path) -> SolvedModel:
-        """Read a SolvedModel from a NetCDF file."""
+        """Read a SolvedModel from a NetCDF file.
+
+        Args:
+            path: Input file path.
+        """
         from fluxopt.model_data import ModelData
 
         p = Path(path)
@@ -71,7 +94,11 @@ class SolvedModel:
 
     @classmethod
     def from_model(cls, model: FlowSystemModel) -> SolvedModel:
-        """Extract solution from a solved linopy model."""
+        """Extract solution from a solved linopy model.
+
+        Args:
+            model: Solved FlowSystemModel instance.
+        """
         sol_vars: dict[str, xr.DataArray] = {
             'flow--rate': model.flow_rate.solution,
             'effect--total': model.effect_total.solution,

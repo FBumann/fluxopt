@@ -13,9 +13,9 @@ class Sizing:
 
     The solver decides the optimal size within [min_size, max_size].
 
-    - ``mandatory=True`` → continuous variable, size ∈ [min, max], no binary
-    - ``mandatory=False`` → binary indicator gates size: 0 or [min, max]
-    - ``min_size == max_size`` → binary invest at exact size (yes/no)
+    - ``mandatory=True``: continuous, size in [min, max], no binary.
+    - ``mandatory=False``: binary indicator gates size: 0 or [min, max].
+    - ``min_size == max_size``: binary invest at exact size (yes/no).
     """
 
     min_size: float
@@ -29,15 +29,14 @@ class Sizing:
 class Flow:
     """A single energy flow on a bus.
 
-    ``id`` is optional: leave empty for the common single-flow-per-bus case and
-    it defaults to the bus name.  Set it explicitly to disambiguate when a
-    component has multiple flows on the same bus::
+    ``id`` is optional: defaults to the bus name. Set explicitly to
+    disambiguate multiple flows on the same bus::
 
-        Flow(bus='elec')  # id defaults to 'elec' → boiler(elec)
-        Flow(bus='elec', id='base')  # → chp(base)
+        Flow(bus='elec')  # id → 'elec' → boiler(elec)
+        Flow(bus='elec', id='base')  # id → 'base' → chp(base)
 
-    After the parent component's ``__post_init__`` runs, ``id`` is expanded to
-    the qualified form ``{component.id}({id})``.
+    After ``__post_init__`` of the parent component, ``id`` is expanded
+    to the qualified form ``component(id)``.
     """
 
     bus: str
@@ -49,6 +48,7 @@ class Flow:
     effects_per_flow_hour: dict[str, TimeSeries] = field(default_factory=dict)  # c_{f,k}  [varies]
 
     def __post_init__(self) -> None:
+        """Default id to bus name if not set."""
         if not self.id:
             self.id = self.bus
 
@@ -74,14 +74,14 @@ class Effect:
 class Storage:
     """Energy storage with charge dynamics.
 
-    Flow ids are qualified as ``{storage.id}({flow.id})``.  When both flows
-    connect to the same bus their ids would collide, so they are renamed to
-    ``charge`` / ``discharge`` before qualification::
+    Flow ids are qualified as ``storage(flow)``. When both flows connect
+    to the same bus, they are renamed to ``charge`` / ``discharge``::
 
-        Storage('bat', Flow(bus='elec'), Flow(bus='elec'))  # → bat(charge), bat(discharge)
-        Storage('bat', Flow(bus='elec'), Flow(bus='heat'))  # → bat(elec), bat(heat)
+        Storage('bat', Flow(bus='elec'), Flow(bus='elec'))  # bat(charge), bat(discharge)
+        Storage('bat', Flow(bus='elec'), Flow(bus='heat'))  # bat(elec), bat(heat)
 
-    Charge balance:
+    Charge balance::
+
         E_{s,t+1} = E_{s,t} (1 - δ Δt) + P^c η^c Δt - P^d / η^d Δt
     """
 
@@ -97,6 +97,7 @@ class Storage:
     relative_maximum_charge_state: TimeSeries = 1.0  # ē_s  [-]
 
     def __post_init__(self) -> None:
+        """Rename colliding flow ids and qualify with storage id."""
         if self.charging.id == self.discharging.id:
             self.charging.id = 'charge'
             self.discharging.id = 'discharge'

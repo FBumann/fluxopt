@@ -26,7 +26,11 @@ _NC_GROUPS = {
 
 
 def _to_dataset(obj: object) -> xr.Dataset:
-    """Convert a typed data dataclass to an xr.Dataset."""
+    """Convert a data dataclass to an xr.Dataset.
+
+    Args:
+        obj: Dataclass with DataArray fields and scalar attrs.
+    """
     data_vars: dict[str, xr.DataArray] = {}
     attrs: dict[str, object] = {}
     for f in fields(obj):  # type: ignore[arg-type]
@@ -51,6 +55,7 @@ class _SizingArrays:
     effects_fixed: xr.DataArray | None = None
 
     def __post_init__(self) -> None:
+        """Validate min >= 0 and max >= min."""
         if self.min is not None:
             mask = self.min < 0
             if mask.any():
@@ -68,7 +73,13 @@ class _SizingArrays:
         effect_ids: list[str],
         dim: str,
     ) -> Self:
-        """Validate Sizing objects and collect into DataArrays."""
+        """Validate Sizing objects and collect into DataArrays.
+
+        Args:
+            items: Pairs of (element_id, Sizing).
+            effect_ids: Known effect ids for validation.
+            dim: Dimension name for the resulting arrays.
+        """
         if not items:
             return cls()
 
@@ -129,6 +140,7 @@ class FlowsData:
     sizing_effects_fixed: xr.DataArray | None = None  # (sizing_flow, effect)
 
     def __post_init__(self) -> None:
+        """Validate relative bounds: non-negative and lb <= ub."""
         bad_neg = (self.rel_lb < -1e-12).any('time')
         if bad_neg.any():
             raise ValueError(f'Negative lower bounds on flows: {list(self.rel_lb.coords["flow"][bad_neg].values)}')
@@ -139,16 +151,28 @@ class FlowsData:
             )
 
     def to_dataset(self) -> xr.Dataset:
+        """Serialize to xr.Dataset."""
         return _to_dataset(self)
 
     @classmethod
     def from_dataset(cls, ds: xr.Dataset) -> Self:
+        """Deserialize from xr.Dataset.
+
+        Args:
+            ds: Dataset with matching variable names.
+        """
         kwargs: dict[str, xr.DataArray | None] = {f.name: ds.get(f.name) for f in fields(cls)}
         return cls(**kwargs)
 
     @classmethod
     def build(cls, flows: list[Flow], time: pd.Index, effects: list[Effect]) -> Self:
-        """Build FlowsData from element objects."""
+        """Build FlowsData from element objects.
+
+        Args:
+            flows: All collected flows with qualified ids.
+            time: Time index.
+            effects: Effect definitions for cost coefficients.
+        """
         from fluxopt.elements import Sizing
 
         flow_ids = [f.id for f in flows]
@@ -217,15 +241,27 @@ class BusesData:
     flow_coeff: xr.DataArray  # (bus, flow)
 
     def to_dataset(self) -> xr.Dataset:
+        """Serialize to xr.Dataset."""
         return _to_dataset(self)
 
     @classmethod
     def from_dataset(cls, ds: xr.Dataset) -> Self:
+        """Deserialize from xr.Dataset.
+
+        Args:
+            ds: Dataset with ``flow_coeff`` variable.
+        """
         return cls(flow_coeff=ds['flow_coeff'])
 
     @classmethod
     def build(cls, buses: list[Bus], flows: list[Flow], bus_coeff: dict[str, float]) -> Self:
-        """Build BusesData with flow coefficients."""
+        """Build BusesData with flow coefficients.
+
+        Args:
+            buses: Bus definitions.
+            flows: All collected flows.
+            bus_coeff: Mapping of flow id to +1 (produces) or -1 (consumes).
+        """
         bus_ids = [b.id for b in buses]
         flow_ids = [f.id for f in flows]
 
@@ -247,15 +283,26 @@ class ConvertersData:
     eq_mask: xr.DataArray  # (converter, eq_idx)
 
     def to_dataset(self) -> xr.Dataset:
+        """Serialize to xr.Dataset."""
         return _to_dataset(self)
 
     @classmethod
     def from_dataset(cls, ds: xr.Dataset) -> Self:
+        """Deserialize from xr.Dataset.
+
+        Args:
+            ds: Dataset with ``flow_coeff`` and ``eq_mask`` variables.
+        """
         return cls(flow_coeff=ds['flow_coeff'], eq_mask=ds['eq_mask'])
 
     @classmethod
     def build(cls, converters: list[Converter], time: pd.Index) -> Self | None:
-        """Build ConvertersData with conversion coefficients."""
+        """Build ConvertersData with conversion coefficients.
+
+        Args:
+            converters: Converter definitions.
+            time: Time index.
+        """
         if not converters:
             return None
 
@@ -313,6 +360,7 @@ class EffectsData:
     objective_effect: str
 
     def __post_init__(self) -> None:
+        """Validate exactly one objective effect exists."""
         n_obj = int(self.is_objective.sum())
         if n_obj == 0:
             raise ValueError('No objective effect found. Include an Effect with is_objective=True.')
@@ -322,10 +370,16 @@ class EffectsData:
             )
 
     def to_dataset(self) -> xr.Dataset:
+        """Serialize to xr.Dataset."""
         return _to_dataset(self)
 
     @classmethod
     def from_dataset(cls, ds: xr.Dataset) -> Self:
+        """Deserialize from xr.Dataset.
+
+        Args:
+            ds: Dataset with effect variables and attrs.
+        """
         kwargs: dict[str, object] = {
             f.name: ds[f.name] if f.name in ds.data_vars else ds.attrs[f.name] for f in fields(cls)
         }
@@ -333,7 +387,12 @@ class EffectsData:
 
     @classmethod
     def build(cls, effects: list[Effect], time: pd.Index) -> Self:
-        """Build EffectsData."""
+        """Build EffectsData from element objects.
+
+        Args:
+            effects: Effect definitions.
+            time: Time index.
+        """
         effect_ids = [e.id for e in effects]
         n = len(effects)
         n_time = len(time)
@@ -389,6 +448,7 @@ class StoragesData:
     sizing_effects_fixed: xr.DataArray | None = None  # (sizing_storage, effect)
 
     def __post_init__(self) -> None:
+        """Validate capacity, efficiencies, and loss rates."""
         s = self.capacity.coords['storage']
         cap = self.capacity
         bad_cap = ~np.isnan(cap) & (cap < 0)
@@ -405,10 +465,16 @@ class StoragesData:
             raise ValueError(f'Negative relative_loss_per_hour on storages: {list(s[bad_loss].values)}')
 
     def to_dataset(self) -> xr.Dataset:
+        """Serialize to xr.Dataset."""
         return _to_dataset(self)
 
     @classmethod
     def from_dataset(cls, ds: xr.Dataset) -> Self:
+        """Deserialize from xr.Dataset.
+
+        Args:
+            ds: Dataset with matching variable names.
+        """
         kwargs: dict[str, xr.DataArray | None] = {f.name: ds.get(f.name) for f in fields(cls)}
         return cls(**kwargs)
 
@@ -421,7 +487,15 @@ class StoragesData:
         dt: xr.DataArray,
         effects: list[Effect] | None = None,
     ) -> Self | None:
-        """Build StoragesData."""
+        """Build StoragesData from element objects.
+
+        Args:
+            storages: Storage definitions.
+            time: Time index.
+            time_extra: N+1 time index for charge state.
+            dt: Timestep durations.
+            effects: Effect definitions for sizing cost validation.
+        """
         from fluxopt.elements import Sizing
 
         if not storages:
@@ -507,7 +581,12 @@ class ModelData:
     time_extra: pd.Index = field(repr=False)
 
     def to_netcdf(self, path: str | Path, *, mode: Literal['w', 'a'] = 'a') -> None:
-        """Write model data as NetCDF groups under /model/."""
+        """Write model data as NetCDF groups under ``/model/``.
+
+        Args:
+            path: Output file path.
+            mode: Write mode ('w' to overwrite, 'a' to append).
+        """
         p = Path(path)
         dataset_fields: dict[str, FlowsData | BusesData | ConvertersData | EffectsData | StoragesData | None] = {
             'flows': self.flows,
@@ -524,7 +603,14 @@ class ModelData:
 
     @classmethod
     def from_netcdf(cls, path: str | Path) -> ModelData | None:
-        """Read model data from NetCDF groups. Returns None if not present."""
+        """Read model data from NetCDF groups.
+
+        Args:
+            path: Input file path.
+
+        Returns:
+            ModelData or None if no model groups found.
+        """
         p = Path(path)
         try:
             meta = xr.open_dataset(p, group='model/meta', engine='netcdf4')
@@ -576,7 +662,17 @@ class ModelData:
         storages: list[Storage] | None = None,
         dt: float | list[float] | None = None,
     ) -> Self:
-        """Build ModelData from element objects."""
+        """Build ModelData from element objects.
+
+        Args:
+            timesteps: Time index for the optimization horizon.
+            buses: Energy buses.
+            effects: Effects to track.
+            ports: System boundary ports.
+            converters: Linear converters.
+            storages: Energy storages.
+            dt: Timestep duration in hours. Auto-derived if None.
+        """
         from fluxopt.types import compute_dt as _compute_dt
 
         converters = converters or []
@@ -616,8 +712,14 @@ def _collect_flows(
 ) -> tuple[list[Flow], dict[str, float]]:
     """Gather all flows and assign bus-balance coefficients by direction.
 
-    Returns (flows, bus_coeff) where bus_coeff maps flow id → +1 (produces
-    into bus) or -1 (consumes from bus).
+    Args:
+        ports: System boundary ports.
+        converters: Converter components.
+        storages: Storage components.
+
+    Returns:
+        Tuple of (flows, bus_coeff) where bus_coeff maps flow id to
+        +1 (produces into bus) or -1 (consumes from bus).
     """
     flows: list[Flow] = []
     bus_coeff: dict[str, float] = {}
@@ -651,7 +753,16 @@ def _validate_system(
     storages: list[Storage],
     flows: list[Flow],
 ) -> None:
-    """Cross-cutting validation."""
+    """Validate unique ids and bus references across all elements.
+
+    Args:
+        buses: Bus definitions.
+        effects: Effect definitions.
+        ports: Port components.
+        converters: Converter components.
+        storages: Storage components.
+        flows: All collected flows.
+    """
     # Unique component IDs
     all_ids: list[str] = [b.id for b in buses]
     all_ids.extend(e.id for e in effects)
@@ -679,7 +790,12 @@ def _validate_system(
 
 
 def _compute_time_extra(time: pd.Index, dt: xr.DataArray) -> pd.Index:
-    """Compute N+1 time index for storage charge state."""
+    """Compute N+1 time index for storage charge state.
+
+    Args:
+        time: Original time index.
+        dt: Timestep durations (last value determines extra point offset).
+    """
     if isinstance(time, pd.DatetimeIndex):
         last_dt_hours: float = float(dt.values[-1])
         end_time = time[-1] + timedelta(hours=last_dt_hours)

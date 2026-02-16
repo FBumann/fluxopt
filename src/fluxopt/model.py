@@ -15,6 +15,13 @@ if TYPE_CHECKING:
 
 class FlowSystemModel:
     def __init__(self, data: ModelData, solver: str = 'highs', *, silent: bool = True) -> None:
+        """Initialize the flow system optimization model.
+
+        Args:
+            data: Pre-built model data.
+            solver: Solver backend name.
+            silent: Suppress solver output.
+        """
         self.data = data
         self.solver = solver
         self.silent = silent
@@ -29,11 +36,14 @@ class FlowSystemModel:
         name: str,
         binary: bool = False,
     ) -> Variable:
-        """Wrapper around linopy Model.add_variables that aligns bounds to coords.
+        """Add a variable with bounds auto-aligned to coords via as_dataarray.
 
-        Bounds are converted to DataArrays aligned with the target *coords* via
-        :func:`~fluxopt.types.as_dataarray`, preventing spurious extra dimensions
-        that linopy can introduce when raw DataArray bounds carry mismatched dims.
+        Args:
+            lower: Lower bound (scalar, array, or DataArray).
+            upper: Upper bound (scalar, array, or DataArray).
+            coords: Coordinate arrays defining the variable dimensions.
+            name: Variable name.
+            binary: Create a binary variable instead.
         """
         coord_dict = {str(c.dims[0]): c.values for c in coords}
         kwargs: dict[str, Any] = {'coords': coords, 'name': name, 'binary': binary}
@@ -45,6 +55,7 @@ class FlowSystemModel:
         return self.m.add_variables(**kwargs)
 
     def build(self) -> None:
+        """Build all variables, constraints, and the objective."""
         # Phase 1: Decision variables
         self._create_flow_variables()
         self._create_sizing_variables()
@@ -58,11 +69,16 @@ class FlowSystemModel:
         self._set_objective()
 
     def solve(self, silent: bool = True) -> SolvedModel:
+        """Solve the model and return a SolvedModel.
+
+        Args:
+            silent: Suppress solver output.
+        """
         self.m.solve(solver_name=self.solver, io_api='direct', output_flag=not silent)
         return SolvedModel.from_model(self)
 
     def _create_flow_variables(self) -> None:
-        """Create flow rate decision variable P_{f,t} >= 0."""
+        """Create flow rate decision variables P_{f,t} >= 0."""
         ds = self.data.flows
         self.flow_rate = self.m.add_variables(
             lower=0, coords=[ds.rel_lb.coords['flow'], ds.rel_lb.coords['time']], name='flow--rate'
@@ -111,9 +127,9 @@ class FlowSystemModel:
     def _constrain_flow_rates(self) -> None:
         """Apply flow rate bounds for all flow types.
 
-        Fixed-size: P in [size * p_lb, size * p_ub] or P = size * pi
-        Investable: P in [S * p_lb, S * p_ub] or P = S * pi
-        Unsized: no bounds beyond P >= 0
+        - Fixed-size: P in [size * p_lb, size * p_ub] or P = size * pi.
+        - Investable: P in [S * p_lb, S * p_ub] or P = S * pi.
+        - Unsized: no bounds beyond P >= 0.
         """
         ds = self.data.flows
         size = ds.size
@@ -208,7 +224,7 @@ class FlowSystemModel:
                 )
 
     def _create_bus_balance(self) -> None:
-        """Bus balance: sum_f(coeff_{b,f} * P_{f,t}) = 0  for all b, t."""
+        """Create bus balance: ``sum_f(coeff * P) = 0`` for all buses and timesteps."""
         d = self.data
         coeff = d.buses.flow_coeff  # (bus, flow) — NaN for unconnected
 
@@ -220,7 +236,7 @@ class FlowSystemModel:
         self.m.add_constraints(lhs == 0, name='bus_balance')
 
     def _create_converter_constraints(self) -> None:
-        """Conversion: sum_f(a_f * P_{f,t}) = 0  for all converter, eq_idx, t."""
+        """Create conversion constraints: ``sum_f(a_f * P) = 0`` per converter and equation."""
         d = self.data
         if d.converters is None:
             return
@@ -334,7 +350,7 @@ class FlowSystemModel:
             self.m.add_constraints(self.effect_per_timestep <= max_ph, name='effect_max_ph', mask=has_max_ph)
 
     def _create_storage(self) -> None:
-        """Storage dynamics: E_{s,t+1} = E_{s,t}(1 - delta*dt) + P^c eta^c dt - P^d/eta^d dt."""
+        """Create storage variables, charge balance, and initial/cyclic conditions."""
         d = self.data
         if d.storages is None:
             return
@@ -454,6 +470,6 @@ class FlowSystemModel:
             self.m.add_constraints(cs_first == abs_initial, name='cs_init')
 
     def _set_objective(self) -> None:
-        """Objective: min Phi_{k*} where k* is the effect with is_objective=True."""
+        """Set objective: minimize the total of the objective effect."""
         obj_effect = self.data.effects.objective_effect
         self.m.add_objective(self.effect_total.sel(effect=obj_effect).sum())

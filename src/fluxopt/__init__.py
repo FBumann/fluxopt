@@ -24,7 +24,19 @@ def solve(
     solver: str = 'highs',
     silent: bool = True,
 ) -> SolvedModel:
-    """Convenience: build data, build model, solve, return results."""
+    """Build data, build model, solve, return results.
+
+    Args:
+        timesteps: Time index for the optimization horizon.
+        buses: Energy buses in the system.
+        effects: Effects to track (costs, emissions, etc.).
+        ports: System boundary ports with imports/exports.
+        converters: Linear converters between buses.
+        storages: Energy storages.
+        dt: Timestep duration in hours. Auto-derived if None.
+        solver: Solver backend name.
+        silent: Suppress solver output.
+    """
     data = ModelData.build(timesteps, buses, effects, ports, converters, storages, dt)
     model = FlowSystemModel(data, solver=solver)
     model.build()
