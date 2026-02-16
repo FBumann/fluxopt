@@ -89,7 +89,7 @@ class SolvedModel:
         if hasattr(model, 'storage_size_indicator'):
             sol_vars['storage--size_indicator'] = model.storage_size_indicator.solution
 
-        obj_effect = model.data.effects.attrs['objective_effect']
+        obj_effect = model.data.effects.objective_effect
         obj_val = float(sol_vars['effect--total'].sel(effect=obj_effect).values)
 
         solution = xr.Dataset(sol_vars, attrs={'objective': obj_val})

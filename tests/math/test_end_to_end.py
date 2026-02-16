@@ -94,7 +94,7 @@ class TestEndToEnd:
         )
 
         # Change demand from 0.5 to 0.7 (relative); absolute = 0.7 * 100 = 70
-        data.flows['fixed_profile'].loc[{'flow': 'demand(elec)'}] = 0.7
+        data.flows.fixed_profile.loc[{'flow': 'demand(elec)'}] = 0.7
 
         model = FlowSystemModel(data)
         model.build()

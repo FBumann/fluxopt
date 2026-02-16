@@ -81,13 +81,16 @@ class TestRoundtrip:
 
         assert loaded.data is not None
         # Flows dataset preserved
-        assert set(loaded.data.flows.data_vars) == set(result.data.flows.data_vars)
-        assert list(loaded.data.flows.coords['flow'].values) == list(result.data.flows.coords['flow'].values)
+        assert list(loaded.data.flows.rel_lb.coords['flow'].values) == list(
+            result.data.flows.rel_lb.coords['flow'].values
+        )
         # Effects attrs preserved
-        assert loaded.data.effects.attrs['objective_effect'] == result.data.effects.attrs['objective_effect']
+        assert loaded.data.effects.objective_effect == result.data.effects.objective_effect
         # Storages dataset preserved
-        assert list(loaded.data.storages.coords['storage'].values) == list(
-            result.data.storages.coords['storage'].values
+        assert loaded.data.storages is not None
+        assert result.data.storages is not None
+        assert list(loaded.data.storages.capacity.coords['storage'].values) == list(
+            result.data.storages.capacity.coords['storage'].values
         )
         # dt preserved
         assert loaded.data.dt.values == pytest.approx(result.data.dt.values)

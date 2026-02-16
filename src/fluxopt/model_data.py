@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from datetime import timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal, Self
 
 import numpy as np
 import pandas as pd
@@ -25,25 +25,142 @@ _NC_GROUPS = {
 }
 
 
+def _to_dataset(obj: object) -> xr.Dataset:
+    """Convert a typed data dataclass to an xr.Dataset."""
+    data_vars: dict[str, xr.DataArray] = {}
+    attrs: dict[str, object] = {}
+    for f in fields(obj):  # type: ignore[arg-type]
+        val = getattr(obj, f.name)
+        if val is None:
+            continue
+        if isinstance(val, xr.DataArray):
+            data_vars[f.name] = val
+        else:
+            attrs[f.name] = val
+    ds = xr.Dataset(data_vars)
+    ds.attrs.update(attrs)
+    return ds
+
+
+@dataclass
+class FlowsData:
+    rel_lb: xr.DataArray  # (flow, time)
+    rel_ub: xr.DataArray  # (flow, time)
+    fixed_profile: xr.DataArray  # (flow, time) — NaN where not fixed
+    size: xr.DataArray  # (flow,) — NaN for unsized
+    effect_coeff: xr.DataArray  # (flow, effect, time)
+    sizing_min: xr.DataArray | None = None  # (sizing_flow,)
+    sizing_max: xr.DataArray | None = None  # (sizing_flow,)
+    sizing_mandatory: xr.DataArray | None = None  # (sizing_flow,)
+    sizing_effects_per_size: xr.DataArray | None = None  # (sizing_flow, effect)
+    sizing_effects_fixed: xr.DataArray | None = None  # (sizing_flow, effect)
+
+    def to_dataset(self) -> xr.Dataset:
+        return _to_dataset(self)
+
+    @classmethod
+    def from_dataset(cls, ds: xr.Dataset) -> Self:
+        kwargs: dict[str, xr.DataArray | None] = {f.name: ds.get(f.name) for f in fields(cls)}
+        return cls(**kwargs)
+
+
+@dataclass
+class BusesData:
+    flow_coeff: xr.DataArray  # (bus, flow)
+
+    def to_dataset(self) -> xr.Dataset:
+        return _to_dataset(self)
+
+    @classmethod
+    def from_dataset(cls, ds: xr.Dataset) -> Self:
+        return cls(flow_coeff=ds['flow_coeff'])
+
+
+@dataclass
+class ConvertersData:
+    flow_coeff: xr.DataArray  # (converter, eq_idx, flow, time)
+    eq_mask: xr.DataArray  # (converter, eq_idx)
+
+    def to_dataset(self) -> xr.Dataset:
+        return _to_dataset(self)
+
+    @classmethod
+    def from_dataset(cls, ds: xr.Dataset) -> Self:
+        return cls(flow_coeff=ds['flow_coeff'], eq_mask=ds['eq_mask'])
+
+
+@dataclass
+class EffectsData:
+    min_total: xr.DataArray  # (effect,)
+    max_total: xr.DataArray  # (effect,)
+    min_per_hour: xr.DataArray  # (effect, time)
+    max_per_hour: xr.DataArray  # (effect, time)
+    is_objective: xr.DataArray  # (effect,)
+    objective_effect: str
+
+    def to_dataset(self) -> xr.Dataset:
+        return _to_dataset(self)
+
+    @classmethod
+    def from_dataset(cls, ds: xr.Dataset) -> Self:
+        kwargs: dict[str, object] = {
+            f.name: ds[f.name] if f.name in ds.data_vars else ds.attrs[f.name] for f in fields(cls)
+        }
+        return cls(**kwargs)  # type: ignore[arg-type]
+
+
+@dataclass
+class StoragesData:
+    capacity: xr.DataArray  # (storage,)
+    eta_c: xr.DataArray  # (storage, time)
+    eta_d: xr.DataArray  # (storage, time)
+    loss: xr.DataArray  # (storage, time)
+    rel_cs_lb: xr.DataArray  # (storage, time_extra)
+    rel_cs_ub: xr.DataArray  # (storage, time_extra)
+    initial_charge: xr.DataArray  # (storage,)
+    cyclic: xr.DataArray  # (storage,)
+    charge_flow: xr.DataArray  # (storage,) — str
+    discharge_flow: xr.DataArray  # (storage,) — str
+    sizing_min: xr.DataArray | None = None  # (sizing_storage,)
+    sizing_max: xr.DataArray | None = None  # (sizing_storage,)
+    sizing_mandatory: xr.DataArray | None = None  # (sizing_storage,)
+    sizing_effects_per_size: xr.DataArray | None = None  # (sizing_storage, effect)
+    sizing_effects_fixed: xr.DataArray | None = None  # (sizing_storage, effect)
+
+    def to_dataset(self) -> xr.Dataset:
+        return _to_dataset(self)
+
+    @classmethod
+    def from_dataset(cls, ds: xr.Dataset) -> Self:
+        kwargs: dict[str, xr.DataArray | None] = {f.name: ds.get(f.name) for f in fields(cls)}
+        return cls(**kwargs)
+
+
 @dataclass
 class ModelData:
-    flows: xr.Dataset
-    buses: xr.Dataset
-    converters: xr.Dataset
-    effects: xr.Dataset
-    storages: xr.Dataset
+    flows: FlowsData
+    buses: BusesData
+    converters: ConvertersData | None  # None when no converters
+    effects: EffectsData
+    storages: StoragesData | None  # None when no storages
     dt: xr.DataArray  # (time,)
     weights: xr.DataArray  # (time,)
     time: pd.Index = field(repr=False)
     time_extra: pd.Index = field(repr=False)
 
-    def to_netcdf(self, path: str | Path, *, mode: str = 'a') -> None:
+    def to_netcdf(self, path: str | Path, *, mode: Literal['w', 'a'] = 'a') -> None:
         """Write model data as NetCDF groups under /model/."""
         p = Path(path)
-        for name, group in _NC_GROUPS.items():
-            ds: xr.Dataset = getattr(self, name)
-            if ds.data_vars:
-                ds.to_netcdf(p, mode=mode, group=group, engine='netcdf4')
+        dataset_fields: dict[str, FlowsData | BusesData | ConvertersData | EffectsData | StoragesData | None] = {
+            'flows': self.flows,
+            'buses': self.buses,
+            'converters': self.converters,
+            'effects': self.effects,
+            'storages': self.storages,
+        }
+        for name, obj in dataset_fields.items():
+            if obj is not None:
+                obj.to_dataset().to_netcdf(p, mode=mode, group=_NC_GROUPS[name], engine='netcdf4')
         meta = xr.Dataset({'dt': self.dt, 'weights': self.weights})
         meta.to_netcdf(p, mode='a', group='model/meta', engine='netcdf4')
 
@@ -65,16 +182,34 @@ class ModelData:
 
         dt = meta['dt']
         time = pd.Index(dt.coords['time'].values)
-        if 'time_extra' in datasets['storages'].coords:
-            time_extra = pd.Index(datasets['storages'].coords['time_extra'].values)
+
+        flows = FlowsData.from_dataset(datasets['flows'])
+        buses = BusesData.from_dataset(datasets['buses'])
+        converters = ConvertersData.from_dataset(datasets['converters']) if datasets['converters'].data_vars else None
+        effects = EffectsData.from_dataset(datasets['effects'])
+        storages = StoragesData.from_dataset(datasets['storages']) if datasets['storages'].data_vars else None
+
+        if storages is not None and 'time_extra' in storages.rel_cs_lb.coords:
+            time_extra = pd.Index(storages.rel_cs_lb.coords['time_extra'].values)
             time_extra.name = 'time_extra'
         else:
             time_extra = _compute_time_extra(time, dt)
-        return cls(**datasets, dt=dt, weights=meta['weights'], time=time, time_extra=time_extra)
+
+        return cls(
+            flows=flows,
+            buses=buses,
+            converters=converters,
+            effects=effects,
+            storages=storages,
+            dt=dt,
+            weights=meta['weights'],
+            time=time,
+            time_extra=time_extra,
+        )
 
 
-def build_flows_dataset(flows: list[Flow], time: pd.Index, effects: list[Effect]) -> xr.Dataset:
-    """Build flows xr.Dataset from element objects."""
+def build_flows_data(flows: list[Flow], time: pd.Index, effects: list[Effect]) -> FlowsData:
+    """Build FlowsData from element objects."""
     from fluxopt.elements import Sizing
 
     flow_ids = [f.id for f in flows]
@@ -147,28 +282,50 @@ def build_flows_dataset(flows: list[Flow], time: pd.Index, effects: list[Effect]
         bad = [flow_ids[i] for i in range(n_flows) if np.any(rel_lb[i] > rel_ub[i] + 1e-12)]
         raise ValueError(f'Lower bound > upper bound on flows: {bad}')
 
-    data_vars: dict[str, object] = {
-        'rel_lb': (['flow', 'time'], rel_lb),
-        'rel_ub': (['flow', 'time'], rel_ub),
-        'fixed_profile': (['flow', 'time'], fixed_profile),
-        'size': (['flow'], size),
-        'effect_coeff': (['flow', 'effect', 'time'], effect_coeff),
-    }
     coords: dict[str, object] = {'flow': flow_ids, 'time': time, 'effect': effect_ids}
+
+    sizing_min = None
+    sizing_max = None
+    sizing_mandatory = None
+    sizing_effects_per_size = None
+    sizing_effects_fixed = None
 
     if sz_ids:
         coords['sizing_flow'] = sz_ids
-        data_vars['sizing_min'] = ('sizing_flow', np.array(sz_min))
-        data_vars['sizing_max'] = ('sizing_flow', np.array(sz_max))
-        data_vars['sizing_mandatory'] = ('sizing_flow', np.array(sz_mandatory))
-        data_vars['sizing_effects_per_size'] = (['sizing_flow', 'effect'], np.array(sz_eps))
-        data_vars['sizing_effects_fixed'] = (['sizing_flow', 'effect'], np.array(sz_ef))
+        sizing_min = xr.DataArray(np.array(sz_min), dims=['sizing_flow'], coords={'sizing_flow': sz_ids})
+        sizing_max = xr.DataArray(np.array(sz_max), dims=['sizing_flow'], coords={'sizing_flow': sz_ids})
+        sizing_mandatory = xr.DataArray(np.array(sz_mandatory), dims=['sizing_flow'], coords={'sizing_flow': sz_ids})
+        sizing_effects_per_size = xr.DataArray(
+            np.array(sz_eps),
+            dims=['sizing_flow', 'effect'],
+            coords={'sizing_flow': sz_ids, 'effect': effect_ids},
+        )
+        sizing_effects_fixed = xr.DataArray(
+            np.array(sz_ef),
+            dims=['sizing_flow', 'effect'],
+            coords={'sizing_flow': sz_ids, 'effect': effect_ids},
+        )
 
-    return xr.Dataset(data_vars, coords=coords)
+    return FlowsData(
+        rel_lb=xr.DataArray(rel_lb, dims=['flow', 'time'], coords={'flow': flow_ids, 'time': time}),
+        rel_ub=xr.DataArray(rel_ub, dims=['flow', 'time'], coords={'flow': flow_ids, 'time': time}),
+        fixed_profile=xr.DataArray(fixed_profile, dims=['flow', 'time'], coords={'flow': flow_ids, 'time': time}),
+        size=xr.DataArray(size, dims=['flow'], coords={'flow': flow_ids}),
+        effect_coeff=xr.DataArray(
+            effect_coeff,
+            dims=['flow', 'effect', 'time'],
+            coords={'flow': flow_ids, 'effect': effect_ids, 'time': time},
+        ),
+        sizing_min=sizing_min,
+        sizing_max=sizing_max,
+        sizing_mandatory=sizing_mandatory,
+        sizing_effects_per_size=sizing_effects_per_size,
+        sizing_effects_fixed=sizing_effects_fixed,
+    )
 
 
-def build_buses_dataset(buses: list[Bus], flows: list[Flow]) -> xr.Dataset:
-    """Build buses xr.Dataset with flow coefficients."""
+def build_buses_data(buses: list[Bus], flows: list[Flow]) -> BusesData:
+    """Build BusesData with flow coefficients."""
     bus_ids = [b.id for b in buses]
     flow_ids = [f.id for f in flows]
 
@@ -179,16 +336,15 @@ def build_buses_dataset(buses: list[Bus], flows: list[Flow]) -> xr.Dataset:
             fi = flow_ids.index(f.id)
             coeff[bi, fi] = -1.0 if f._is_input else 1.0
 
-    return xr.Dataset(
-        {'flow_coeff': (['bus', 'flow'], coeff)},
-        coords={'bus': bus_ids, 'flow': flow_ids},
+    return BusesData(
+        flow_coeff=xr.DataArray(coeff, dims=['bus', 'flow'], coords={'bus': bus_ids, 'flow': flow_ids}),
     )
 
 
-def build_converters_dataset(converters: list[Converter], time: pd.Index) -> xr.Dataset:
-    """Build converters xr.Dataset with conversion coefficients."""
+def build_converters_data(converters: list[Converter], time: pd.Index) -> ConvertersData | None:
+    """Build ConvertersData with conversion coefficients."""
     if not converters:
-        return xr.Dataset()
+        return None
 
     conv_ids = [c.id for c in converters]
     # Collect all flow ids across all converters
@@ -215,22 +371,27 @@ def build_converters_dataset(converters: list[Converter], time: pd.Index) -> xr.
                 factor_da = to_data_array(factor, time)
                 coeff[ci, eq_idx, fi, :] = factor_da.values
 
-    return xr.Dataset(
-        {
-            'flow_coeff': (['converter', 'eq_idx', 'flow', 'time'], coeff),
-            'eq_mask': (['converter', 'eq_idx'], eq_mask),
-        },
-        coords={
-            'converter': conv_ids,
-            'eq_idx': list(range(max_eq)),
-            'flow': all_flow_ids,
-            'time': time,
-        },
+    return ConvertersData(
+        flow_coeff=xr.DataArray(
+            coeff,
+            dims=['converter', 'eq_idx', 'flow', 'time'],
+            coords={
+                'converter': conv_ids,
+                'eq_idx': list(range(max_eq)),
+                'flow': all_flow_ids,
+                'time': time,
+            },
+        ),
+        eq_mask=xr.DataArray(
+            eq_mask,
+            dims=['converter', 'eq_idx'],
+            coords={'converter': conv_ids, 'eq_idx': list(range(max_eq))},
+        ),
     )
 
 
-def build_effects_dataset(effects: list[Effect], time: pd.Index) -> xr.Dataset:
-    """Build effects xr.Dataset."""
+def build_effects_data(effects: list[Effect], time: pd.Index) -> EffectsData:
+    """Build EffectsData."""
     effect_ids = [e.id for e in effects]
     n = len(effects)
     n_time = len(time)
@@ -261,32 +422,28 @@ def build_effects_dataset(effects: list[Effect], time: pd.Index) -> xr.Dataset:
             max_per_hour[i] = to_data_array(e.maximum_per_hour, time).values
         is_objective[i] = e.is_objective
 
-    ds = xr.Dataset(
-        {
-            'min_total': (['effect'], min_total),
-            'max_total': (['effect'], max_total),
-            'min_per_hour': (['effect', 'time'], min_per_hour),
-            'max_per_hour': (['effect', 'time'], max_per_hour),
-            'is_objective': (['effect'], is_objective),
-        },
-        coords={'effect': effect_ids, 'time': time},
+    return EffectsData(
+        min_total=xr.DataArray(min_total, dims=['effect'], coords={'effect': effect_ids}),
+        max_total=xr.DataArray(max_total, dims=['effect'], coords={'effect': effect_ids}),
+        min_per_hour=xr.DataArray(min_per_hour, dims=['effect', 'time'], coords={'effect': effect_ids, 'time': time}),
+        max_per_hour=xr.DataArray(max_per_hour, dims=['effect', 'time'], coords={'effect': effect_ids, 'time': time}),
+        is_objective=xr.DataArray(is_objective, dims=['effect'], coords={'effect': effect_ids}),
+        objective_effect=objective_effect,
     )
-    ds.attrs['objective_effect'] = objective_effect
-    return ds
 
 
-def build_storages_dataset(
+def build_storages_data(
     storages: list[Storage],
     time: pd.Index,
     time_extra: pd.Index,
     dt: xr.DataArray,
     effects: list[Effect] | None = None,
-) -> xr.Dataset:
-    """Build storages xr.Dataset."""
+) -> StoragesData | None:
+    """Build StoragesData."""
     from fluxopt.elements import Sizing
 
     if not storages:
-        return xr.Dataset()
+        return None
 
     effect_ids = [e.id for e in effects] if effects else []
     effect_set = set(effect_ids)
@@ -375,30 +532,49 @@ def build_storages_dataset(
     if bad_loss:
         raise ValueError(f'Negative relative_loss_per_hour on storages: {bad_loss}')
 
-    data_vars: dict[str, object] = {
-        'capacity': (['storage'], capacity),
-        'eta_c': (['storage', 'time'], eta_c),
-        'eta_d': (['storage', 'time'], eta_d),
-        'loss': (['storage', 'time'], loss),
-        'rel_cs_lb': (['storage', 'time_extra'], rel_cs_lb),
-        'rel_cs_ub': (['storage', 'time_extra'], rel_cs_ub),
-        'initial_charge': (['storage'], initial_charge),
-        'cyclic': (['storage'], cyclic),
-        'charge_flow': (['storage'], charge_flow),
-        'discharge_flow': (['storage'], discharge_flow),
-    }
-    coords: dict[str, object] = {'storage': stor_ids, 'time': time, 'time_extra': time_extra}
+    coords_time: dict[str, object] = {'storage': stor_ids, 'time': time}
+    coords_extra: dict[str, object] = {'storage': stor_ids, 'time_extra': time_extra}
+
+    sizing_min = None
+    sizing_max = None
+    sizing_mandatory = None
+    sizing_effects_per_size = None
+    sizing_effects_fixed = None
 
     if sz_ids:
-        coords['sizing_storage'] = sz_ids
-        coords['effect'] = effect_ids
-        data_vars['sizing_min'] = ('sizing_storage', np.array(sz_min))
-        data_vars['sizing_max'] = ('sizing_storage', np.array(sz_max))
-        data_vars['sizing_mandatory'] = ('sizing_storage', np.array(sz_mandatory))
-        data_vars['sizing_effects_per_size'] = (['sizing_storage', 'effect'], np.array(sz_eps))
-        data_vars['sizing_effects_fixed'] = (['sizing_storage', 'effect'], np.array(sz_ef))
+        sizing_min = xr.DataArray(np.array(sz_min), dims=['sizing_storage'], coords={'sizing_storage': sz_ids})
+        sizing_max = xr.DataArray(np.array(sz_max), dims=['sizing_storage'], coords={'sizing_storage': sz_ids})
+        sizing_mandatory = xr.DataArray(
+            np.array(sz_mandatory), dims=['sizing_storage'], coords={'sizing_storage': sz_ids}
+        )
+        sizing_effects_per_size = xr.DataArray(
+            np.array(sz_eps),
+            dims=['sizing_storage', 'effect'],
+            coords={'sizing_storage': sz_ids, 'effect': effect_ids},
+        )
+        sizing_effects_fixed = xr.DataArray(
+            np.array(sz_ef),
+            dims=['sizing_storage', 'effect'],
+            coords={'sizing_storage': sz_ids, 'effect': effect_ids},
+        )
 
-    return xr.Dataset(data_vars, coords=coords)
+    return StoragesData(
+        capacity=xr.DataArray(capacity, dims=['storage'], coords={'storage': stor_ids}),
+        eta_c=xr.DataArray(eta_c, dims=['storage', 'time'], coords=coords_time),
+        eta_d=xr.DataArray(eta_d, dims=['storage', 'time'], coords=coords_time),
+        loss=xr.DataArray(loss, dims=['storage', 'time'], coords=coords_time),
+        rel_cs_lb=xr.DataArray(rel_cs_lb, dims=['storage', 'time_extra'], coords=coords_extra),
+        rel_cs_ub=xr.DataArray(rel_cs_ub, dims=['storage', 'time_extra'], coords=coords_extra),
+        initial_charge=xr.DataArray(initial_charge, dims=['storage'], coords={'storage': stor_ids}),
+        cyclic=xr.DataArray(cyclic, dims=['storage'], coords={'storage': stor_ids}),
+        charge_flow=xr.DataArray(charge_flow, dims=['storage'], coords={'storage': stor_ids}),
+        discharge_flow=xr.DataArray(discharge_flow, dims=['storage'], coords={'storage': stor_ids}),
+        sizing_min=sizing_min,
+        sizing_max=sizing_max,
+        sizing_mandatory=sizing_mandatory,
+        sizing_effects_per_size=sizing_effects_per_size,
+        sizing_effects_fixed=sizing_effects_fixed,
+    )
 
 
 def _collect_flows(
@@ -491,18 +667,18 @@ def build_model_data(
     time_extra = _compute_time_extra(time, dt_da)
     weights = xr.DataArray(np.ones(len(time)), dims=['time'], coords={'time': time}, name='weight')
 
-    flows_ds = build_flows_dataset(flows, time, effects)
-    buses_ds = build_buses_dataset(buses, flows)
-    converters_ds = build_converters_dataset(converters, time)
-    effects_ds = build_effects_dataset(effects, time)
-    storages_ds = build_storages_dataset(stor_list, time, time_extra, dt_da, effects)
+    flows_data = build_flows_data(flows, time, effects)
+    buses_data = build_buses_data(buses, flows)
+    converters_data = build_converters_data(converters, time)
+    effects_data = build_effects_data(effects, time)
+    storages_data = build_storages_data(stor_list, time, time_extra, dt_da, effects)
 
     return ModelData(
-        flows=flows_ds,
-        buses=buses_ds,
-        converters=converters_ds,
-        effects=effects_ds,
-        storages=storages_ds,
+        flows=flows_data,
+        buses=buses_data,
+        converters=converters_data,
+        effects=effects_data,
+        storages=storages_data,
         dt=dt_da,
         weights=weights,
         time=time,
