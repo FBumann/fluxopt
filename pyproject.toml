@@ -28,6 +28,7 @@ classifiers = [
 dependencies = [
     "highspy>=1.13.1",
     "linopy>=0.6",
+    "netcdf4>=1.6.0",
     "numpy>=1.26",
     "pandas>=2.1",
     "xarray>=2024.1.0",
@@ -46,9 +47,6 @@ packages = ["src/fluxopt"]
 include = ["src/fluxopt/", "LICENSE", "README.md"]
 
 [project.optional-dependencies]
-io = [
-    "netcdf4>=1.6.0",
-]
 
 [dependency-groups]
 dev = [

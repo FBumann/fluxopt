@@ -70,6 +70,47 @@ class TestRoundtrip:
 
         assert loaded.objective_value == pytest.approx(result.objective_value, abs=1e-6)
 
+    def test_model_data_preserved(self, tmp_nc: Path) -> None:
+        """ModelData survives a NetCDF roundtrip."""
+        ts = [datetime(2024, 1, 1, h) for h in range(3)]
+        result = _solve_with_storage(ts)
+        assert result.data is not None
+
+        result.to_netcdf(tmp_nc)
+        loaded = SolvedModel.from_netcdf(tmp_nc)
+
+        assert loaded.data is not None
+        # Flows dataset preserved
+        assert set(loaded.data.flows.data_vars) == set(result.data.flows.data_vars)
+        assert list(loaded.data.flows.coords['flow'].values) == list(result.data.flows.coords['flow'].values)
+        # Effects attrs preserved
+        assert loaded.data.effects.attrs['objective_effect'] == result.data.effects.attrs['objective_effect']
+        # Storages dataset preserved
+        assert list(loaded.data.storages.coords['storage'].values) == list(
+            result.data.storages.coords['storage'].values
+        )
+        # dt preserved
+        assert loaded.data.dt.values == pytest.approx(result.data.dt.values)
+        # time_extra preserved
+        assert len(loaded.data.time_extra) == len(result.data.time_extra)
+
+    def test_model_data_resolve(self, tmp_nc: Path) -> None:
+        """Loaded ModelData can build and solve a new model."""
+        ts = [datetime(2024, 1, 1, h) for h in range(3)]
+        result = _solve_with_storage(ts)
+
+        result.to_netcdf(tmp_nc)
+        loaded = SolvedModel.from_netcdf(tmp_nc)
+        assert loaded.data is not None
+
+        # Re-solve from loaded data
+        from fluxopt import FlowSystemModel
+
+        model = FlowSystemModel(loaded.data)
+        model.build()
+        result2 = model.solve()
+        assert result2.objective_value == pytest.approx(result.objective_value, abs=1e-6)
+
 
 class TestXarrayDataset:
     def test_to_xarray_returns_dataset(self) -> None:
