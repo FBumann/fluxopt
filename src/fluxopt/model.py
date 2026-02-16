@@ -172,76 +172,100 @@ class FlowSystemModel:
 
         stor_ids = ds.coords['storage']
         time_extra = d.time_extra
-        time_list = list(d.time.values)
-        te_list = list(time_extra.values)
+        time_vals = list(d.time.values)
+        te_vals = list(time_extra.values)
 
         # charge_state[storage, time_extra] >= 0
         self.charge_state = self.m.add_variables(lower=0, coords=[stor_ids, time_extra], name='charge_state')
 
-        # Capacity upper bound
-        cap = ds['capacity']  # (storage,) — NaN for unsized
+        # Capacity upper bound — only for storages with capacity
+        cap = ds['capacity']  # (storage,) — NaN for uncapped
         has_cap = cap.notnull()
         if has_cap.any():
-            cap_broadcast = cap.broadcast_like(
+            cap_2d = cap.broadcast_like(
                 xr.DataArray(np.nan, dims=['storage', 'time_extra'], coords=[stor_ids, time_extra])
             )
-            mask_cap = has_cap.broadcast_like(cap_broadcast)
-            self.m.add_constraints(self.charge_state <= cap_broadcast, name='cs_cap', mask=mask_cap)
+            mask_cap = has_cap.broadcast_like(cap_2d)
+            self.m.add_constraints(self.charge_state <= cap_2d, name='cs_cap', mask=mask_cap)
 
-        # Relative charge state bounds (absolute = relative * capacity or large M)
-        rel_cs_lb = ds['rel_cs_lb']  # (storage, time_extra)
-        rel_cs_ub = ds['rel_cs_ub']
+        # Relative charge state bounds — only where capacity exists
+        if has_cap.any():
+            rel_cs_lb = ds['rel_cs_lb']  # (storage, time_extra)
+            rel_cs_ub = ds['rel_cs_ub']
 
-        cap_or_large = xr.where(cap.notnull(), cap, 1e9)
+            abs_cs_lb = rel_cs_lb * cap
+            has_cs_lb = has_cap.broadcast_like(rel_cs_lb) & (abs_cs_lb > 1e-12)
+            if has_cs_lb.any():
+                self.m.add_constraints(self.charge_state >= abs_cs_lb, name='cs_lb', mask=has_cs_lb)
 
-        abs_cs_lb = rel_cs_lb * cap_or_large
-        has_cs_lb = abs_cs_lb > 1e-12
-        if has_cs_lb.any():
-            self.m.add_constraints(self.charge_state >= abs_cs_lb, name='cs_lb', mask=has_cs_lb)
+            abs_cs_ub = rel_cs_ub * cap
+            cap_2d_check = cap.broadcast_like(rel_cs_ub)
+            has_cs_ub = has_cap.broadcast_like(rel_cs_ub) & (abs_cs_ub < cap_2d_check - 1e-12)
+            if has_cs_ub.any():
+                self.m.add_constraints(self.charge_state <= abs_cs_ub, name='cs_ub', mask=has_cs_ub)
 
-        abs_cs_ub = rel_cs_ub * cap_or_large
-        has_cs_ub = abs_cs_ub < cap_or_large - 1e-12
-        if has_cs_ub.any():
-            self.m.add_constraints(self.charge_state <= abs_cs_ub, name='cs_ub', mask=has_cs_ub)
+        # Build coefficient maps to select charge/discharge flows per storage
+        charge_fids = [str(v) for v in ds['charge_flow'].values]
+        discharge_fids = [str(v) for v in ds['discharge_flow'].values]
+        all_flow_ids = list(self.flow_rate.coords['flow'].values)
+        n_stor = len(stor_ids)
+        n_flows = len(all_flow_ids)
 
-        # Storage balance: per-storage, per-timestep
-        for si, stor_id in enumerate(stor_ids.values):
-            charge_fid = str(ds['charge_flow'].values[si])
-            discharge_fid = str(ds['discharge_flow'].values[si])
+        c_map = np.zeros((n_stor, n_flows))
+        d_map = np.zeros((n_stor, n_flows))
+        for i in range(n_stor):
+            c_map[i, all_flow_ids.index(charge_fids[i])] = 1.0
+            d_map[i, all_flow_ids.index(discharge_fids[i])] = 1.0
 
-            for ti, t in enumerate(time_list):
-                t_next = te_list[ti + 1]
-                dt_val = float(d.dt.sel(time=t).values)
-                eta_c_val = float(ds['eta_c'].values[si, ti])
-                eta_d_val = float(ds['eta_d'].values[si, ti])
-                loss_val = float(ds['loss'].values[si, ti])
+        charge_coeff = xr.DataArray(c_map, dims=['storage', 'flow'], coords={'storage': stor_ids, 'flow': all_flow_ids})
+        discharge_coeff = xr.DataArray(
+            d_map, dims=['storage', 'flow'], coords={'storage': stor_ids, 'flow': all_flow_ids}
+        )
 
-                loss_factor = 1.0 - loss_val * dt_val
-                charge_factor = eta_c_val * dt_val
-                discharge_factor = dt_val / eta_d_val
+        # charge_rate[storage, time] and discharge_rate[storage, time]
+        charge_rate = (charge_coeff * self.flow_rate).sum('flow')
+        discharge_rate = (discharge_coeff * self.flow_rate).sum('flow')
 
-                cs_next = self.charge_state.sel(storage=stor_id, time_extra=t_next)
-                cs_curr = self.charge_state.sel(storage=stor_id, time_extra=t)
-                charge = self.flow_rate.sel(flow=charge_fid, time=t)
-                discharge = self.flow_rate.sel(flow=discharge_fid, time=t)
+        eta_c = ds['eta_c']  # (storage, time)
+        eta_d = ds['eta_d']  # (storage, time)
+        loss = ds['loss']  # (storage, time)
 
-                self.m.add_constraints(
-                    cs_next == cs_curr * loss_factor + charge * charge_factor - discharge * discharge_factor,
-                    name=f'storage_bal_{stor_id}_{ti}',
-                )
+        # Balance: vectorized over storages, per timestep
+        for ti, t in enumerate(time_vals):
+            t_next = te_vals[ti + 1]
+            dt_t = float(d.dt.sel(time=t).values)
 
-            # Initial/cyclic condition
-            is_cyclic = bool(ds['cyclic'].values[si])
-            if is_cyclic:
-                cs_first = self.charge_state.sel(storage=stor_id, time_extra=te_list[0])
-                cs_last = self.charge_state.sel(storage=stor_id, time_extra=te_list[-1])
-                self.m.add_constraints(cs_last == cs_first, name=f'cs_cyclic_{stor_id}')
-            else:
-                initial = float(ds['initial_charge'].values[si])
-                cap_val = float(cap.values[si]) if not np.isnan(cap.values[si]) else 1e9
-                initial_abs = initial * cap_val if initial <= 1.0 else initial
-                cs_first = self.charge_state.sel(storage=stor_id, time_extra=te_list[0])
-                self.m.add_constraints(cs_first == initial_abs, name=f'cs_init_{stor_id}')
+            loss_factor = 1.0 - loss.sel(time=t) * dt_t
+            charge_factor = eta_c.sel(time=t) * dt_t
+            discharge_factor = dt_t / eta_d.sel(time=t)
+
+            cs_next = self.charge_state.sel(time_extra=t_next)
+            cs_curr = self.charge_state.sel(time_extra=t)
+            cr = charge_rate.sel(time=t)
+            dr = discharge_rate.sel(time=t)
+
+            self.m.add_constraints(
+                cs_next == cs_curr * loss_factor + cr * charge_factor - dr * discharge_factor,
+                name=f'storage_bal_t{ti}',
+            )
+
+        # Initial/cyclic conditions (vectorized over storages)
+        cyclic_mask = ds['cyclic'].values.astype(bool)
+
+        if np.any(cyclic_mask):
+            cyc_ids = [str(s) for s, c in zip(stor_ids.values, cyclic_mask, strict=True) if c]
+            cs_first = self.charge_state.sel(storage=cyc_ids, time_extra=te_vals[0])
+            cs_last = self.charge_state.sel(storage=cyc_ids, time_extra=te_vals[-1])
+            self.m.add_constraints(cs_last == cs_first, name='cs_cyclic')
+
+        if np.any(~cyclic_mask):
+            noncyc_ids = [str(s) for s, c in zip(stor_ids.values, cyclic_mask, strict=True) if not c]
+            initial = ds['initial_charge'].sel(storage=noncyc_ids)
+            cap_sel = cap.sel(storage=noncyc_ids)
+            # Relative initial (0-1) * capacity; no capacity → use raw value (should be 0)
+            abs_initial = xr.where(cap_sel.notnull(), initial * cap_sel, initial)
+            cs_first = self.charge_state.sel(storage=noncyc_ids, time_extra=te_vals[0])
+            self.m.add_constraints(cs_first == abs_initial, name='cs_init')
 
     def _set_objective(self) -> None:
         """Objective: min Φ_{k*} where k* is the effect with is_objective=True."""
