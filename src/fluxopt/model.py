@@ -131,14 +131,10 @@ class FlowSystemModel:
         else:
             self.m.add_constraints(self.effect_per_timestep == 0, name='effect_per_ts_eq')
 
-        # effect_temporal[effect] = sum_t(effect_per_timestep * weight)
-        self.effect_temporal = self.m.add_variables(coords=[effect_ids], name='effect_temporal')
-        weighted_sum = (self.effect_per_timestep * d.weights).sum('time')
-        self.m.add_constraints(self.effect_temporal == weighted_sum, name='effect_temporal_eq')
-
-        # effect_total[effect] = effect_temporal (future: + periodic)
+        # effect_total[effect] = sum_t(effect_per_timestep * weight)
         self.effect_total = self.m.add_variables(coords=[effect_ids], name='effect_total')
-        self.m.add_constraints(self.effect_total == self.effect_temporal, name='effect_total_eq')
+        weighted_sum = (self.effect_per_timestep * d.weights).sum('time')
+        self.m.add_constraints(self.effect_total == weighted_sum, name='effect_total_eq')
 
         # Bounds on effect_total
         min_total = ds['min_total']  # (effect,) — NaN = unbounded

@@ -30,11 +30,11 @@ class SolvedModel:
 
     @property
     def effects(self) -> xr.DataArray:
-        return self.solution['effects'] if 'effects' in self.solution else xr.DataArray()
+        return self.solution['effects']
 
     @property
     def effects_per_timestep(self) -> xr.DataArray:
-        return self.solution['effects_per_timestep'] if 'effects_per_timestep' in self.solution else xr.DataArray()
+        return self.solution['effects_per_timestep']
 
     def flow_rate(self, id: str) -> xr.DataArray:
         """Get time series for a single flow."""
@@ -43,10 +43,6 @@ class SolvedModel:
     def charge_state(self, id: str) -> xr.DataArray:
         """Get time series for a single storage."""
         return self.charge_states.sel(storage=id)
-
-    def to_xarray(self) -> xr.Dataset:
-        """Return solution as an xarray Dataset."""
-        return self.solution
 
     def to_netcdf(self, path: str | Path) -> None:
         """Write solution (+ model data if available) to NetCDF."""
@@ -68,17 +64,17 @@ class SolvedModel:
     @classmethod
     def from_model(cls, model: FlowSystemModel) -> SolvedModel:
         """Extract solution from a solved linopy model."""
-        sol_vars: dict[str, xr.DataArray] = {'flow_rates': model.flow_rate.solution}
+        sol_vars: dict[str, xr.DataArray] = {
+            'flow_rates': model.flow_rate.solution,
+            'effects': model.effect_total.solution,
+            'effects_per_timestep': model.effect_per_timestep.solution,
+        }
 
         if hasattr(model, 'charge_state'):
             sol_vars['charge_states'] = model.charge_state.solution
-        if hasattr(model, 'effect_total'):
-            sol_vars['effects'] = model.effect_total.solution
-        if hasattr(model, 'effect_per_timestep'):
-            sol_vars['effects_per_timestep'] = model.effect_per_timestep.solution
 
         obj_effect = model.data.effects.attrs['objective_effect']
-        obj_val = float(sol_vars.get('effects', xr.DataArray(0)).sel(effect=obj_effect).values)
+        obj_val = float(sol_vars['effects'].sel(effect=obj_effect).values)
 
         solution = xr.Dataset(sol_vars, attrs={'objective': obj_val})
         return cls(solution=solution, data=model.data)

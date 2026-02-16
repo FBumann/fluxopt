@@ -112,13 +112,13 @@ class TestRoundtrip:
         assert result2.objective == pytest.approx(result.objective, abs=1e-6)
 
 
-class TestXarrayDataset:
-    def test_to_xarray_returns_dataset(self) -> None:
-        """to_xarray() returns an xr.Dataset with solution data."""
+class TestSolutionDataset:
+    def test_solution_is_dataset(self) -> None:
+        """solution is an xr.Dataset with solution data."""
         ts = [datetime(2024, 1, 1, h) for h in range(3)]
         result = _solve_simple(ts)
 
-        ds = result.to_xarray()
+        ds = result.solution
         assert isinstance(ds, xr.Dataset)
         assert 'flow_rates' in ds
         assert ds.attrs['objective'] == pytest.approx(result.objective)
