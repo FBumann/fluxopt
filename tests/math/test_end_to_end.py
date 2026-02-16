@@ -9,9 +9,9 @@ from fluxopt import (
     Converter,
     Effect,
     Flow,
+    ModelData,
     Port,
     Storage,
-    build_model_data,
     solve,
 )
 from fluxopt.model import FlowSystemModel
@@ -86,7 +86,7 @@ class TestEndToEnd:
         sink_flow = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.5, 0.5])
         source_flow = Flow(bus='elec', size=200, effects_per_flow_hour={'cost': 0.04})
 
-        data = build_model_data(
+        data = ModelData.build(
             timesteps_3,
             [Bus('elec')],
             [Effect('cost', is_objective=True)],

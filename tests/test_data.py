@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from fluxopt import Bus, Converter, Effect, Flow, Port, build_model_data
+from fluxopt import Bus, Converter, Effect, Flow, ModelData, Port
 
 
 class TestFlowsTable:
     def test_bounds_with_size(self, timesteps_3):
         flow = Flow(bus='b', size=100, relative_minimum=0.2, relative_maximum=0.8)
-        data = build_model_data(
+        data = ModelData.build(
             timesteps_3, [Bus('b')], [Effect('cost', is_objective=True)], ports=[Port('src', imports=[flow])]
         )
         ds = data.flows
@@ -19,7 +19,7 @@ class TestFlowsTable:
 
     def test_fixed_profile(self, timesteps_3):
         flow = Flow(bus='b', size=100, fixed_relative_profile=[0.5, 0.8, 0.6])
-        data = build_model_data(
+        data = ModelData.build(
             timesteps_3,
             [Bus('b')],
             [Effect('cost', is_objective=True)],
@@ -31,7 +31,7 @@ class TestFlowsTable:
 
     def test_unsized_flow(self, timesteps_3):
         flow = Flow(bus='b')
-        data = build_model_data(
+        data = ModelData.build(
             timesteps_3,
             [Bus('b')],
             [Effect('cost', is_objective=True)],
@@ -44,7 +44,7 @@ class TestBusesTable:
     def test_coefficients(self, timesteps_3):
         out_flow = Flow(bus='b', size=100)
         in_flow = Flow(bus='b', size=100)
-        data = build_model_data(
+        data = ModelData.build(
             timesteps_3,
             [Bus('b')],
             [Effect('cost', is_objective=True)],
@@ -62,7 +62,7 @@ class TestConvertersTable:
         fuel = Flow(bus='gas', size=200)
         heat = Flow(bus='heat', size=100)
         boiler = Converter.boiler('boiler', 0.9, fuel, heat)
-        data = build_model_data(
+        data = ModelData.build(
             timesteps_3,
             [Bus('gas'), Bus('heat')],
             [Effect('cost', is_objective=True)],
@@ -84,7 +84,7 @@ class TestConvertersTable:
 class TestEffectsTable:
     def test_flow_coefficients(self, timesteps_3):
         flow = Flow(bus='b', size=100, effects_per_flow_hour={'cost': 0.04})
-        data = build_model_data(
+        data = ModelData.build(
             timesteps_3,
             [Bus('b')],
             [Effect('cost', is_objective=True)],
@@ -94,7 +94,7 @@ class TestEffectsTable:
         assert all(v == 0.04 for v in coeff.values)
 
     def test_objective_effect(self, timesteps_3):
-        data = build_model_data(
+        data = ModelData.build(
             timesteps_3,
             [Bus('b')],
             [Effect('cost', is_objective=True), Effect('co2')],

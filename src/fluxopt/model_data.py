@@ -553,6 +553,49 @@ class ModelData:
             time_extra=time_extra,
         )
 
+    @classmethod
+    def build(
+        cls,
+        timesteps: Timesteps,
+        buses: list[Bus],
+        effects: list[Effect],
+        ports: list[Port],
+        converters: list[Converter] | None = None,
+        storages: list[Storage] | None = None,
+        dt: float | list[float] | None = None,
+    ) -> Self:
+        """Build ModelData from element objects."""
+        from fluxopt.types import compute_dt as _compute_dt
+
+        converters = converters or []
+        stor_list = storages or []
+        time = normalize_timesteps(timesteps)
+        dt_da = _compute_dt(time, dt)
+
+        flows = _collect_flows(ports, converters, stor_list)
+        _validate_system(buses, effects, ports, converters, stor_list, flows)
+
+        time_extra = _compute_time_extra(time, dt_da)
+        weights = xr.DataArray(np.ones(len(time)), dims=['time'], coords={'time': time}, name='weight')
+
+        flows_data = FlowsData.build(flows, time, effects)
+        buses_data = BusesData.build(buses, flows)
+        converters_data = ConvertersData.build(converters, time)
+        effects_data = EffectsData.build(effects, time)
+        storages_data = StoragesData.build(stor_list, time, time_extra, dt_da, effects)
+
+        return cls(
+            flows=flows_data,
+            buses=buses_data,
+            converters=converters_data,
+            effects=effects_data,
+            storages=storages_data,
+            dt=dt_da,
+            weights=weights,
+            time=time,
+            time_extra=time_extra,
+        )
+
 
 def _collect_flows(
     ports: list[Port],
@@ -619,45 +662,3 @@ def _compute_time_extra(time: pd.Index, dt: xr.DataArray) -> pd.Index:
         result = time.append(pd.Index([last_val + 1]))
     result.name = 'time_extra'
     return result
-
-
-def build_model_data(
-    timesteps: Timesteps,
-    buses: list[Bus],
-    effects: list[Effect],
-    ports: list[Port],
-    converters: list[Converter] | None = None,
-    storages: list[Storage] | None = None,
-    dt: float | list[float] | None = None,
-) -> ModelData:
-    """Build ModelData from element objects."""
-    from fluxopt.types import compute_dt as _compute_dt
-
-    converters = converters or []
-    stor_list = storages or []
-    time = normalize_timesteps(timesteps)
-    dt_da = _compute_dt(time, dt)
-
-    flows = _collect_flows(ports, converters, stor_list)
-    _validate_system(buses, effects, ports, converters, stor_list, flows)
-
-    time_extra = _compute_time_extra(time, dt_da)
-    weights = xr.DataArray(np.ones(len(time)), dims=['time'], coords={'time': time}, name='weight')
-
-    flows_data = FlowsData.build(flows, time, effects)
-    buses_data = BusesData.build(buses, flows)
-    converters_data = ConvertersData.build(converters, time)
-    effects_data = EffectsData.build(effects, time)
-    storages_data = StoragesData.build(stor_list, time, time_extra, dt_da, effects)
-
-    return ModelData(
-        flows=flows_data,
-        buses=buses_data,
-        converters=converters_data,
-        effects=effects_data,
-        storages=storages_data,
-        dt=dt_da,
-        weights=weights,
-        time=time,
-        time_extra=time_extra,
-    )

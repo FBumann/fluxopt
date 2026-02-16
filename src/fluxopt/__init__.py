@@ -1,7 +1,7 @@
 from fluxopt.components import Converter, Port
 from fluxopt.elements import Bus, Effect, Flow, Sizing, Storage
 from fluxopt.model import FlowSystemModel
-from fluxopt.model_data import ModelData, build_model_data
+from fluxopt.model_data import ModelData
 from fluxopt.results import SolvedModel
 from fluxopt.types import IdList, TimeSeries, Timesteps, compute_dt, normalize_timesteps, to_data_array
 
@@ -18,7 +18,7 @@ def solve(
     silent: bool = True,
 ) -> SolvedModel:
     """Convenience: build data, build model, solve, return results."""
-    data = build_model_data(timesteps, buses, effects, ports, converters, storages, dt)
+    data = ModelData.build(timesteps, buses, effects, ports, converters, storages, dt)
     model = FlowSystemModel(data, solver=solver)
     model.build()
     return model.solve(silent=silent)
@@ -38,7 +38,6 @@ __all__ = [
     'Storage',
     'TimeSeries',
     'Timesteps',
-    'build_model_data',
     'compute_dt',
     'normalize_timesteps',
     'solve',
