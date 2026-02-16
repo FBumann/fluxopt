@@ -50,6 +50,15 @@ class _SizingArrays:
     effects_per_size: xr.DataArray | None = None
     effects_fixed: xr.DataArray | None = None
 
+    def __post_init__(self) -> None:
+        if self.min is not None and np.any(self.min.values < 0):
+            bad = [str(v) for v in self.min.coords[self.min.dims[0]].values if self.min.sel({self.min.dims[0]: v}) < 0]
+            raise ValueError(f'Sizing.min_size < 0 on {bad}')
+        if self.min is not None and self.max is not None and np.any(self.max.values < self.min.values):
+            dim = self.min.dims[0]
+            bad = [str(v) for v in self.min.coords[dim].values if self.max.sel({dim: v}) < self.min.sel({dim: v})]
+            raise ValueError(f'Sizing.max_size < min_size on {bad}')
+
     @classmethod
     def build(
         cls,
@@ -72,10 +81,6 @@ class _SizingArrays:
         ef_rows: list[np.ndarray] = []
 
         for item_id, s in items:
-            if s.min_size < 0:
-                raise ValueError(f'Sizing.min_size < 0 on {item_id!r}')
-            if s.max_size < s.min_size:
-                raise ValueError(f'Sizing.max_size < min_size on {item_id!r}')
             ids.append(item_id)
             mins.append(s.min_size)
             maxs.append(s.max_size)
@@ -120,6 +125,19 @@ class FlowsData:
     sizing_mandatory: xr.DataArray | None = None  # (sizing_flow,)
     sizing_effects_per_size: xr.DataArray | None = None  # (sizing_flow, effect)
     sizing_effects_fixed: xr.DataArray | None = None  # (sizing_flow, effect)
+
+    def __post_init__(self) -> None:
+        flow_ids = self.rel_lb.coords['flow'].values
+        if np.any(self.rel_lb.values < -1e-12):
+            bad = [str(f) for f in flow_ids if np.any(self.rel_lb.sel(flow=f).values < -1e-12)]
+            raise ValueError(f'Negative lower bounds on flows: {bad}')
+        if np.any(self.rel_lb.values > self.rel_ub.values + 1e-12):
+            bad = [
+                str(f)
+                for f in flow_ids
+                if np.any(self.rel_lb.sel(flow=f).values > self.rel_ub.sel(flow=f).values + 1e-12)
+            ]
+            raise ValueError(f'Lower bound > upper bound on flows: {bad}')
 
     def to_dataset(self) -> xr.Dataset:
         return _to_dataset(self)
@@ -173,14 +191,6 @@ class FlowsData:
                     j = effect_ids.index(effect_label)
                     factor_da = to_data_array(factor, time)
                     effect_coeff[i, j] = factor_da.values
-
-        # Validate
-        if np.any(rel_lb < -1e-12):
-            bad = [flow_ids[i] for i in range(n_flows) if np.any(rel_lb[i] < -1e-12)]
-            raise ValueError(f'Negative lower bounds on flows: {bad}')
-        if np.any(rel_lb > rel_ub + 1e-12):
-            bad = [flow_ids[i] for i in range(n_flows) if np.any(rel_lb[i] > rel_ub[i] + 1e-12)]
-            raise ValueError(f'Lower bound > upper bound on flows: {bad}')
 
         sz = _SizingArrays.build(sizing_items, effect_ids, dim='sizing_flow')
 
@@ -303,6 +313,14 @@ class EffectsData:
     is_objective: xr.DataArray  # (effect,)
     objective_effect: str
 
+    def __post_init__(self) -> None:
+        n_obj = int(self.is_objective.sum().item())
+        if n_obj == 0:
+            raise ValueError('No objective effect found. Include an Effect with is_objective=True.')
+        if n_obj > 1:
+            ids = [str(e) for e in self.is_objective.coords['effect'].values if self.is_objective.sel(effect=e)]
+            raise ValueError(f'Multiple objective effects: {ids}. Only one is allowed.')
+
     def to_dataset(self) -> xr.Dataset:
         return _to_dataset(self)
 
@@ -319,15 +337,7 @@ class EffectsData:
         effect_ids = [e.id for e in effects]
         n = len(effects)
         n_time = len(time)
-
-        # Find objective
-        objective_effects = [e for e in effects if e.is_objective]
-        if not objective_effects:
-            raise ValueError('No objective effect found. Include an Effect with is_objective=True.')
-        if len(objective_effects) > 1:
-            ids = [e.id for e in objective_effects]
-            raise ValueError(f'Multiple objective effects: {ids}. Only one is allowed.')
-        objective_effect = objective_effects[0].id
+        objective_effect = next(e.id for e in effects if e.is_objective)
 
         min_total = np.full(n, np.nan)
         max_total = np.full(n, np.nan)
@@ -377,6 +387,30 @@ class StoragesData:
     sizing_mandatory: xr.DataArray | None = None  # (sizing_storage,)
     sizing_effects_per_size: xr.DataArray | None = None  # (sizing_storage, effect)
     sizing_effects_fixed: xr.DataArray | None = None  # (sizing_storage, effect)
+
+    def __post_init__(self) -> None:
+        stor_ids = self.capacity.coords['storage'].values
+        cap = self.capacity.values
+        bad_cap = [str(stor_ids[i]) for i in range(len(stor_ids)) if not np.isnan(cap[i]) and cap[i] < 0]
+        if bad_cap:
+            raise ValueError(f'Negative capacity on storages: {bad_cap}')
+        bad_eta_c = [
+            str(stor_ids[i])
+            for i in range(len(stor_ids))
+            if np.any(self.eta_c.values[i] <= 0) or np.any(self.eta_c.values[i] > 1)
+        ]
+        if bad_eta_c:
+            raise ValueError(f'eta_charge must be in (0, 1] on storages: {bad_eta_c}')
+        bad_eta_d = [
+            str(stor_ids[i])
+            for i in range(len(stor_ids))
+            if np.any(self.eta_d.values[i] <= 0) or np.any(self.eta_d.values[i] > 1)
+        ]
+        if bad_eta_d:
+            raise ValueError(f'eta_discharge must be in (0, 1] on storages: {bad_eta_d}')
+        bad_loss = [str(stor_ids[i]) for i in range(len(stor_ids)) if np.any(self.loss.values[i] < 0)]
+        if bad_loss:
+            raise ValueError(f'Negative relative_loss_per_hour on storages: {bad_loss}')
 
     def to_dataset(self) -> xr.Dataset:
         return _to_dataset(self)
@@ -444,20 +478,6 @@ class StoragesData:
 
             charge_flow.append(s.charging.id)
             discharge_flow.append(s.discharging.id)
-
-        # Validate
-        bad_cap = [stor_ids[i] for i in range(n) if not np.isnan(capacity[i]) and capacity[i] < 0]
-        if bad_cap:
-            raise ValueError(f'Negative capacity on storages: {bad_cap}')
-        bad_eta_c = [stor_ids[i] for i in range(n) if np.any(eta_c[i] <= 0) or np.any(eta_c[i] > 1)]
-        if bad_eta_c:
-            raise ValueError(f'eta_charge must be in (0, 1] on storages: {bad_eta_c}')
-        bad_eta_d = [stor_ids[i] for i in range(n) if np.any(eta_d[i] <= 0) or np.any(eta_d[i] > 1)]
-        if bad_eta_d:
-            raise ValueError(f'eta_discharge must be in (0, 1] on storages: {bad_eta_d}')
-        bad_loss = [stor_ids[i] for i in range(n) if np.any(loss[i] < 0)]
-        if bad_loss:
-            raise ValueError(f'Negative relative_loss_per_hour on storages: {bad_loss}')
 
         coords_time: dict[str, object] = {'storage': stor_ids, 'time': time}
         coords_extra: dict[str, object] = {'storage': stor_ids, 'time_extra': time_extra}
