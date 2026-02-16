@@ -120,7 +120,7 @@ class TestSolutionDataset:
 
         ds = result.solution
         assert isinstance(ds, xr.Dataset)
-        assert 'flow_rates' in ds
+        assert 'flow--rate' in ds
         assert ds.attrs['objective'] == pytest.approx(result.objective)
 
 

@@ -121,8 +121,8 @@ class TestEndToEnd:
         assert 'time' in sr.dims
         assert len(sr) == 3
 
-        # effects DataArray
-        assert 'effect' in result.effects.dims
+        # effect_totals DataArray
+        assert 'effect' in result.effect_totals.dims
 
         # effects_per_timestep
         assert 'effect' in result.effects_per_timestep.dims

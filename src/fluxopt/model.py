@@ -44,7 +44,7 @@ class FlowSystemModel:
         time = ds.coords['time']
 
         # Create flow_rate variable indexed by (flow, time) >= 0
-        self.flow_rate = self.m.add_variables(lower=0, coords=[flow_ids, time], name='flow_rate')
+        self.flow_rate = self.m.add_variables(lower=0, coords=[flow_ids, time], name='flow--rate')
 
         size = ds['size']  # (flow,) — NaN for unsized
         rel_lb = ds['rel_lb']  # (flow, time)
@@ -119,7 +119,7 @@ class FlowSystemModel:
             return
 
         # effect_per_timestep[effect, time]
-        self.effect_per_timestep = self.m.add_variables(coords=[effect_ids, time], name='effect_per_timestep')
+        self.effect_per_timestep = self.m.add_variables(coords=[effect_ids, time], name='effect--per_timestep')
 
         # Flow contributions: sum_f(coeff_{f,k,t} * P_{f,t} * dt_t) for each (effect, time)
         effect_coeff = d.flows['effect_coeff']  # (flow, effect, time)
@@ -132,7 +132,7 @@ class FlowSystemModel:
             self.m.add_constraints(self.effect_per_timestep == 0, name='effect_per_ts_eq')
 
         # effect_total[effect] = sum_t(effect_per_timestep * weight)
-        self.effect_total = self.m.add_variables(coords=[effect_ids], name='effect_total')
+        self.effect_total = self.m.add_variables(coords=[effect_ids], name='effect--total')
         weighted_sum = (self.effect_per_timestep * d.weights).sum('time')
         self.m.add_constraints(self.effect_total == weighted_sum, name='effect_total_eq')
 
@@ -170,8 +170,8 @@ class FlowSystemModel:
         time_extra = d.time_extra
         te_vals = list(time_extra.values)
 
-        # charge_state[storage, time_extra] >= 0
-        self.charge_state = self.m.add_variables(lower=0, coords=[stor_ids, time_extra], name='charge_state')
+        # storage_level[storage, time_extra] >= 0
+        self.storage_level = self.m.add_variables(lower=0, coords=[stor_ids, time_extra], name='storage--level')
 
         # Capacity upper bound — only for storages with capacity
         cap = ds['capacity']  # (storage,) — NaN for uncapped
@@ -181,7 +181,7 @@ class FlowSystemModel:
                 xr.DataArray(np.nan, dims=['storage', 'time_extra'], coords=[stor_ids, time_extra])
             )
             mask_cap = has_cap.broadcast_like(cap_2d)
-            self.m.add_constraints(self.charge_state <= cap_2d, name='cs_cap', mask=mask_cap)
+            self.m.add_constraints(self.storage_level <= cap_2d, name='cs_cap', mask=mask_cap)
 
         # Relative charge state bounds — only where capacity exists
         if has_cap.any():
@@ -191,13 +191,13 @@ class FlowSystemModel:
             abs_cs_lb = rel_cs_lb * cap
             has_cs_lb = has_cap.broadcast_like(rel_cs_lb) & (abs_cs_lb > 1e-12)
             if has_cs_lb.any():
-                self.m.add_constraints(self.charge_state >= abs_cs_lb, name='cs_lb', mask=has_cs_lb)
+                self.m.add_constraints(self.storage_level >= abs_cs_lb, name='cs_lb', mask=has_cs_lb)
 
             abs_cs_ub = rel_cs_ub * cap
             cap_2d_check = cap.broadcast_like(rel_cs_ub)
             has_cs_ub = has_cap.broadcast_like(rel_cs_ub) & (abs_cs_ub < cap_2d_check - 1e-12)
             if has_cs_ub.any():
-                self.m.add_constraints(self.charge_state <= abs_cs_ub, name='cs_ub', mask=has_cs_ub)
+                self.m.add_constraints(self.storage_level <= abs_cs_ub, name='cs_ub', mask=has_cs_ub)
 
         # Map charge/discharge flows to storage dimension via sel + rename
         charge_fids = [str(v) for v in ds['charge_flow'].values]
@@ -215,9 +215,9 @@ class FlowSystemModel:
         discharge_factor = d.dt / ds['eta_d']  # (storage, time)
 
         # Slice charge_state into cs[t] and cs[t+1], rename time_extra → time for alignment
-        cs_curr = self.charge_state.isel(time_extra=slice(None, -1)).rename({'time_extra': 'time'})
+        cs_curr = self.storage_level.isel(time_extra=slice(None, -1)).rename({'time_extra': 'time'})
         cs_curr = cs_curr.assign_coords({'time': d.time})
-        cs_next = self.charge_state.isel(time_extra=slice(1, None)).rename({'time_extra': 'time'})
+        cs_next = self.storage_level.isel(time_extra=slice(1, None)).rename({'time_extra': 'time'})
         cs_next = cs_next.assign_coords({'time': d.time})
 
         # Fully vectorized energy balance over (storage, time)
@@ -231,8 +231,8 @@ class FlowSystemModel:
 
         if np.any(cyclic_mask):
             cyc_ids = [str(s) for s, c in zip(stor_ids.values, cyclic_mask, strict=True) if c]
-            cs_first = self.charge_state.sel(storage=cyc_ids, time_extra=te_vals[0])
-            cs_last = self.charge_state.sel(storage=cyc_ids, time_extra=te_vals[-1])
+            cs_first = self.storage_level.sel(storage=cyc_ids, time_extra=te_vals[0])
+            cs_last = self.storage_level.sel(storage=cyc_ids, time_extra=te_vals[-1])
             self.m.add_constraints(cs_last == cs_first, name='cs_cyclic')
 
         if np.any(~cyclic_mask):
@@ -241,7 +241,7 @@ class FlowSystemModel:
             cap_sel = cap.sel(storage=noncyc_ids)
             # Relative initial (0-1) * capacity; no capacity → use raw value (should be 0)
             abs_initial = xr.where(cap_sel.notnull(), initial * cap_sel, initial)
-            cs_first = self.charge_state.sel(storage=noncyc_ids, time_extra=te_vals[0])
+            cs_first = self.storage_level.sel(storage=noncyc_ids, time_extra=te_vals[0])
             self.m.add_constraints(cs_first == abs_initial, name='cs_init')
 
     def _set_objective(self) -> None:

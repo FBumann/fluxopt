@@ -47,7 +47,7 @@ class TestEffects:
         expected_co2 = demand_total * 0.5
 
         assert result.objective == pytest.approx(expected_cost, abs=1e-6)
-        co2_total = float(result.effects.sel(effect='co2').values)
+        co2_total = float(result.effect_totals.sel(effect='co2').values)
         assert co2_total == pytest.approx(expected_co2, abs=1e-6)
 
     def test_effect_maximum_total(self, timesteps_3):
@@ -69,7 +69,7 @@ class TestEffects:
             ],
         )
 
-        co2_total = float(result.effects.sel(effect='co2').values)
+        co2_total = float(result.effect_totals.sel(effect='co2').values)
         assert co2_total <= co2_limit + 1e-6
 
     def test_time_varying_cost(self, timesteps_3):

@@ -60,7 +60,7 @@ class TestStorage:
             storages=[battery],
         )
 
-        cs = result.charge_state('battery')
+        cs = result.storage_level('battery')
         # First value is the initial charge state
         assert float(cs.values[0]) == pytest.approx(0.0, abs=1e-6)
 
@@ -88,7 +88,7 @@ class TestStorage:
             storages=[battery],
         )
 
-        cs = result.charge_state('battery')
+        cs = result.storage_level('battery')
         first = float(cs.values[0])
         last = float(cs.values[-1])
         assert last == pytest.approx(first, abs=1e-6)
@@ -118,7 +118,7 @@ class TestStorage:
         )
 
         # With charging efficiency, stored energy = charge_rate * eta_c
-        cs = result.charge_state('battery')
+        cs = result.storage_level('battery')
         charge_t0 = float(result.flow_rate('battery(charge)').values[0])
         cs_t1 = float(cs.values[1])
         cs_t0 = float(cs.values[0])

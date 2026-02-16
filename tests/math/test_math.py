@@ -156,7 +156,7 @@ class TestEffects:
             ],
         )
         assert_allclose(result.objective, 60.0, rtol=1e-5)
-        co2 = float(result.effects.sel(effect='CO2').values)
+        co2 = float(result.effect_totals.sel(effect='CO2').values)
         assert_allclose(co2, 15.0, rtol=1e-5)
 
     def test_effect_maximum_total(self):
@@ -176,7 +176,7 @@ class TestEffects:
             ],
         )
         assert_allclose(result.objective, 65.0, rtol=1e-5)
-        co2 = float(result.effects.sel(effect='CO2').values)
+        co2 = float(result.effect_totals.sel(effect='CO2').values)
         assert_allclose(co2, 15.0, rtol=1e-5)
 
     def test_effect_minimum_total(self):
@@ -196,7 +196,7 @@ class TestEffects:
                 _waste('Heat'),
             ],
         )
-        co2 = float(result.effects.sel(effect='CO2').values)
+        co2 = float(result.effect_totals.sel(effect='CO2').values)
         assert_allclose(co2, 25.0, rtol=1e-5)
         assert_allclose(result.objective, 25.0, rtol=1e-5)
 
@@ -237,7 +237,7 @@ class TestEffects:
             ],
         )
         assert_allclose(result.objective, 20.0, rtol=1e-5)
-        co2 = float(result.effects.sel(effect='CO2').values)
+        co2 = float(result.effect_totals.sel(effect='CO2').values)
         assert_allclose(co2, 20.0, rtol=1e-5)
 
     def test_effect_maximum_temporal(self):
@@ -258,7 +258,7 @@ class TestEffects:
             ],
         )
         assert_allclose(result.objective, 52.0, rtol=1e-5)
-        co2 = float(result.effects.sel(effect='CO2').values)
+        co2 = float(result.effect_totals.sel(effect='CO2').values)
         assert_allclose(co2, 12.0, rtol=1e-5)
 
     def test_effect_minimum_temporal(self):
@@ -277,7 +277,7 @@ class TestEffects:
                 _waste('Heat'),
             ],
         )
-        co2 = float(result.effects.sel(effect='CO2').values)
+        co2 = float(result.effect_totals.sel(effect='CO2').values)
         assert_allclose(co2, 25.0, rtol=1e-5)
         assert_allclose(result.objective, 25.0, rtol=1e-5)
 

@@ -22,27 +22,27 @@ class SolvedModel:
 
     @property
     def flow_rates(self) -> xr.DataArray:
-        return self.solution['flow_rates']
+        return self.solution['flow--rate']
 
     @property
-    def charge_states(self) -> xr.DataArray:
-        return self.solution['charge_states'] if 'charge_states' in self.solution else xr.DataArray()
+    def storage_levels(self) -> xr.DataArray:
+        return self.solution['storage--level'] if 'storage--level' in self.solution else xr.DataArray()
 
     @property
-    def effects(self) -> xr.DataArray:
-        return self.solution['effects']
+    def effect_totals(self) -> xr.DataArray:
+        return self.solution['effect--total']
 
     @property
     def effects_per_timestep(self) -> xr.DataArray:
-        return self.solution['effects_per_timestep']
+        return self.solution['effect--per_timestep']
 
     def flow_rate(self, id: str) -> xr.DataArray:
         """Get time series for a single flow."""
         return self.flow_rates.sel(flow=id)
 
-    def charge_state(self, id: str) -> xr.DataArray:
+    def storage_level(self, id: str) -> xr.DataArray:
         """Get time series for a single storage."""
-        return self.charge_states.sel(storage=id)
+        return self.storage_levels.sel(storage=id)
 
     def to_netcdf(self, path: str | Path) -> None:
         """Write solution (+ model data if available) to NetCDF."""
@@ -65,16 +65,16 @@ class SolvedModel:
     def from_model(cls, model: FlowSystemModel) -> SolvedModel:
         """Extract solution from a solved linopy model."""
         sol_vars: dict[str, xr.DataArray] = {
-            'flow_rates': model.flow_rate.solution,
-            'effects': model.effect_total.solution,
-            'effects_per_timestep': model.effect_per_timestep.solution,
+            'flow--rate': model.flow_rate.solution,
+            'effect--total': model.effect_total.solution,
+            'effect--per_timestep': model.effect_per_timestep.solution,
         }
 
-        if hasattr(model, 'charge_state'):
-            sol_vars['charge_states'] = model.charge_state.solution
+        if hasattr(model, 'storage_level'):
+            sol_vars['storage--level'] = model.storage_level.solution
 
         obj_effect = model.data.effects.attrs['objective_effect']
-        obj_val = float(sol_vars['effects'].sel(effect=obj_effect).values)
+        obj_val = float(sol_vars['effect--total'].sel(effect=obj_effect).values)
 
         solution = xr.Dataset(sol_vars, attrs={'objective': obj_val})
         return cls(solution=solution, data=model.data)
