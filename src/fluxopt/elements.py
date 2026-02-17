@@ -25,6 +25,23 @@ class Sizing:
     effects_fixed: dict[str, float] = field(default_factory=dict)
 
 
+@dataclass
+class Status:
+    """Binary on/off behavior parameters.
+
+    Together with relative bounds, gives semi-continuous behavior:
+    ``{0} U [min, max] * size``.
+    """
+
+    min_uptime: float | None = None  # [h]
+    max_uptime: float | None = None  # [h]
+    min_downtime: float | None = None  # [h]
+    max_downtime: float | None = None  # [h]
+    effects_per_running_hour: dict[str, TimeSeries] = field(default_factory=dict)
+    effects_per_startup: dict[str, TimeSeries] = field(default_factory=dict)
+    initial_status: bool | None = None
+
+
 @dataclass(eq=False)
 class Flow:
     """A single energy flow on a bus.
@@ -46,6 +63,7 @@ class Flow:
     relative_maximum: TimeSeries = 1.0  # p̄_f  [-]
     fixed_relative_profile: TimeSeries | None = None  # π_f  [-]
     effects_per_flow_hour: dict[str, TimeSeries] = field(default_factory=dict)  # c_{f,k}  [varies]
+    status: Status | None = None
 
     def __post_init__(self) -> None:
         """Default id to bus name if not set."""
