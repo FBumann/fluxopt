@@ -347,9 +347,9 @@ class FlowSystemModel:
             else None
         )
 
-        # Previous state for initial transition (NaN → no constraint on t=0)
+        # Filter to flows with known initial state
         has_initial = initial.notnull()
-        previous_state = initial if has_initial.any() else None
+        previous_state = initial.sel(flow=initial.coords['flow'][has_initial]) if has_initial.any() else None
 
         add_switch_transitions(
             self.m,

@@ -116,7 +116,20 @@ def add_duration_tracking(
 
     # Initial constraints for elements with previous duration
     if previous is not None:
-        _add_initial_constraints(m, state, duration, dt, previous, minimum, name, dim, element_dim, element_ids)
+        has_prev = previous.notnull()
+        if has_prev.any():
+            prev_ids = list(element_ids.values[has_prev.values])
+            _add_initial_constraints(
+                m,
+                state,
+                duration,
+                dt,
+                previous=previous.sel({element_dim: prev_ids}),
+                minimum=minimum.sel({element_dim: prev_ids}) if minimum is not None else None,
+                name=name,
+                dim=dim,
+                element_dim=element_dim,
+            )
 
     # Minimum duration: duration[t] >= min * (state[t] - state[t+1])
     if minimum is not None:
@@ -135,7 +148,6 @@ def _add_initial_constraints(
     name: str,
     dim: str,
     element_dim: str,
-    element_ids: xr.DataArray,
 ) -> None:
     """Add initial duration constraints from previous period.
 
@@ -144,32 +156,25 @@ def _add_initial_constraints(
         state: Binary state variable.
         duration: Duration variable.
         dt: Timestep durations.
-        previous: Previous duration per element.
-        minimum: Minimum duration per element (for continuation logic).
+        previous: Previous duration per element (pre-filtered, no NaN).
+        minimum: Minimum duration per element (pre-filtered to match previous).
         name: Base constraint name.
         dim: Temporal dimension name.
         element_dim: Element dimension name.
-        element_ids: Element coordinate values.
     """
-    has_prev = previous.notnull()
-    if not has_prev.any():
-        return
-
-    prev_ids = [str(eid) for eid, hp in zip(element_ids.values, has_prev.values, strict=False) if hp]
-    prev_vals = previous.sel({element_dim: prev_ids})
-    state_0 = state.sel({element_dim: prev_ids}).isel({dim: 0})
-    dur_0 = duration.sel({element_dim: prev_ids}).isel({dim: 0})
+    ids = list(previous.coords[element_dim].values)
+    state_0 = state.sel({element_dim: ids}).isel({dim: 0})
+    dur_0 = duration.sel({element_dim: ids}).isel({dim: 0})
     dt_0 = dt.isel({dim: 0})
 
     # duration[0] = state[0] * (previous + dt[0])
-    m.add_constraints(dur_0 == state_0 * (prev_vals + dt_0), name=f'{name}|init')
+    m.add_constraints(dur_0 == state_0 * (previous + dt_0), name=f'{name}|init')
 
     # Force continuation if previous duration < minimum
     if minimum is not None:
-        min_sub = minimum.sel({element_dim: prev_ids})
-        needs_cont = (prev_vals > 0) & (prev_vals < min_sub)
+        needs_cont = (previous > 0) & minimum.notnull() & (previous < minimum)
         if needs_cont.any():
-            cont_ids = [str(eid) for eid, nc in zip(prev_ids, needs_cont.values, strict=False) if nc]
+            cont_ids = list(previous.coords[element_dim].values[needs_cont.values])
             m.add_constraints(
                 state.sel({element_dim: cont_ids}).isel({dim: 0}) >= 1,
                 name=f'{name}|init_cont',
@@ -220,6 +225,7 @@ def add_switch_transitions(
     shutdown: Variable,
     *,
     name: str,
+    element_dim: str = 'flow',
     dim: str = 'time',
     previous_state: xr.DataArray | None = None,
 ) -> None:
@@ -234,8 +240,9 @@ def add_switch_transitions(
         startup: Binary startup indicator variable.
         shutdown: Binary shutdown indicator variable.
         name: Base name for constraints.
+        element_dim: Element dimension name in status.
         dim: Temporal dimension name.
-        previous_state: Last timestep of previous period per element.
+        previous_state: Previous on/off per element (pre-filtered, no NaN).
     """
     # Transition for t > 0
     m.add_constraints(
@@ -246,7 +253,9 @@ def add_switch_transitions(
 
     # Initial transition from previous state
     if previous_state is not None:
+        ids = list(previous_state.coords[element_dim].values)
         m.add_constraints(
-            startup.isel({dim: 0}) - shutdown.isel({dim: 0}) == status.isel({dim: 0}) - previous_state,
+            startup.sel({element_dim: ids}).isel({dim: 0}) - shutdown.sel({element_dim: ids}).isel({dim: 0})
+            == status.sel({element_dim: ids}).isel({dim: 0}) - previous_state,
             name=f'{name}|init',
         )

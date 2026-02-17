@@ -52,3 +52,13 @@ uv run mypy src/         # Type check
 - Python >= 3.12 — use modern syntax (PEP 604 unions `X | Y`, etc.)
 - **linopy**: use concise, vectorized syntax — no loops over coordinates
 - **xr.DataArray** is the primary data container; prefer broadcasting over iteration
+
+## Math Documentation
+
+Hybrid approach — plain-text formulas in code, full LaTeX in docs.
+
+- **Docstrings**: one-line formulas in Unicode notation (P⁺, P⁻, η, δ), plus `See: docs/math/...` link
+- **`docs/math/`**: full LaTeX derivations, variable tables, explanations (rendered by mkdocs-material)
+- **Notation**: uppercase Latin for variables (P, E, S), Greek for properties (η, δ),
+  superscript +/− for bounds (P⁺ upper, P⁻ lower), subscripts for indexing (f, t, s, b, k),
+  superscripts for qualification (η^c, η^d)
