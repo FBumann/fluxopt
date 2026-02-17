@@ -12,6 +12,7 @@ import xarray as xr
 
 if TYPE_CHECKING:
     from linopy import Model, Variable
+    from linopy.expressions import LinearExpression
 
 __all__ = [
     'add_duration_tracking',
@@ -53,7 +54,7 @@ def compute_previous_duration(
 
 def add_duration_tracking(
     m: Model,
-    state: Variable,
+    state: Variable | LinearExpression,
     dt: xr.DataArray,
     *,
     name: str,
@@ -124,7 +125,7 @@ def add_duration_tracking(
 
 def _add_initial_constraints(
     m: Model,
-    state: Variable,
+    state: Variable | LinearExpression,
     duration: Variable,
     dt: xr.DataArray,
     previous: xr.DataArray,
@@ -175,7 +176,7 @@ def _add_initial_constraints(
 
 def _add_minimum_constraints(
     m: Model,
-    state: Variable,
+    state: Variable | LinearExpression,
     duration: Variable,
     minimum: xr.DataArray,
     name: str,

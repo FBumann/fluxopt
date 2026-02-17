@@ -6,6 +6,7 @@ import numpy as np
 import xarray as xr
 from linopy import Model, Variable
 
+from fluxopt.constraints.status import add_duration_tracking, add_switch_transitions
 from fluxopt.results import SolvedModel
 from fluxopt.types import as_dataarray
 
@@ -59,9 +60,15 @@ class FlowSystemModel:
         # Phase 1: Decision variables
         self._create_flow_variables()
         self._create_sizing_variables()
-        # Phase 2: Constraints
-        self._constrain_flow_rates()
+        self._create_status_variables()
+        # Phase 2: Flow rate constraints
+        self._constrain_flow_rates_plain()
+        self._constrain_flow_rates_sizing()
+        self._constrain_flow_rates_status()
+        # Phase 3: Feature constraints
         self._constrain_sizing()
+        self._constrain_status()
+        # Phase 4: System
         self._create_bus_balance()
         self._create_converter_constraints()
         self._create_storage()
@@ -124,14 +131,43 @@ class FlowSystemModel:
                     name='storage--size_indicator',
                 )
 
-    def _constrain_flow_rates(self) -> None:
-        """Apply flow rate bounds for all flow types.
+    def _create_status_variables(self) -> None:
+        """Create binary on/off variables for flows with Status."""
+        ds = self.data.flows
+        if ds.status_min_uptime is None:
+            return
 
-        - Fixed-size: P in [size * p_lb, size * p_ub] or P = size * pi.
-        - Investable: P in [S * p_lb, S * p_ub] or P = S * pi.
-        - Unsized: no bounds beyond P >= 0.
+        status_ids = ds.status_min_uptime.coords['status_flow'].values
+        flow_coord = xr.DataArray(status_ids, dims=['flow'])
+        time_coord = ds.rel_lb.coords['time']
+
+        self.flow_on = self._add_variables(binary=True, coords=[flow_coord, time_coord], name='flow--on')
+        self.flow_startup = self._add_variables(binary=True, coords=[flow_coord, time_coord], name='flow--startup')
+        self.flow_shutdown = self._add_variables(binary=True, coords=[flow_coord, time_coord], name='flow--shutdown')
+
+    def _status_flow_ids(self) -> set[str]:
+        """Return ids of flows with Status, or empty set."""
+        ds = self.data.flows
+        if ds.status_min_uptime is None:
+            return set()
+        return set(ds.status_min_uptime.coords['status_flow'].values)
+
+    def _sizing_flow_ids(self) -> set[str]:
+        """Return ids of investable flows, or empty set."""
+        if not hasattr(self, 'flow_size'):
+            return set()
+        return set(self.flow_size.coords['flow'].values)
+
+    def _constrain_flow_rates_plain(self) -> None:
+        """Apply flow rate bounds for fixed-size flows without Status.
+
+        P in [size * rel_lb, size * rel_ub] or P = size * profile.
         """
         ds = self.data.flows
+        sizing_ids = self._sizing_flow_ids()
+        status_ids = self._status_flow_ids()
+        exclude = sizing_ids | status_ids
+
         size = ds.size
         rel_lb = ds.rel_lb
         rel_ub = ds.rel_ub
@@ -139,36 +175,96 @@ class FlowSystemModel:
         is_bounded = ds.bound_type == 'bounded'
         is_profile = ds.bound_type == 'profile'
 
-        # --- Fixed-size flows (parameter capacity) ---
-        fixed_bounded = is_bounded & size.notnull()
-        if fixed_bounded.any():
-            mask = fixed_bounded.broadcast_like(rel_lb)
+        # Mask: has fixed size AND not sizing AND not status
+        is_plain = size.notnull()
+        if exclude:
+            exclude_mask = xr.DataArray(
+                [fid in exclude for fid in size.coords['flow'].values],
+                dims=['flow'],
+                coords={'flow': size.coords['flow']},
+            )
+            is_plain = is_plain & ~exclude_mask
+
+        plain_bounded = is_bounded & is_plain
+        if plain_bounded.any():
+            mask = plain_bounded.broadcast_like(rel_lb)
             self.m.add_constraints(self.flow_rate >= size * rel_lb, name='flow_lb', mask=mask)
             self.m.add_constraints(self.flow_rate <= size * rel_ub, name='flow_ub', mask=mask)
 
-        fixed_profile = is_profile & size.notnull()
-        if fixed_profile.any():
-            mask = fixed_profile.broadcast_like(fixed) & fixed.notnull()
+        plain_profile = is_profile & is_plain
+        if plain_profile.any():
+            mask = plain_profile.broadcast_like(fixed) & fixed.notnull()
             self.m.add_constraints(self.flow_rate == size * fixed, name='flow_fix', mask=mask)
 
-        # --- Investable flows (variable capacity) ---
-        if hasattr(self, 'flow_size'):
-            invest_ids = list(self.flow_size.coords['flow'].values)
-            fr = self.flow_rate.sel(flow=invest_ids)
-            rl = rel_lb.sel(flow=invest_ids)
-            ru = rel_ub.sel(flow=invest_ids)
-            fp = fixed.sel(flow=invest_ids)
-            inv_bounded = is_bounded.sel(flow=invest_ids)
-            inv_profile = is_profile.sel(flow=invest_ids)
+    def _constrain_flow_rates_sizing(self) -> None:
+        """Apply flow rate bounds for investable flows without Status.
 
-            var_mask = inv_bounded.broadcast_like(rl)
-            if var_mask.any():
-                self.m.add_constraints(fr >= rl * self.flow_size, name='flow_lb_invest', mask=var_mask)
-                self.m.add_constraints(fr <= ru * self.flow_size, name='flow_ub_invest', mask=var_mask)
+        P in [S * rel_lb, S * rel_ub] or P = S * profile.
+        """
+        if not hasattr(self, 'flow_size'):
+            return
 
-            if inv_profile.any():
-                fix_mask = inv_profile.broadcast_like(fp) & fp.notnull()
-                self.m.add_constraints(fr == fp * self.flow_size, name='flow_fix_invest', mask=fix_mask)
+        ds = self.data.flows
+        status_ids = self._status_flow_ids()
+
+        all_invest_ids = list(self.flow_size.coords['flow'].values)
+        invest_ids = [fid for fid in all_invest_ids if fid not in status_ids]
+        if not invest_ids:
+            return
+
+        fr = self.flow_rate.sel(flow=invest_ids)
+        rl = ds.rel_lb.sel(flow=invest_ids)
+        ru = ds.rel_ub.sel(flow=invest_ids)
+        fp = ds.fixed_profile.sel(flow=invest_ids)
+        inv_bounded = (ds.bound_type == 'bounded').sel(flow=invest_ids)
+        inv_profile = (ds.bound_type == 'profile').sel(flow=invest_ids)
+        fs = self.flow_size.sel(flow=invest_ids)
+
+        var_mask = inv_bounded.broadcast_like(rl)
+        if var_mask.any():
+            self.m.add_constraints(fr >= rl * fs, name='flow_lb_invest', mask=var_mask)
+            self.m.add_constraints(fr <= ru * fs, name='flow_ub_invest', mask=var_mask)
+
+        if inv_profile.any():
+            fix_mask = inv_profile.broadcast_like(fp) & fp.notnull()
+            self.m.add_constraints(fr == fp * fs, name='flow_fix_invest', mask=fix_mask)
+
+    def _constrain_flow_rates_status(self) -> None:
+        """Apply semi-continuous flow rate bounds for flows with Status.
+
+        P <= size * rel_ub * on, P >= size * rel_lb * on, or P = size * profile * on.
+        Sizing + Status combo raises NotImplementedError.
+        """
+        if not hasattr(self, 'flow_on'):
+            return
+
+        ds = self.data.flows
+        status_ids = list(self.flow_on.coords['flow'].values)
+
+        # Guard: Sizing + Status not yet supported
+        sizing_ids = self._sizing_flow_ids()
+        overlap = sizing_ids & set(status_ids)
+        if overlap:
+            raise NotImplementedError(f'Sizing + Status combo not yet supported on flows: {sorted(overlap)}')
+
+        fr = self.flow_rate.sel(flow=status_ids)
+        size = ds.size.sel(flow=status_ids)
+        rl = ds.rel_lb.sel(flow=status_ids)
+        ru = ds.rel_ub.sel(flow=status_ids)
+        fp = ds.fixed_profile.sel(flow=status_ids)
+        is_bounded = (ds.bound_type == 'bounded').sel(flow=status_ids)
+        is_profile = (ds.bound_type == 'profile').sel(flow=status_ids)
+
+        stat_bounded = is_bounded & size.notnull()
+        if stat_bounded.any():
+            mask = stat_bounded.broadcast_like(rl)
+            self.m.add_constraints(fr >= size * rl * self.flow_on, name='flow_lb_status', mask=mask)
+            self.m.add_constraints(fr <= size * ru * self.flow_on, name='flow_ub_status', mask=mask)
+
+        stat_profile = is_profile & size.notnull()
+        if stat_profile.any():
+            mask = stat_profile.broadcast_like(fp) & fp.notnull()
+            self.m.add_constraints(fr == size * fp * self.flow_on, name='flow_fix_status', mask=mask)
 
     def _constrain_sizing(self) -> None:
         """Constrain sizing variables: S in [min, max] gated by indicator."""
@@ -222,6 +318,64 @@ class FlowSystemModel:
                 self.m.add_constraints(
                     sc <= smax.sel(storage=opt_ids) * self.storage_size_indicator, name='stor_invest_ub'
                 )
+
+    def _constrain_status(self) -> None:
+        """Add switch transition and duration tracking constraints for status flows."""
+        if not hasattr(self, 'flow_on'):
+            return
+
+        ds = self.data.flows
+        assert ds.status_min_uptime is not None
+        assert ds.status_max_uptime is not None
+        assert ds.status_min_downtime is not None
+        assert ds.status_max_downtime is not None
+        assert ds.status_initial is not None
+
+        # Rename status_flow -> flow to align with variable dims
+        min_up = ds.status_min_uptime.rename({'status_flow': 'flow'})
+        max_up = ds.status_max_uptime.rename({'status_flow': 'flow'})
+        min_down = ds.status_min_downtime.rename({'status_flow': 'flow'})
+        max_down = ds.status_max_downtime.rename({'status_flow': 'flow'})
+        initial = ds.status_initial.rename({'status_flow': 'flow'})
+
+        # Previous state for initial transition (NaN → no constraint on t=0)
+        has_initial = initial.notnull()
+        previous_state = initial if has_initial.any() else None
+
+        add_switch_transitions(
+            self.m,
+            self.flow_on,
+            self.flow_startup,
+            self.flow_shutdown,
+            name='status',
+            previous_state=previous_state,
+        )
+
+        dt = self.data.dt
+
+        # Uptime tracking
+        has_any_up = min_up.notnull().any() | max_up.notnull().any()
+        if has_any_up:
+            add_duration_tracking(
+                self.m,
+                self.flow_on,
+                dt,
+                name='uptime',
+                minimum=min_up,
+                maximum=max_up,
+            )
+
+        # Downtime tracking: state = 1 - on
+        has_any_down = min_down.notnull().any() | max_down.notnull().any()
+        if has_any_down:
+            add_duration_tracking(
+                self.m,
+                1 - self.flow_on,
+                dt,
+                name='downtime',
+                minimum=min_down,
+                maximum=max_down,
+            )
 
     def _create_bus_balance(self) -> None:
         """Create bus balance: ``sum_f(coeff * P) = 0`` for all buses and timesteps."""
@@ -278,11 +432,23 @@ class FlowSystemModel:
         effect_coeff = d.flows.effect_coeff  # (flow, effect, time)
         has_any_coeff = (effect_coeff != 0).any()
 
+        contribution: Any = 0
         if has_any_coeff:
             contribution = (effect_coeff * self.flow_rate * d.dt).sum('flow')
-            self.m.add_constraints(self.effect_per_timestep == contribution, name='effect_per_ts_eq')
-        else:
-            self.m.add_constraints(self.effect_per_timestep == 0, name='effect_per_ts_eq')
+
+        # Status running costs: sum_f(running_coeff[f,k,t] * on[f,t] * dt[t])
+        if d.flows.status_effects_running is not None:
+            er = d.flows.status_effects_running.rename({'status_flow': 'flow'})
+            if (er != 0).any():
+                contribution = contribution + (er * self.flow_on * d.dt).sum('flow')
+
+        # Status startup costs: sum_f(startup_coeff[f,k,t] * startup[f,t]) — per event, no dt
+        if d.flows.status_effects_startup is not None:
+            es = d.flows.status_effects_startup.rename({'status_flow': 'flow'})
+            if (es != 0).any():
+                contribution = contribution + (es * self.flow_startup).sum('flow')
+
+        self.m.add_constraints(self.effect_per_timestep == contribution, name='effect_per_ts_eq')
 
         # effect_total[effect] = sum_t(ept * w) + investment contributions
         self.effect_total = self.m.add_variables(coords=[effect_ids], name='effect--total')

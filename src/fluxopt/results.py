@@ -115,6 +115,12 @@ class SolvedModel:
             sol_vars['storage--capacity'] = model.storage_capacity.solution
         if hasattr(model, 'storage_size_indicator'):
             sol_vars['storage--size_indicator'] = model.storage_size_indicator.solution
+        if hasattr(model, 'flow_on'):
+            sol_vars['flow--on'] = model.flow_on.solution
+        if hasattr(model, 'flow_startup'):
+            sol_vars['flow--startup'] = model.flow_startup.solution
+        if hasattr(model, 'flow_shutdown'):
+            sol_vars['flow--shutdown'] = model.flow_shutdown.solution
 
         obj_effect = model.data.effects.objective_effect
         obj_val = float(sol_vars['effect--total'].sel(effect=obj_effect).values)

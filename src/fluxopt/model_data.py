@@ -13,7 +13,7 @@ from fluxopt.types import as_dataarray, normalize_timesteps
 
 if TYPE_CHECKING:
     from fluxopt.components import Converter, Port
-    from fluxopt.elements import Bus, Effect, Flow, Sizing, Storage
+    from fluxopt.elements import Bus, Effect, Flow, Sizing, Status, Storage
     from fluxopt.types import Timesteps
 
 _NC_GROUPS = {
@@ -126,6 +126,124 @@ class _SizingArrays:
 
 
 @dataclass
+class _StatusArrays:
+    min_uptime: xr.DataArray | None = None  # (status_flow,)
+    max_uptime: xr.DataArray | None = None  # (status_flow,)
+    min_downtime: xr.DataArray | None = None  # (status_flow,)
+    max_downtime: xr.DataArray | None = None  # (status_flow,)
+    initial: xr.DataArray | None = None  # (status_flow,) — NaN = free
+    effects_running: xr.DataArray | None = None  # (status_flow, effect, time)
+    effects_startup: xr.DataArray | None = None  # (status_flow, effect, time)
+
+    def __post_init__(self) -> None:
+        """Validate durations >= 0 and max >= min where both given."""
+        for name in ('min_uptime', 'max_uptime', 'min_downtime', 'max_downtime'):
+            arr: xr.DataArray | None = getattr(self, name)
+            if arr is not None:
+                mask = (~np.isnan(arr)) & (arr < 0)
+                if mask.any():
+                    dim = arr.dims[0]
+                    raise ValueError(f'Status.{name} < 0 on {list(arr.coords[dim][mask].values)}')
+
+        if self.min_uptime is not None and self.max_uptime is not None:
+            both = ~np.isnan(self.min_uptime) & ~np.isnan(self.max_uptime)
+            bad = both & (self.max_uptime < self.min_uptime)
+            if bad.any():
+                dim = self.min_uptime.dims[0]
+                raise ValueError(f'Status.max_uptime < min_uptime on {list(self.min_uptime.coords[dim][bad].values)}')
+
+        if self.min_downtime is not None and self.max_downtime is not None:
+            both = ~np.isnan(self.min_downtime) & ~np.isnan(self.max_downtime)
+            bad = both & (self.max_downtime < self.min_downtime)
+            if bad.any():
+                dim = self.min_downtime.dims[0]
+                raise ValueError(
+                    f'Status.max_downtime < min_downtime on {list(self.min_downtime.coords[dim][bad].values)}'
+                )
+
+    @classmethod
+    def build(
+        cls,
+        items: list[tuple[str, Status]],
+        effect_ids: list[str],
+        time: pd.Index,
+        dim: str,
+    ) -> Self:
+        """Validate Status objects and collect into DataArrays.
+
+        Args:
+            items: Pairs of (flow_id, Status).
+            effect_ids: Known effect ids for validation.
+            time: Time index for effect arrays.
+            dim: Dimension name for the resulting arrays.
+        """
+        if not items:
+            return cls()
+
+        effect_set = set(effect_ids)
+        n_effects = len(effect_ids)
+        n_time = len(time)
+
+        ids: list[str] = []
+        min_ups: list[float] = []
+        max_ups: list[float] = []
+        min_downs: list[float] = []
+        max_downs: list[float] = []
+        initials: list[float] = []
+        er_slices: list[xr.DataArray] = []
+        es_slices: list[xr.DataArray] = []
+
+        for item_id, s in items:
+            ids.append(item_id)
+            min_ups.append(s.min_uptime if s.min_uptime is not None else np.nan)
+            max_ups.append(s.max_uptime if s.max_uptime is not None else np.nan)
+            min_downs.append(s.min_downtime if s.min_downtime is not None else np.nan)
+            max_downs.append(s.max_downtime if s.max_downtime is not None else np.nan)
+
+            if s.initial_status is None:
+                initials.append(np.nan)
+            else:
+                initials.append(1.0 if s.initial_status else 0.0)
+
+            # Effects per running hour — (effect, time)
+            er = xr.DataArray(
+                np.zeros((n_effects, n_time)),
+                dims=['effect', 'time'],
+                coords={'effect': effect_ids, 'time': time},
+            )
+            for ek, ev in s.effects_per_running_hour.items():
+                if ek not in effect_set:
+                    raise ValueError(f'Unknown effect {ek!r} in Status.effects_per_running_hour on {item_id!r}')
+                er.loc[ek] = as_dataarray(ev, {'time': time})
+            er_slices.append(er)
+
+            # Effects per startup — (effect, time)
+            es = xr.DataArray(
+                np.zeros((n_effects, n_time)),
+                dims=['effect', 'time'],
+                coords={'effect': effect_ids, 'time': time},
+            )
+            for ek, ev in s.effects_per_startup.items():
+                if ek not in effect_set:
+                    raise ValueError(f'Unknown effect {ek!r} in Status.effects_per_startup on {item_id!r}')
+                es.loc[ek] = as_dataarray(ev, {'time': time})
+            es_slices.append(es)
+
+        coords = {dim: ids}
+        status_idx = pd.Index(ids, name=dim)
+
+        return cls(
+            min_uptime=xr.DataArray(np.array(min_ups), dims=[dim], coords=coords),
+            max_uptime=xr.DataArray(np.array(max_ups), dims=[dim], coords=coords),
+            min_downtime=xr.DataArray(np.array(min_downs), dims=[dim], coords=coords),
+            max_downtime=xr.DataArray(np.array(max_downs), dims=[dim], coords=coords),
+            initial=xr.DataArray(np.array(initials), dims=[dim], coords=coords),
+            effects_running=xr.concat(er_slices, dim=status_idx),
+            effects_startup=xr.concat(es_slices, dim=status_idx),
+        )
+
+
+@dataclass
 class FlowsData:
     bound_type: xr.DataArray  # (flow,) — 'unsized' | 'bounded' | 'profile'
     rel_lb: xr.DataArray  # (flow, time)
@@ -138,6 +256,13 @@ class FlowsData:
     sizing_mandatory: xr.DataArray | None = None  # (sizing_flow,)
     sizing_effects_per_size: xr.DataArray | None = None  # (sizing_flow, effect)
     sizing_effects_fixed: xr.DataArray | None = None  # (sizing_flow, effect)
+    status_min_uptime: xr.DataArray | None = None  # (status_flow,)
+    status_max_uptime: xr.DataArray | None = None  # (status_flow,)
+    status_min_downtime: xr.DataArray | None = None  # (status_flow,)
+    status_max_downtime: xr.DataArray | None = None  # (status_flow,)
+    status_initial: xr.DataArray | None = None  # (status_flow,)
+    status_effects_running: xr.DataArray | None = None  # (status_flow, effect, time)
+    status_effects_startup: xr.DataArray | None = None  # (status_flow, effect, time)
 
     def __post_init__(self) -> None:
         """Validate relative bounds: non-negative and lb <= ub."""
@@ -187,6 +312,7 @@ class FlowsData:
         size_vals = np.full(len(flows), np.nan)
         effect_coeffs: list[xr.DataArray] = []
         sizing_items: list[tuple[str, Sizing]] = []
+        status_items: list[tuple[str, Status]] = []
 
         nan_time = xr.DataArray(np.full(n_time, np.nan), dims=['time'], coords={'time': time})
 
@@ -220,8 +346,12 @@ class FlowsData:
                     ec.loc[effect_label] = as_dataarray(factor, {'time': time})
             effect_coeffs.append(ec)
 
+            if f.status is not None:
+                status_items.append((f.id, f.status))
+
         flow_idx = pd.Index(flow_ids, name='flow')
         sz = _SizingArrays.build(sizing_items, effect_ids, dim='sizing_flow')
+        st = _StatusArrays.build(status_items, effect_ids, time, dim='status_flow')
 
         return cls(
             bound_type=xr.DataArray(bound_type, dims=['flow'], coords={'flow': flow_ids}),
@@ -235,6 +365,13 @@ class FlowsData:
             sizing_mandatory=sz.mandatory,
             sizing_effects_per_size=sz.effects_per_size,
             sizing_effects_fixed=sz.effects_fixed,
+            status_min_uptime=st.min_uptime,
+            status_max_uptime=st.max_uptime,
+            status_min_downtime=st.min_downtime,
+            status_max_downtime=st.max_downtime,
+            status_initial=st.initial,
+            status_effects_running=st.effects_running,
+            status_effects_startup=st.effects_startup,
         )
 
 
