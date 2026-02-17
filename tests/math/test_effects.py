@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from fluxopt import Bus, Effect, Flow, Port, solve
+from fluxopt import Bus, Effect, Flow, Port, Sizing, solve
 
 
 class TestEffects:
@@ -87,3 +87,152 @@ class TestEffects:
 
         expected = 50 * 0.02 + 50 * 0.08 + 50 * 0.04
         assert result.objective == pytest.approx(expected, abs=1e-6)
+
+
+class TestContributionFrom:
+    def test_contribution_from_carbon_pricing(self, timesteps_3):
+        """CO2 at 0.5 kg/MWh, carbon price 50 €/t → cost includes CO2 * 50."""
+        demand = [50.0, 80.0, 60.0]
+        source = Flow(
+            bus='elec',
+            size=200,
+            effects_per_flow_hour={'cost': 0.04, 'co2': 0.5},
+        )
+        sink = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.8, 0.6])
+
+        result = solve(
+            timesteps=timesteps_3,
+            buses=[Bus('elec')],
+            effects=[
+                Effect('cost', is_objective=True, contribution_from={'co2': 50}),
+                Effect('co2', unit='kg'),
+            ],
+            ports=[Port('grid', imports=[source]), Port('demand', exports=[sink])],
+        )
+
+        total_energy = sum(demand)  # 190 MWh
+        direct_cost = total_energy * 0.04
+        co2_total = total_energy * 0.5
+        co2_cost = co2_total * 50
+        expected_cost = direct_cost + co2_cost
+        assert result.objective == pytest.approx(expected_cost, abs=1e-6)
+
+    def test_contribution_from_source_unaffected(self, timesteps_3):
+        """Source effect total is unchanged by contribution_from on target."""
+        demand = [50.0, 80.0, 60.0]
+        source = Flow(
+            bus='elec',
+            size=200,
+            effects_per_flow_hour={'cost': 0.04, 'co2': 0.5},
+        )
+        sink = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.8, 0.6])
+
+        result = solve(
+            timesteps=timesteps_3,
+            buses=[Bus('elec')],
+            effects=[
+                Effect('cost', is_objective=True, contribution_from={'co2': 50}),
+                Effect('co2', unit='kg'),
+            ],
+            ports=[Port('grid', imports=[source]), Port('demand', exports=[sink])],
+        )
+
+        total_energy = sum(demand)
+        expected_co2 = total_energy * 0.5
+        co2_total = float(result.effect_totals.sel(effect='co2').values)
+        assert co2_total == pytest.approx(expected_co2, abs=1e-6)
+
+    def test_contribution_from_transitive(self, timesteps_3):
+        """PE → CO2 → cost chain: transitivity via variable chaining."""
+        demand = [50.0, 80.0, 60.0]
+        source = Flow(
+            bus='elec',
+            size=200,
+            effects_per_flow_hour={'pe': 2.0},  # 2 kWh_PE per kWh_el
+        )
+        sink = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.8, 0.6])
+
+        result = solve(
+            timesteps=timesteps_3,
+            buses=[Bus('elec')],
+            effects=[
+                Effect('cost', is_objective=True, contribution_from={'co2': 50}),
+                Effect('co2', unit='kg', contribution_from={'pe': 0.3}),  # 0.3 kg_CO2/kWh_PE
+                Effect('pe', unit='kWh'),
+            ],
+            ports=[Port('grid', imports=[source]), Port('demand', exports=[sink])],
+        )
+
+        total_energy = sum(demand)  # 190 MWh
+        pe_total = total_energy * 2.0  # 380
+        co2_total = pe_total * 0.3  # 114
+        cost_total = co2_total * 50  # 5700
+
+        assert float(result.effect_totals.sel(effect='pe').values) == pytest.approx(pe_total, abs=1e-6)
+        assert float(result.effect_totals.sel(effect='co2').values) == pytest.approx(co2_total, abs=1e-6)
+        assert result.objective == pytest.approx(cost_total, abs=1e-6)
+
+    def test_contribution_from_per_hour(self, timesteps_3):
+        """Time-varying carbon price overrides scalar for per-timestep."""
+        demand = [50.0, 80.0, 60.0]
+        source = Flow(
+            bus='elec',
+            size=200,
+            effects_per_flow_hour={'co2': 0.5},
+        )
+        sink = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.8, 0.6])
+
+        carbon_prices = [40.0, 50.0, 60.0]
+        result = solve(
+            timesteps=timesteps_3,
+            buses=[Bus('elec')],
+            effects=[
+                Effect(
+                    'cost',
+                    is_objective=True,
+                    contribution_from={'co2': 50},  # scalar for invest
+                    contribution_from_per_hour={'co2': carbon_prices},  # time-varying for ops
+                ),
+                Effect('co2', unit='kg'),
+            ],
+            ports=[Port('grid', imports=[source]), Port('demand', exports=[sink])],
+        )
+
+        # per_ts[co2, t] = demand[t] * 0.5 (dt=1)
+        # per_ts[cost, t] = carbon_price[t] * per_ts[co2, t]
+        # total[cost] = sum(per_ts[cost, t])  (no invest here)
+        expected = sum(d * 0.5 * p for d, p in zip(demand, carbon_prices, strict=True))
+        assert result.objective == pytest.approx(expected, abs=1e-6)
+
+    def test_contribution_from_investment(self, timesteps_3):
+        """Sizing CO2 priced into cost via contribution_from."""
+        demand = [50.0, 50.0, 50.0]
+        source = Flow(
+            bus='elec',
+            size=Sizing(min_size=50, max_size=200, mandatory=True, effects_per_size={'co2': 10}),
+            effects_per_flow_hour={'cost': 0.04, 'co2': 0.5},
+        )
+        sink = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.5, 0.5])
+
+        result = solve(
+            timesteps=timesteps_3,
+            buses=[Bus('elec')],
+            effects=[
+                Effect('cost', is_objective=True, contribution_from={'co2': 50}),
+                Effect('co2', unit='kg'),
+            ],
+            ports=[Port('grid', imports=[source]), Port('demand', exports=[sink])],
+        )
+
+        total_energy = sum(demand)  # 150 MWh
+        # Solver picks min feasible size = 50 MW (demand = 50 MW)
+        invest_size = 50.0
+        direct_cost = total_energy * 0.04
+        op_co2 = total_energy * 0.5
+        invest_co2 = invest_size * 10
+        co2_total = op_co2 + invest_co2
+        # cost = direct_cost + 50 * (op_co2 per_ts contribution summed) + 50 * invest_co2
+        cost_total = direct_cost + op_co2 * 50 + invest_co2 * 50
+
+        assert float(result.effect_totals.sel(effect='co2').values) == pytest.approx(co2_total, abs=1e-6)
+        assert result.objective == pytest.approx(cost_total, abs=1e-6)

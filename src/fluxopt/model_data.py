@@ -532,6 +532,8 @@ class EffectsData:
     max_per_hour: xr.DataArray  # (effect, time)
     is_objective: xr.DataArray  # (effect,)
     objective_effect: str
+    cf_invest: xr.DataArray | None = None  # (effect, source_effect)
+    cf_per_hour: xr.DataArray | None = None  # (effect, source_effect, time)
 
     def __post_init__(self) -> None:
         """Validate exactly one objective effect exists."""
@@ -554,9 +556,13 @@ class EffectsData:
         Args:
             ds: Dataset with effect variables and attrs.
         """
-        kwargs: dict[str, object] = {
-            f.name: ds[f.name] if f.name in ds.data_vars else ds.attrs[f.name] for f in fields(cls)
-        }
+        kwargs: dict[str, object] = {}
+        for f in fields(cls):
+            if f.name in ds.data_vars:
+                kwargs[f.name] = ds[f.name]
+            elif f.name in ds.attrs:
+                kwargs[f.name] = ds.attrs[f.name]
+            # else: rely on dataclass default (e.g. None for optional fields)
         return cls(**kwargs)  # type: ignore[arg-type]
 
     @classmethod
@@ -568,6 +574,7 @@ class EffectsData:
             time: Time index.
         """
         effect_ids = [e.id for e in effects]
+        effect_set = set(effect_ids)
         n = len(effects)
         n_time = len(time)
         objective_effect = next(e.id for e in effects if e.is_objective)
@@ -580,6 +587,7 @@ class EffectsData:
 
         nan_time = xr.DataArray(np.full(n_time, np.nan), dims=['time'], coords={'time': time})
 
+        has_contributions = False
         for i, e in enumerate(effects):
             if e.minimum_total is not None:
                 min_total[i] = e.minimum_total
@@ -592,6 +600,37 @@ class EffectsData:
                 as_dataarray(e.maximum_per_hour, {'time': time}) if e.maximum_per_hour is not None else nan_time
             )
             is_objective[i] = e.is_objective
+            if e.contribution_from or e.contribution_from_per_hour:
+                has_contributions = True
+
+        # Build cross-effect contribution arrays
+        cf_invest: xr.DataArray | None = None
+        cf_per_hour: xr.DataArray | None = None
+        if has_contributions:
+            invest_mat = np.zeros((n, n))
+            ph_mat = np.zeros((n, n, n_time))
+            for i, e in enumerate(effects):
+                for src_id, factor in e.contribution_from.items():
+                    if src_id not in effect_set:
+                        raise ValueError(f'Unknown effect {src_id!r} in Effect.contribution_from on {e.id!r}')
+                    j = effect_ids.index(src_id)
+                    invest_mat[i, j] = factor
+                    ph_mat[i, j, :] = factor  # default per_hour = scalar
+                for src_id, factor_ts in e.contribution_from_per_hour.items():
+                    if src_id not in effect_set:
+                        raise ValueError(f'Unknown effect {src_id!r} in Effect.contribution_from_per_hour on {e.id!r}')
+                    j = effect_ids.index(src_id)
+                    ph_mat[i, j, :] = as_dataarray(factor_ts, {'time': time}).values
+            cf_invest = xr.DataArray(
+                invest_mat,
+                dims=['effect', 'source_effect'],
+                coords={'effect': effect_ids, 'source_effect': effect_ids},
+            )
+            cf_per_hour = xr.DataArray(
+                ph_mat,
+                dims=['effect', 'source_effect', 'time'],
+                coords={'effect': effect_ids, 'source_effect': effect_ids, 'time': time},
+            )
 
         effect_idx = pd.Index(effect_ids, name='effect')
 
@@ -602,6 +641,8 @@ class EffectsData:
             max_per_hour=xr.concat(max_per_hours, dim=effect_idx),
             is_objective=xr.DataArray(is_objective, dims=['effect'], coords={'effect': effect_ids}),
             objective_effect=objective_effect,
+            cf_invest=cf_invest,
+            cf_per_hour=cf_per_hour,
         )
 
 
