@@ -115,6 +115,44 @@ class TestRoundtrip:
         assert result2.objective == pytest.approx(result.objective, abs=1e-6)
 
 
+class TestRoundtripContributionFrom:
+    def test_roundtrip_with_contribution_from(self, tmp_nc: Path) -> None:
+        """ModelData with contribution_from survives NetCDF roundtrip."""
+        ts = [datetime(2024, 1, 1, h) for h in range(3)]
+        source = Flow(bus='elec', size=200, effects_per_flow_hour={'cost': 0.04, 'co2': 0.5})
+        sink = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.8, 0.6])
+
+        result = solve(
+            timesteps=ts,
+            buses=[Bus('elec')],
+            effects=[
+                Effect('cost', is_objective=True, contribution_from={'co2': 50}),
+                Effect('co2', unit='kg'),
+            ],
+            ports=[Port('grid', imports=[source]), Port('demand', exports=[sink])],
+        )
+        assert result.data is not None
+        assert result.data.effects.cf_invest is not None
+        assert result.data.effects.cf_per_hour is not None
+
+        result.to_netcdf(tmp_nc)
+        loaded = SolvedModel.from_netcdf(tmp_nc)
+
+        assert loaded.data is not None
+        assert loaded.data.effects.cf_invest is not None
+        assert loaded.data.effects.cf_per_hour is not None
+        xr.testing.assert_equal(loaded.data.effects.cf_invest, result.data.effects.cf_invest)
+        xr.testing.assert_equal(loaded.data.effects.cf_per_hour, result.data.effects.cf_per_hour)
+
+        # Re-solve gives same objective
+        from fluxopt import FlowSystemModel
+
+        model = FlowSystemModel(loaded.data)
+        model.build()
+        result2 = model.solve()
+        assert result2.objective == pytest.approx(result.objective, abs=1e-6)
+
+
 class TestSolutionDataset:
     def test_solution_is_dataset(self) -> None:
         """solution is an xr.Dataset with solution data."""

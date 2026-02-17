@@ -86,6 +86,8 @@ class Effect:
     minimum_total: float | None = None  # Φ̲_k  [unit]
     maximum_per_hour: TimeSeries | None = None  # Φ̄_{k,t}  [unit]
     minimum_per_hour: TimeSeries | None = None  # Φ̲_{k,t}  [unit]
+    contribution_from: dict[str, float] = field(default_factory=dict)
+    contribution_from_per_hour: dict[str, TimeSeries] = field(default_factory=dict)
 
 
 @dataclass

@@ -500,18 +500,27 @@ class FlowSystemModel:
             if (es != 0).any():
                 contribution = contribution + (es * self.flow_startup).sum('flow')
 
+        # Cross-effect per-timestep contributions: cf_per_hour[k,j,t] * ept[j,t]
+        if ds.cf_per_hour is not None:
+            source_pts = self.effect_per_timestep.rename({'effect': 'source_effect'})
+            cf_contribution = (ds.cf_per_hour * source_pts).sum('source_effect')
+            contribution = contribution + cf_contribution
+
         self.m.add_constraints(self.effect_per_timestep == contribution, name='effect_per_ts_eq')
 
-        # effect_total[effect] = sum_t(ept * w) + investment contributions
+        # effect_total[effect] = sum_t(ept * w) + invest_direct + invest_cross
         self.effect_total = self.m.add_variables(coords=[effect_ids], name='effect--total')
         rhs = (self.effect_per_timestep * d.weights).sum('time')
+
+        # Accumulate direct investment contributions per effect
+        invest_direct: Any = 0
 
         # Flow sizing: per-size costs
         if hasattr(self, 'flow_size'):
             assert d.flows.sizing_effects_per_size is not None
             eps = d.flows.sizing_effects_per_size.rename({'sizing_flow': 'flow'})
             if (eps != 0).any():
-                rhs = rhs + (eps * self.flow_size).sum('flow')
+                invest_direct = invest_direct + (eps * self.flow_size).sum('flow')
 
         # Flow sizing: fixed costs (binary * cost)
         if hasattr(self, 'flow_size_indicator'):
@@ -519,7 +528,7 @@ class FlowSystemModel:
             opt_ids = list(self.flow_size_indicator.coords['flow'].values)
             ef = d.flows.sizing_effects_fixed.rename({'sizing_flow': 'flow'}).sel(flow=opt_ids)
             if (ef != 0).any():
-                rhs = rhs + (ef * self.flow_size_indicator).sum('flow')
+                invest_direct = invest_direct + (ef * self.flow_size_indicator).sum('flow')
 
         # Storage sizing: per-size costs
         if (
@@ -529,7 +538,7 @@ class FlowSystemModel:
         ):
             eps = d.storages.sizing_effects_per_size.rename({'sizing_storage': 'storage'})
             if (eps != 0).any():
-                rhs = rhs + (eps * self.storage_capacity).sum('storage')
+                invest_direct = invest_direct + (eps * self.storage_capacity).sum('storage')
 
         # Storage sizing: fixed costs
         if (
@@ -540,7 +549,14 @@ class FlowSystemModel:
             opt_ids = list(self.storage_size_indicator.coords['storage'].values)
             ef = d.storages.sizing_effects_fixed.rename({'sizing_storage': 'storage'}).sel(storage=opt_ids)
             if (ef != 0).any():
-                rhs = rhs + (ef * self.storage_size_indicator).sum('storage')
+                invest_direct = invest_direct + (ef * self.storage_size_indicator).sum('storage')
+
+        rhs = rhs + invest_direct
+
+        # Cross-effect investment contributions: cf_invest[k,j] * invest_direct[j]
+        if ds.cf_invest is not None and not isinstance(invest_direct, int):
+            source_inv = invest_direct.rename({'effect': 'source_effect'})
+            rhs = rhs + (ds.cf_invest * source_inv).sum('source_effect')
 
         self.m.add_constraints(self.effect_total == rhs, name='effect_total_eq')
 
