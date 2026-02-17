@@ -303,6 +303,10 @@ class FlowSystemModel:
         self.m.add_constraints(fr <= fs * ru, name='flow_ub_status_sizing_size')
         self.m.add_constraints(fr >= (on - 1) * big_m_lb + fs * rl, name='flow_lb_status_sizing')
 
+        # on <= S: prevents on=1 when size=0, which would incorrectly
+        # charge running/startup costs for a non-existent unit.
+        self.m.add_constraints(on <= fs, name='flow_on_requires_size')
+
     def _constrain_sizing(self) -> None:
         """Constrain sizing variables: S in [min, max] gated by indicator."""
         # --- Flow sizing ---

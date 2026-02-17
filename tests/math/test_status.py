@@ -383,6 +383,193 @@ class TestStatusSizing:
         assert rates[0] >= 0.5 * size - 1e-5
         assert rates[1] >= 80.0 - 1e-5
 
+    def test_sizing_rel_min_forces_off_at_low_demand(self):
+        """Sizing + Status + relative_minimum forces off when demand < min_load.
+
+        Src: Sizing(0, 100, mandatory=True, effects_per_size={'costs': 0.5}),
+             rel_min=0.5, Status(), 1€/MWh.
+        Backup: 10€/MWh.
+        Demand: [5, 50].
+
+        Optimal size=50 (peak demand). min_load = 0.5*50 = 25 > demand[0]=5.
+        t=0: Src must turn OFF (can't produce <25), Backup covers: 5*10=50.
+        t=1: Src ON at 50, cost=50.
+        invest=50*0.5=25 + operational=50 + backup=50 = 125.
+
+        Without status: min_load=25 forces Src to produce 25 even when demand=5,
+        requiring waste absorption. With status, cleaner: just turn off.
+        """
+        result = solve(
+            _ts(2),
+            buses=[Bus('Heat')],
+            effects=[Effect('costs', is_objective=True)],
+            ports=[
+                Port('Demand', exports=[Flow(bus='Heat', size=1, fixed_relative_profile=[5, 50])]),
+                Port(
+                    'Src',
+                    imports=[
+                        Flow(
+                            bus='Heat',
+                            size=Sizing(0, 100, mandatory=True, effects_per_size={'costs': 0.5}),
+                            relative_minimum=0.5,
+                            effects_per_flow_hour={'costs': 1},
+                            status=Status(),
+                        )
+                    ],
+                ),
+                Port('Backup', imports=[Flow(bus='Heat', effects_per_flow_hour={'costs': 10})]),
+            ],
+        )
+        size = float(result.sizes.sel(flow='Src(Heat)').values)
+        on = result.solution['flow--on'].sel(flow='Src(Heat)').values
+
+        assert_allclose(size, 50.0, rtol=1e-4)
+        # t=0: off (demand < min_load)
+        assert_allclose(on[0], 0.0, atol=1e-5)
+        # t=1: on
+        assert_allclose(on[1], 1.0, atol=1e-5)
+        assert_allclose(result.objective, 125.0, rtol=1e-4)
+
+    def test_optional_sizing_not_invested_means_off(self):
+        """Optional Sizing + Status: if not invested, on=0 and flow rate=0.
+
+        Src: Sizing(50, 100, mandatory=False, effects_fixed={'costs': 1000}),
+             Status(), 1€/MWh. High fixed cost discourages investment.
+        Backup: 2€/MWh.
+        Demand: [10]*3.
+
+        Without invest: backup cost = 10*2*3 = 60.
+        With invest: fixed=1000 + operational ≈ 30 = 1030. Too expensive.
+        Solver should NOT invest. indicator=0 → on=0 → flow rate=0.
+        The on<=indicator constraint prevents spurious running/startup costs.
+        """
+        result = solve(
+            _ts(3),
+            buses=[Bus('Heat')],
+            effects=[Effect('costs', is_objective=True)],
+            ports=[
+                Port('Demand', exports=[Flow(bus='Heat', size=1, fixed_relative_profile=[10] * 3)]),
+                Port(
+                    'Src',
+                    imports=[
+                        Flow(
+                            bus='Heat',
+                            size=Sizing(50, 100, effects_fixed={'costs': 1000}),
+                            effects_per_flow_hour={'costs': 1},
+                            status=Status(),
+                        )
+                    ],
+                ),
+                Port('Backup', imports=[Flow(bus='Heat', effects_per_flow_hour={'costs': 2})]),
+            ],
+        )
+        indicator = float(result.solution['flow--size_indicator'].sel(flow='Src(Heat)').values)
+        on = result.solution['flow--on'].sel(flow='Src(Heat)').values
+        rates = result.flow_rate('Src(Heat)').values
+
+        # Not invested → off → zero flow
+        assert_allclose(indicator, 0.0, atol=1e-5)
+        assert_allclose(on, [0, 0, 0], atol=1e-5)
+        assert_allclose(rates, [0, 0, 0], atol=1e-5)
+        # All from backup
+        assert_allclose(result.objective, 60.0, rtol=1e-5)
+
+    def test_sizing_with_startup_costs(self):
+        """Sizing + Status + startup cost: invest decision includes startup penalty.
+
+        Src: Sizing(0, 200, mandatory=True), Status(effects_per_startup={'costs': 100}),
+             prior=[0], 1€/MWh.
+        Backup: 5€/MWh.
+        Demand: [50, 50, 50].
+
+        Src runs all 3h: 1 startup(100) + operational(150) + invest_cost(0) = 250.
+        All backup: 50*5*3 = 750. Src is cheaper despite startup cost.
+        """
+        result = solve(
+            _ts(3),
+            buses=[Bus('Heat')],
+            effects=[Effect('costs', is_objective=True)],
+            ports=[
+                Port('Demand', exports=[Flow(bus='Heat', size=1, fixed_relative_profile=[50] * 3)]),
+                Port(
+                    'Src',
+                    imports=[
+                        Flow(
+                            bus='Heat',
+                            size=Sizing(0, 200, mandatory=True),
+                            effects_per_flow_hour={'costs': 1},
+                            status=Status(effects_per_startup={'costs': 100}),
+                            prior=[0],
+                        )
+                    ],
+                ),
+                Port('Backup', imports=[Flow(bus='Heat', effects_per_flow_hour={'costs': 5})]),
+            ],
+        )
+        startup = result.solution['flow--startup'].sel(flow='Src(Heat)').values
+        size = float(result.sizes.sel(flow='Src(Heat)').values)
+
+        assert size >= 50.0 - 1e-5
+        # Exactly 1 startup at t=0
+        assert_allclose(np.sum(startup), 1.0, atol=1e-5)
+        # Total: 100 (startup) + 150 (operational) = 250
+        assert_allclose(result.objective, 250.0, rtol=1e-5)
+
+    def test_sizing_with_min_uptime(self):
+        """Sizing + Status + min_uptime: duration constraint with variable capacity.
+
+        Src: Sizing(0, 200, mandatory=True), rel_min=0.3,
+             Status(min_uptime=3), prior=[0], 1€/MWh.
+        Backup: 0.5€/MWh (cheaper).
+        Demand: [80, 0, 0, 80].
+
+        Backup is cheaper, but once Src turns on, min_uptime=3 forces it to
+        stay on for 3 consecutive hours. If Src turns on at t=0 for demand,
+        it must stay on through t=2 (even with zero demand), producing at
+        least 0.3*S each hour. Waste absorbs excess at t=1,t=2.
+        """
+        result = solve(
+            _ts(4),
+            buses=[Bus('Heat')],
+            effects=[Effect('costs', is_objective=True)],
+            ports=[
+                Port('Demand', exports=[Flow(bus='Heat', size=1, fixed_relative_profile=[80, 0, 0, 80])]),
+                Port(
+                    'Src',
+                    imports=[
+                        Flow(
+                            bus='Heat',
+                            size=Sizing(0, 200, mandatory=True),
+                            relative_minimum=0.3,
+                            effects_per_flow_hour={'costs': 1},
+                            status=Status(min_uptime=3),
+                            prior=[0],
+                        )
+                    ],
+                ),
+                Port('Backup', imports=[Flow(bus='Heat', effects_per_flow_hour={'costs': 0.5})]),
+                _waste('Heat'),
+            ],
+        )
+        on = result.solution['flow--on'].sel(flow='Src(Heat)').values
+        rates = result.flow_rate('Src(Heat)').values
+        size = float(result.sizes.sel(flow='Src(Heat)').values)
+
+        # Check on-blocks are ≥3h
+        block_len = 0
+        for i, s in enumerate(on):
+            if s > 0.5:
+                block_len += 1
+            else:
+                if block_len > 0:
+                    assert block_len >= 3, f'min_uptime violated: on-block of {block_len} at t<{i}'
+                block_len = 0
+
+        # When on, flow rate >= rel_min * size
+        for t in range(len(on)):
+            if on[t] > 0.5:
+                assert rates[t] >= 0.3 * size - 1e-5, f'Below minimum at t={t}: {rates[t]} < 0.3*{size}'
+
 
 class TestMaxUptime:
     def test_max_uptime_forces_shutdown(self):
