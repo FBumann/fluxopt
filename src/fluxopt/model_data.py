@@ -700,9 +700,9 @@ class StoragesData:
     eta_c: xr.DataArray  # (storage, time)
     eta_d: xr.DataArray  # (storage, time)
     loss: xr.DataArray  # (storage, time)
-    rel_cs_lb: xr.DataArray  # (storage, time_extra)
-    rel_cs_ub: xr.DataArray  # (storage, time_extra)
-    initial_charge: xr.DataArray  # (storage,)
+    rel_level_lb: xr.DataArray  # (storage, time_extra)
+    rel_level_ub: xr.DataArray  # (storage, time_extra)
+    prior_level: xr.DataArray  # (storage,) — NaN if not set
     cyclic: xr.DataArray  # (storage,)
     charge_flow: xr.DataArray  # (storage,) — str
     discharge_flow: xr.DataArray  # (storage,) — str
@@ -757,7 +757,7 @@ class StoragesData:
         Args:
             storages: Storage definitions.
             time: Time index.
-            time_extra: N+1 time index for charge state.
+            time_extra: N+1 time index for storage level.
             dt: Timestep durations.
             effects: Effect definitions for sizing cost validation.
         """
@@ -774,9 +774,9 @@ class StoragesData:
         eta_cs: list[xr.DataArray] = []
         eta_ds: list[xr.DataArray] = []
         losses: list[xr.DataArray] = []
-        cs_lbs: list[xr.DataArray] = []
-        cs_ubs: list[xr.DataArray] = []
-        initial_charge_vals = np.zeros(n)
+        level_lbs: list[xr.DataArray] = []
+        level_ubs: list[xr.DataArray] = []
+        prior_level_vals = np.full(n, np.nan)
         cyclic_vals = np.zeros(n, dtype=bool)
         charge_flow: list[str] = []
         discharge_flow: list[str] = []
@@ -792,16 +792,15 @@ class StoragesData:
             eta_ds.append(as_dataarray(s.eta_discharge, {'time': time}))
             losses.append(as_dataarray(s.relative_loss_per_hour, {'time': time}))
 
-            # Charge state bounds — extend to time_extra (replicate last for extra point)
-            cs_lb_da = as_dataarray(s.relative_minimum_charge_state, {'time': time})
-            cs_ub_da = as_dataarray(s.relative_maximum_charge_state, {'time': time})
-            cs_lbs.append(_extend_time_extra(cs_lb_da, time_extra))
-            cs_ubs.append(_extend_time_extra(cs_ub_da, time_extra))
+            # Level bounds — extend to time_extra (replicate last for extra point)
+            level_lb_da = as_dataarray(s.relative_minimum_level, {'time': time})
+            level_ub_da = as_dataarray(s.relative_maximum_level, {'time': time})
+            level_lbs.append(_extend_time_extra(level_lb_da, time_extra))
+            level_ubs.append(_extend_time_extra(level_ub_da, time_extra))
 
-            is_cyclic = s.initial_charge_state == 'cyclic'
-            cyclic_vals[i] = is_cyclic
-            if not is_cyclic:
-                initial_charge_vals[i] = float(s.initial_charge_state) if s.initial_charge_state is not None else 0.0
+            cyclic_vals[i] = s.cyclic
+            if s.prior_level is not None:
+                prior_level_vals[i] = s.prior_level
 
             charge_flow.append(s.charging.id)
             discharge_flow.append(s.discharging.id)
@@ -814,9 +813,9 @@ class StoragesData:
             eta_c=xr.concat(eta_cs, dim=stor_idx),
             eta_d=xr.concat(eta_ds, dim=stor_idx),
             loss=xr.concat(losses, dim=stor_idx),
-            rel_cs_lb=xr.concat(cs_lbs, dim=stor_idx),
-            rel_cs_ub=xr.concat(cs_ubs, dim=stor_idx),
-            initial_charge=xr.DataArray(initial_charge_vals, dims=['storage'], coords={'storage': stor_ids}),
+            rel_level_lb=xr.concat(level_lbs, dim=stor_idx),
+            rel_level_ub=xr.concat(level_ubs, dim=stor_idx),
+            prior_level=xr.DataArray(prior_level_vals, dims=['storage'], coords={'storage': stor_ids}),
             cyclic=xr.DataArray(cyclic_vals, dims=['storage'], coords={'storage': stor_ids}),
             charge_flow=xr.DataArray(charge_flow, dims=['storage'], coords={'storage': stor_ids}),
             discharge_flow=xr.DataArray(discharge_flow, dims=['storage'], coords={'storage': stor_ids}),
@@ -893,8 +892,8 @@ class ModelData:
         effects = EffectsData.from_dataset(datasets['effects'])
         storages = StoragesData.from_dataset(datasets['storages']) if datasets['storages'].data_vars else None
 
-        if storages is not None and 'time_extra' in storages.rel_cs_lb.coords:
-            time_extra = pd.Index(storages.rel_cs_lb.coords['time_extra'].values)
+        if storages is not None and 'time_extra' in storages.rel_level_lb.coords:
+            time_extra = pd.Index(storages.rel_level_lb.coords['time_extra'].values)
             time_extra.name = 'time_extra'
         else:
             time_extra = _compute_time_extra(time, dt)

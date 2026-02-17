@@ -41,15 +41,20 @@ class TestStorage:
         assert discharge[2] == pytest.approx(0.0, abs=1e-6)  # t2: cheap
         assert discharge[3] > 0  # t3: expensive
 
-    def test_charge_state_starts_at_zero(self, timesteps_4):
-        """Initial charge state defaults to 0."""
+    def test_level_starts_at_prior(self, timesteps_4):
+        """Prior level pins the initial storage level."""
         source_flow = Flow(bus='elec', size=200, effects_per_flow_hour={'cost': 0.04})
         demand_flow = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.5, 0.5, 0.5])
 
         charge_flow = Flow(bus='elec', size=50)
         discharge_flow = Flow(bus='elec', size=50)
         battery = Storage(
-            'battery', charging=charge_flow, discharging=discharge_flow, capacity=100.0, initial_charge_state=0.0
+            'battery',
+            charging=charge_flow,
+            discharging=discharge_flow,
+            capacity=100.0,
+            prior_level=0.0,
+            cyclic=False,
         )
 
         result = solve(
@@ -65,7 +70,7 @@ class TestStorage:
         assert float(cs.values[0]) == pytest.approx(0.0, abs=1e-6)
 
     def test_cyclic_storage(self):
-        """Cyclic constraint: charge state at end == start."""
+        """Cyclic constraint: level at end == start."""
         timesteps = [datetime(2024, 1, 1, h) for h in range(2)]
         source_flow = Flow(bus='elec', size=200, effects_per_flow_hour={'cost': [0.02, 0.08]})
         demand_flow = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.5])
@@ -77,7 +82,6 @@ class TestStorage:
             charging=charge_flow,
             discharging=discharge_flow,
             capacity=100.0,
-            initial_charge_state='cyclic',
         )
 
         result = solve(

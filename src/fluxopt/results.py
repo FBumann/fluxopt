@@ -107,19 +107,19 @@ class SolvedModel:
 
         if hasattr(model, 'storage_level'):
             sol_vars['storage--level'] = model.storage_level.solution
-        if hasattr(model, 'flow_size'):
+        if model.flow_size is not None:
             sol_vars['flow--size'] = model.flow_size.solution
-        if hasattr(model, 'flow_size_indicator'):
+        if model.flow_size_indicator is not None:
             sol_vars['flow--size_indicator'] = model.flow_size_indicator.solution
-        if hasattr(model, 'storage_capacity'):
+        if model.storage_capacity is not None:
             sol_vars['storage--capacity'] = model.storage_capacity.solution
-        if hasattr(model, 'storage_size_indicator'):
-            sol_vars['storage--size_indicator'] = model.storage_size_indicator.solution
-        if hasattr(model, 'flow_on'):
+        if model.storage_capacity_indicator is not None:
+            sol_vars['storage--size_indicator'] = model.storage_capacity_indicator.solution
+        if model.flow_on is not None:
             sol_vars['flow--on'] = model.flow_on.solution
-        if hasattr(model, 'flow_startup'):
+        if model.flow_startup is not None:
             sol_vars['flow--startup'] = model.flow_startup.solution
-        if hasattr(model, 'flow_shutdown'):
+        if model.flow_shutdown is not None:
             sol_vars['flow--shutdown'] = model.flow_shutdown.solution
 
         obj_effect = model.data.effects.objective_effect

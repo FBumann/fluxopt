@@ -133,6 +133,7 @@ class TestStartupCosts:
                         Flow(
                             bus='Heat',
                             size=100,
+                            relative_minimum=0.1,
                             effects_per_flow_hour={'costs': 1},
                             status=Status(effects_per_startup={'costs': 50}),
                             prior=[0],
@@ -210,6 +211,7 @@ class TestPrior:
                         Flow(
                             bus='Heat',
                             size=100,
+                            relative_minimum=0.1,
                             status=Status(effects_per_startup={'costs': 1000}),
                         )
                     ],
@@ -244,6 +246,7 @@ class TestPrior:
                         Flow(
                             bus='Heat',
                             size=100,
+                            relative_minimum=0.1,
                             effects_per_flow_hour={'costs': 1},
                             status=Status(min_uptime=3),
                             prior=[50, 60],
@@ -282,6 +285,7 @@ class TestPrior:
                         Flow(
                             bus='Heat',
                             size=100,
+                            relative_minimum=0.1,
                             effects_per_flow_hour={'costs': 1},
                             status=Status(min_downtime=3),
                             prior=[0, 0],
@@ -319,6 +323,7 @@ class TestPrior:
                         Flow(
                             bus='Heat',
                             size=100,
+                            relative_minimum=0.1,
                             effects_per_flow_hour={'costs': 1},
                             status=Status(effects_per_running_hour={'costs': 10}),
                         )
@@ -455,6 +460,7 @@ class TestStatusSizing:
                         Flow(
                             bus='Heat',
                             size=Sizing(50, 100, effects_fixed={'costs': 1000}),
+                            relative_minimum=0.1,
                             effects_per_flow_hour={'costs': 1},
                             status=Status(),
                         )
@@ -497,6 +503,7 @@ class TestStatusSizing:
                         Flow(
                             bus='Heat',
                             size=Sizing(0, 200, mandatory=True),
+                            relative_minimum=0.1,
                             effects_per_flow_hour={'costs': 1},
                             status=Status(effects_per_startup={'costs': 100}),
                             prior=[0],
@@ -599,6 +606,7 @@ class TestMaxUptime:
                         Flow(
                             bus='Heat',
                             size=100,
+                            relative_minimum=0.1,
                             effects_per_flow_hour={'costs': 1},
                             status=Status(max_uptime=2),
                             prior=[0],
@@ -696,6 +704,7 @@ class TestDurationCombinations:
                         Flow(
                             bus='Heat',
                             size=100,
+                            relative_minimum=0.01,
                             effects_per_flow_hour={'costs': 1},
                             status=Status(min_uptime=2, max_uptime=2),
                             prior=[0],
@@ -798,6 +807,7 @@ class TestDurationCombinations:
                         Flow(
                             bus='Heat',
                             size=100,
+                            relative_minimum=0.1,
                             effects_per_flow_hour={'costs': 1},
                             status=Status(max_uptime=3),
                             prior=[50, 50],
@@ -852,6 +862,7 @@ class TestDurationCombinations:
                         Flow(
                             bus='Heat',
                             size=100,
+                            relative_minimum=0.1,
                             effects_per_flow_hour={'costs': 1},
                             status=Status(max_uptime=2, effects_per_startup={'costs': 50}),
                             prior=[0],
@@ -959,6 +970,7 @@ class TestDurationCombinations:
                         Flow(
                             bus='Heat',
                             size=100,
+                            relative_minimum=0.1,
                             effects_per_flow_hour={'costs': 1},
                             status=Status(min_uptime=2),
                             prior=[0],
@@ -1009,6 +1021,7 @@ class TestDurationCombinations:
                         Flow(
                             bus='Heat',
                             size=100,
+                            relative_minimum=0.1,
                             effects_per_flow_hour={'costs': 1},
                             status=Status(max_uptime=1),
                             prior=[0],

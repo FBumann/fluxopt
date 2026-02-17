@@ -69,6 +69,12 @@ class Flow:
         """Default id to bus name if not set."""
         if not self.id:
             self.id = self.bus
+        if self.status is not None and isinstance(self.relative_minimum, (int, float)) and self.relative_minimum <= 0:
+            msg = (
+                f'Flow {self.id!r}: relative_minimum must be > 0 when status is set, '
+                f'otherwise on/off is indistinguishable (got {self.relative_minimum})'
+            )
+            raise ValueError(msg)
 
 
 @dataclass
@@ -92,7 +98,7 @@ class Effect:
 
 @dataclass
 class Storage:
-    """Energy storage with charge dynamics.
+    """Energy storage with level dynamics.
 
     Flow ids are qualified as ``storage(flow)``. When both flows connect
     to the same bus, they are renamed to ``charge`` / ``discharge``::
@@ -100,7 +106,7 @@ class Storage:
         Storage('bat', Flow(bus='elec'), Flow(bus='elec'))  # bat(charge), bat(discharge)
         Storage('bat', Flow(bus='elec'), Flow(bus='heat'))  # bat(elec), bat(heat)
 
-    Charge balance::
+    Level balance::
 
         E_{s,t+1} = E_{s,t} (1 - δ Δt) + P^c η^c Δt - P^d / η^d Δt
     """
@@ -112,9 +118,10 @@ class Storage:
     eta_charge: TimeSeries = 1.0  # η^c_s  [-]
     eta_discharge: TimeSeries = 1.0  # η^d_s  [-]
     relative_loss_per_hour: TimeSeries = 0.0  # δ_s  [1/h]
-    initial_charge_state: float | str | None = 0.0  # E_{s,0}  [MWh]
-    relative_minimum_charge_state: TimeSeries = 0.0  # e̲_s  [-]
-    relative_maximum_charge_state: TimeSeries = 1.0  # ē_s  [-]
+    prior_level: float | None = None  # E_{s,0}  [MWh]
+    cyclic: bool = True  # E_{s,first} == E_{s,last}
+    relative_minimum_level: TimeSeries = 0.0  # e̲_s  [-]
+    relative_maximum_level: TimeSeries = 1.0  # ē_s  [-]
 
     def __post_init__(self) -> None:
         """Rename colliding flow ids and qualify with storage id."""

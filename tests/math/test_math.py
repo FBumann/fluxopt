@@ -10,7 +10,7 @@ API mapping (flixopt → fluxopt):
     fx.Flow('label', bus=..., ...)       → Flow(bus=..., ...)
     effects_per_flow_hour=<scalar>       → effects_per_flow_hour={'costs': <scalar>}
     capacity_in_flow_hours=X             → capacity=X
-    initial_charge_state='equals_final'  → initial_charge_state='cyclic'
+    initial_charge_state='equals_final'  → cyclic=True
     imbalance_penalty_per_flow_hour=0    → waste Port (absorbs excess at zero cost)
 """
 
@@ -361,7 +361,8 @@ class TestStorage:
                     charging=Flow(bus='Elec', size=100),
                     discharging=Flow(bus='Elec', size=100),
                     capacity=100,
-                    initial_charge_state=0.0,
+                    prior_level=0.0,
+                    cyclic=False,
                     eta_charge=1,
                     eta_discharge=1,
                     relative_loss_per_hour=0,
@@ -390,7 +391,8 @@ class TestStorage:
                     charging=Flow(bus='Elec', size=200),
                     discharging=Flow(bus='Elec', size=200),
                     capacity=200,
-                    initial_charge_state=0.0,
+                    prior_level=0.0,
+                    cyclic=False,
                     eta_charge=1,
                     eta_discharge=1,
                     relative_loss_per_hour=0.1,
@@ -420,7 +422,8 @@ class TestStorage:
                     charging=Flow(bus='Elec', size=200),
                     discharging=Flow(bus='Elec', size=200),
                     capacity=200,
-                    initial_charge_state=0.0,
+                    prior_level=0.0,
+                    cyclic=False,
                     eta_charge=0.9,
                     eta_discharge=0.8,
                     relative_loss_per_hour=0,
@@ -449,8 +452,9 @@ class TestStorage:
                     charging=Flow(bus='Elec', size=200),
                     discharging=Flow(bus='Elec', size=200),
                     capacity=100,
-                    initial_charge_state=0.0,
-                    relative_maximum_charge_state=0.5,
+                    prior_level=0.0,
+                    cyclic=False,
+                    relative_maximum_level=0.5,
                     eta_charge=1,
                     eta_discharge=1,
                     relative_loss_per_hour=0,
@@ -459,8 +463,8 @@ class TestStorage:
         )
         assert_allclose(result.objective, 1050.0, rtol=1e-5)
 
-    def test_storage_cyclic_charge_state(self):
-        """Cyclic: final SOC = initial SOC. Price=[1,100]. Demand=[0,50].
+    def test_storage_cyclic_level(self):
+        """Cyclic: final level = initial level. Price=[1,100]. Demand=[0,50].
         Must charge 50 at t=0 @1€ and discharge at t=1. cost=50.
 
         Sensitivity: Without cyclic, start full (free energy) → cost=0.
@@ -479,7 +483,6 @@ class TestStorage:
                     charging=Flow(bus='Elec', size=200),
                     discharging=Flow(bus='Elec', size=200),
                     capacity=100,
-                    initial_charge_state='cyclic',
                     eta_charge=1,
                     eta_discharge=1,
                     relative_loss_per_hour=0,
@@ -488,13 +491,13 @@ class TestStorage:
         )
         assert_allclose(result.objective, 50.0, rtol=1e-5)
 
-    def test_storage_relative_minimum_charge_state(self):
-        """Capacity=100, initial=50, min SOC=0.3 (→30 abs).
-        Price=[1,100,1]. Demand=[0,80,0]. Charge 50 @t0 → SOC=100.
-        Discharge 70 @t1 → SOC=30 (min). Grid covers 10 @100€.
+    def test_storage_relative_minimum_level(self):
+        """Capacity=100, prior_level=50, min level=0.3 (→30 abs).
+        Price=[1,100,1]. Demand=[0,80,0]. Charge 50 @t0 → level=100.
+        Discharge 70 @t1 → level=30 (min). Grid covers 10 @100€.
         cost=50+1000=1050.
 
-        Sensitivity: Without min SOC, discharge all → no grid → cost=50 less.
+        Sensitivity: Without min level, discharge all → no grid → cost=50 less.
         """
         result = solve(
             _ts(3),
@@ -510,8 +513,9 @@ class TestStorage:
                     charging=Flow(bus='Elec', size=200),
                     discharging=Flow(bus='Elec', size=200),
                     capacity=100,
-                    initial_charge_state=0.5,
-                    relative_minimum_charge_state=0.3,
+                    prior_level=50.0,
+                    cyclic=False,
+                    relative_minimum_level=0.3,
                     eta_charge=1,
                     eta_discharge=1,
                     relative_loss_per_hour=0,
