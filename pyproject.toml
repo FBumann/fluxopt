@@ -32,6 +32,7 @@ dependencies = [
     "numpy>=1.26",
     "pandas>=2.1",
     "plotly>=6.5.2",
+    "pyyaml>=6.0",
     "xarray>=2024.1.0",
 ]
 
@@ -140,6 +141,7 @@ module = [
     "linopy.*",
     "netCDF4.*",
     "xarray.*",
+    "yaml.*",
 ]
 ignore_missing_imports = true
 

@@ -11,6 +11,7 @@ from fluxopt.types import (
     compute_dt,
     normalize_timesteps,
 )
+from fluxopt.yaml_loader import load_yaml, solve_yaml
 
 
 def solve(
@@ -60,6 +61,8 @@ __all__ = [
     'Timesteps',
     'as_dataarray',
     'compute_dt',
+    'load_yaml',
     'normalize_timesteps',
     'solve',
+    'solve_yaml',
 ]
