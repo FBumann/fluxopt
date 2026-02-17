@@ -232,20 +232,25 @@ class FlowSystemModel:
     def _constrain_flow_rates_status(self) -> None:
         """Apply semi-continuous flow rate bounds for flows with Status.
 
-        P <= size * rel_ub * on, P >= size * rel_lb * on, or P = size * profile * on.
-        Sizing + Status combo raises NotImplementedError.
+        Fixed-size: P <= size * rel_ub * on, P >= size * rel_lb * on.
+        Sizing: big-M formulation via _constrain_flow_rates_status_sizing().
         """
         if not hasattr(self, 'flow_on'):
             return
 
         ds = self.data.flows
-        status_ids = list(self.flow_on.coords['flow'].values)
-
-        # Guard: Sizing + Status not yet supported
+        all_status_ids = list(self.flow_on.coords['flow'].values)
         sizing_ids = self._sizing_flow_ids()
-        overlap = sizing_ids & set(status_ids)
+        overlap = sizing_ids & set(all_status_ids)
+
+        # Dispatch status+sizing flows to dedicated method
         if overlap:
-            raise NotImplementedError(f'Sizing + Status combo not yet supported on flows: {sorted(overlap)}')
+            self._constrain_flow_rates_status_sizing(sorted(overlap))
+
+        # Status-only flows (fixed size)
+        status_ids = [fid for fid in all_status_ids if fid not in overlap]
+        if not status_ids:
+            return
 
         fr = self.flow_rate.sel(flow=status_ids)
         size = ds.size.sel(flow=status_ids)
@@ -265,6 +270,38 @@ class FlowSystemModel:
         if stat_profile.any():
             mask = stat_profile.broadcast_like(fp) & fp.notnull()
             self.m.add_constraints(fr == size * fp * self.flow_on, name='flow_fix_status', mask=mask)
+
+    def _constrain_flow_rates_status_sizing(self, flow_ids: list[str]) -> None:
+        """Apply big-M flow rate bounds for flows with both Status and Sizing.
+
+        Three constraints decouple the binary on/off from the continuous size:
+          P <= on * M⁺          (big-M: forces on=1 when P>0)
+          P <= S  * rel_ub      (rate limited by invested size)
+          P >= (on - 1) * M⁻ + S * rel_lb  (enforces minimum when on=1)
+
+        Where M⁺ = max_size * rel_ub, M⁻ = max_size * rel_lb.
+
+        Args:
+            flow_ids: Flows that have both Status and Sizing.
+        """
+        ds = self.data.flows
+        assert ds.sizing_max is not None
+
+        fr = self.flow_rate.sel(flow=flow_ids)
+        on = self.flow_on.sel(flow=flow_ids)
+        fs = self.flow_size.sel(flow=flow_ids)
+        rl = ds.rel_lb.sel(flow=flow_ids)
+        ru = ds.rel_ub.sel(flow=flow_ids)
+
+        # max_size lives on the sizing_flow dim — rename and select
+        max_size = ds.sizing_max.rename({'sizing_flow': 'flow'}).sel(flow=flow_ids)
+
+        big_m_ub = max_size * ru  # M⁺
+        big_m_lb = max_size * rl  # M⁻
+
+        self.m.add_constraints(fr <= on * big_m_ub, name='flow_ub_status_sizing_bigm')
+        self.m.add_constraints(fr <= fs * ru, name='flow_ub_status_sizing_size')
+        self.m.add_constraints(fr >= (on - 1) * big_m_lb + fs * rl, name='flow_lb_status_sizing')
 
     def _constrain_sizing(self) -> None:
         """Constrain sizing variables: S in [min, max] gated by indicator."""

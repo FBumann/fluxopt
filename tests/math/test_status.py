@@ -11,7 +11,7 @@ from datetime import datetime
 import numpy as np
 from numpy.testing import assert_allclose
 
-from fluxopt import Bus, Effect, Flow, Port, Status, solve
+from fluxopt import Bus, Effect, Flow, Port, Sizing, Status, solve
 
 
 def _ts(n: int) -> list[datetime]:
@@ -327,3 +327,58 @@ class TestPrior:
             ],
         )
         assert_allclose(result.objective, 120.0, rtol=1e-5)
+
+
+class TestStatusSizing:
+    def test_semi_continuous_with_optimized_size(self):
+        """Status + Sizing: semi-continuous behavior with optimized capacity.
+
+        Src: Sizing(20, 200, mandatory=True), rel_min=0.5, Status(), 1€/MWh.
+        Backup: 10€/MWh.
+        Demand: [30, 80, 0].
+
+        Solver must invest in size and respect semi-continuous bounds.
+        t=0: demand=30. Source min = 0.5*S. If S=80, min=40 > 30 → source at 40,
+             waste absorbs 10, cost=40. Cheaper than backup (30*10=300).
+        t=1: demand=80. Source at 80, cost=80.
+        t=2: demand=0. Source off, cost=0.
+        Optimal size=80 (just enough for peak). Total operational: 40+80=120.
+        """
+        result = solve(
+            _ts(3),
+            buses=[Bus('Heat')],
+            effects=[Effect('costs', is_objective=True)],
+            ports=[
+                Port('Demand', exports=[Flow(bus='Heat', size=1, fixed_relative_profile=[30, 80, 0])]),
+                Port(
+                    'Src',
+                    imports=[
+                        Flow(
+                            bus='Heat',
+                            size=Sizing(20, 200, mandatory=True),
+                            relative_minimum=0.5,
+                            effects_per_flow_hour={'costs': 1},
+                            status=Status(),
+                        )
+                    ],
+                ),
+                Port('Backup', imports=[Flow(bus='Heat', effects_per_flow_hour={'costs': 10})]),
+                _waste('Heat'),
+            ],
+        )
+        rates = result.flow_rate('Src(Heat)').values
+        on = result.solution['flow--on'].sel(flow='Src(Heat)').values
+        size = float(result.sizes.sel(flow='Src(Heat)').values)
+
+        # Size must be at least 80 to cover peak demand
+        assert size >= 80.0 - 1e-5
+
+        # t=2: off
+        assert_allclose(on[2], 0.0, atol=1e-5)
+        assert_allclose(rates[2], 0.0, atol=1e-5)
+
+        # t=0, t=1: on and respecting minimum
+        assert_allclose(on[0], 1.0, atol=1e-5)
+        assert_allclose(on[1], 1.0, atol=1e-5)
+        assert rates[0] >= 0.5 * size - 1e-5
+        assert rates[1] >= 80.0 - 1e-5
