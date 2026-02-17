@@ -127,7 +127,7 @@ print(result.charge_state('battery'))
 | `id` | `str` | required | Storage identifier |
 | `charging` | `Flow` | required | Charging flow |
 | `discharging` | `Flow` | required | Discharging flow |
-| `capacity` | `float \| None` | `None` | Maximum stored energy [MWh] |
+| `capacity` | `float \| Sizing \| None` | `None` | Maximum stored energy [MWh] or [investment](sizing.md) |
 | `eta_charge` | `TimeSeries` | `1.0` | Charging efficiency |
 | `eta_discharge` | `TimeSeries` | `1.0` | Discharging efficiency |
 | `relative_loss_per_hour` | `TimeSeries` | `0.0` | Self-discharge rate [1/h] |

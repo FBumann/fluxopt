@@ -9,17 +9,27 @@ The model minimizes the total value of the designated objective effect \(k^*\)
 \min \; \Phi_{k^*}
 \]
 
-The total effect aggregates per-timestep contributions weighted by timestep weights:
+The total effect aggregates per-timestep contributions, weights, and investment:
 
 \[
-\Phi_k = \sum_{t \in \mathcal{T}} \Phi_{k,t} \cdot w_t
+\Phi_k = \sum_{t \in \mathcal{T}} \Phi_{k,t} \cdot w_t + \Phi_k^{\text{invest,direct}} + \Phi_k^{\text{invest,cross}}
 \]
 
-Each per-timestep effect is the sum of flow contributions scaled by duration:
+Each per-timestep effect is the sum of flow contributions, status costs, and
+cross-effect contributions:
 
 \[
-\Phi_{k,t} = \sum_{f \in \mathcal{F}} c_{f,k,t} \cdot P_{f,t} \cdot \Delta t_t
+\Phi_{k,t} = \underbrace{\sum_{f} c_{f,k,t} \cdot P_{f,t} \cdot \Delta t_t}_{\text{flow}} + \underbrace{\sum_{f} r_{f,k,t} \cdot \sigma_{f,t} \cdot \Delta t_t}_{\text{running}} + \underbrace{\sum_{f} u_{f,k,t} \cdot \tau^+_{f,t}}_{\text{startup}} + \underbrace{\sum_{j} \alpha_{k,j,t} \cdot \Phi_{j,t}}_{\text{cross-effect}}
 \]
+
+Investment effects feed into the total via per-size and fixed costs:
+
+\[
+\Phi_k^{\text{invest,direct}} = \sum_{f} \gamma_{f,k} \cdot S_f + \sum_{f} \phi_{f,k} \cdot y_f + \sum_{s} \gamma_{s,k} \cdot S_s + \sum_{s} \phi_{s,k} \cdot y_s
+\]
+
+See [Sizing](sizing.md), [Status](status.md), and [Effects](effects.md) for
+full formulations of each term.
 
 ## Parameters
 

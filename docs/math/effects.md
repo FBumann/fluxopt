@@ -17,12 +17,48 @@ Each effect accumulates contributions from all flows at each timestep:
 The coefficient \(c_{f,k,t}\) specifies how much of effect \(k\) is produced per
 flow-hour of flow \(f\) (e.g., €/MWh for cost, kg/MWh for emissions).
 
-## Total Aggregation
+## Cross-Effect Contributions
 
-The total effect sums per-timestep values with optional weights:
+An effect can include a weighted fraction of another effect's value via
+`contribution_from`. This enables patterns like carbon pricing (CO₂ → cost)
+or transitive chains (PE → CO₂ → cost).
+
+### Per-Timestep
+
+The per-timestep tracking becomes:
 
 \[
-\Phi_k = \sum_{t \in \mathcal{T}} \Phi_{k,t} \cdot w_t \quad \forall \, k \in \mathcal{K}
+\Phi_{k,t} = \underbrace{\sum_{f \in \mathcal{F}} c_{f,k,t} \cdot P_{f,t} \cdot \Delta t_t}_{\text{direct flow contributions}} + \underbrace{\sum_{j \in \mathcal{K}} \alpha_{k,j,t} \cdot \Phi_{j,t}}_{\text{cross-effect contributions}} \quad \forall \, k, t
+\]
+
+where \(\alpha_{k,j,t}\) is the contribution factor from source effect \(j\) to
+target effect \(k\) at timestep \(t\). This factor can be time-varying
+(`contribution_from_per_hour`) or constant (`contribution_from`, applied to both
+invest and per-hour).
+
+### Investment
+
+Cross-effect contributions also apply to investment costs:
+
+\[
+\Phi_k^{\text{invest,cross}} = \sum_{j \in \mathcal{K}} \alpha_{k,j} \cdot \Phi_j^{\text{invest,direct}}
+\]
+
+where \(\alpha_{k,j}\) is the scalar contribution factor from `contribution_from`,
+and \(\Phi_j^{\text{invest,direct}}\) is the direct investment cost of effect \(j\)
+(from `Sizing.effects_per_size` and `Sizing.effects_fixed`).
+
+### Validation
+
+Self-references (\(\alpha_{k,k}\)) and circular dependencies
+(\(k \to j \to \cdots \to k\)) are rejected at build time to prevent singular systems.
+
+## Total Aggregation
+
+The total effect sums per-timestep values, weights, and investment contributions:
+
+\[
+\Phi_k = \sum_{t \in \mathcal{T}} \Phi_{k,t} \cdot w_t + \Phi_k^{\text{invest,direct}} + \Phi_k^{\text{invest,cross}} \quad \forall \, k \in \mathcal{K}
 \]
 
 Weights \(w_t\) allow scaling timesteps (e.g., a representative week scaled to a year).
@@ -54,6 +90,8 @@ This enforces per-hour limits (e.g., maximum hourly emissions).
 | \(\Phi_{k,t}\) | Per-timestep effect variable | `effect_per_timestep[effect, time]` |
 | \(\Phi_k\) | Total effect variable | `effect_total[effect]` |
 | \(c_{f,k,t}\) | Effect coefficient per flow-hour | `Flow.effects_per_flow_hour` |
+| \(\alpha_{k,j,t}\) | Cross-effect contribution factor (per hour) | `Effect.contribution_from_per_hour` |
+| \(\alpha_{k,j}\) | Cross-effect contribution factor (scalar) | `Effect.contribution_from` |
 | \(P_{f,t}\) | Flow rate variable | `flow_rate[flow, time]` |
 | \(\Delta t_t\) | Timestep duration | dt |
 | \(w_t\) | Timestep weight | weights |
@@ -64,7 +102,9 @@ This enforces per-hour limits (e.g., maximum hourly emissions).
 
 See [Notation](notation.md) for the full symbol table.
 
-## Example
+## Examples
+
+### Direct effects
 
 A system with two effects — cost (objective) and CO₂ (capped at 1000 kg):
 
@@ -85,3 +125,22 @@ At timestep \(t\) with \(P_{\text{gas},t} = 5\) MW and \(\Delta t = 1\) h:
 
 - \(\Phi_{\text{cost},t} = 30 \times 5 \times 1 = 150\) €
 - \(\Phi_{\text{CO₂},t} = 0.2 \times 5 \times 1 = 1.0\) kg
+
+### Carbon pricing via `contribution_from`
+
+CO₂ priced at 50 €/t into the cost effect:
+
+```python
+effects = [
+    Effect("cost", is_objective=True, contribution_from={"co2": 50}),
+    Effect("co2", unit="kg"),
+]
+```
+
+With \(\alpha_{\text{cost,co2}} = 50\), the per-timestep cost becomes:
+
+\[
+\Phi_{\text{cost},t} = c_{\text{cost}} \cdot P_t \cdot \Delta t + 50 \cdot \Phi_{\text{co2},t}
+\]
+
+The CO₂ total itself is **not** affected — `contribution_from` is one-directional.

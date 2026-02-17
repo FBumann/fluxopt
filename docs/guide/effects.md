@@ -63,6 +63,63 @@ co2 = Effect('co2', unit='kg', maximum_per_hour=50)
 co2 = Effect('co2', unit='kg', maximum_per_hour=[50, 40, 60, 50])
 ```
 
+## Cross-Effect Contributions
+
+An effect can include a weighted contribution from another effect using
+`contribution_from`. This is useful for carbon pricing, primary energy factors,
+or any chain where one tracked quantity feeds into another.
+
+### Scalar (investment + per-hour)
+
+A scalar factor applies to both investment and per-timestep values:
+
+```python
+effects = [
+    Effect('cost', is_objective=True, contribution_from={'co2': 50}),
+    Effect('co2', unit='kg'),
+]
+```
+
+Here, every kg of CO₂ adds 50 € to cost — both for operational emissions and
+investment-related emissions (e.g., from `Sizing.effects_per_size`).
+
+### Time-Varying (per-hour only)
+
+Use `contribution_from_per_hour` for time-varying factors that override the
+scalar for the per-timestep constraint:
+
+```python
+effects = [
+    Effect(
+        'cost',
+        is_objective=True,
+        contribution_from={'co2': 50},  # scalar for investment
+        contribution_from_per_hour={'co2': [40, 50, 60]},  # time-varying for operations
+    ),
+    Effect('co2', unit='kg'),
+]
+```
+
+### Transitive Chains
+
+Contributions chain transitively. A PE → CO₂ → cost chain is modeled as:
+
+```python
+effects = [
+    Effect('cost', is_objective=True, contribution_from={'co2': 50}),
+    Effect('co2', unit='kg', contribution_from={'pe': 0.3}),
+    Effect('pe', unit='kWh'),
+]
+```
+
+### Restrictions
+
+- **No self-references**: an effect cannot reference itself
+- **No cycles**: `cost → co2 → cost` is rejected at build time
+
+See [Effects (Math)](../math/effects.md#cross-effect-contributions) for the
+formulation.
+
 ## Accessing Results
 
 After solving, the `SolvedModel` provides several views into effect values:
@@ -140,3 +197,5 @@ print(result.contributions)
 | `minimum_total` | `float \| None` | `None` | Lower bound on total |
 | `maximum_per_hour` | `TimeSeries \| None` | `None` | Upper bound per timestep |
 | `minimum_per_hour` | `TimeSeries \| None` | `None` | Lower bound per timestep |
+| `contribution_from` | `dict[str, float]` | `{}` | Scalar cross-effect factors (invest + per-hour) |
+| `contribution_from_per_hour` | `dict[str, TimeSeries]` | `{}` | Time-varying cross-effect factors (per-hour only) |
