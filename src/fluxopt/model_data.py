@@ -178,56 +178,58 @@ class FlowsData:
         flow_ids = [f.id for f in flows]
         effect_ids = [e.id for e in effects]
         n_time = len(time)
-        n_flows = len(flows)
         n_effects = len(effect_ids)
 
         bound_type: list[str] = []
-        rel_lb = np.zeros((n_flows, n_time))
-        rel_ub = np.zeros((n_flows, n_time))
-        fixed_profile = np.full((n_flows, n_time), np.nan)
-        size = np.full(n_flows, np.nan)
-        effect_coeff = np.zeros((n_flows, n_effects, n_time))
+        rel_lbs: list[xr.DataArray] = []
+        rel_ubs: list[xr.DataArray] = []
+        profiles: list[xr.DataArray] = []
+        size_vals = np.full(len(flows), np.nan)
+        effect_coeffs: list[xr.DataArray] = []
         sizing_items: list[tuple[str, Sizing]] = []
 
+        nan_time = xr.DataArray(np.full(n_time, np.nan), dims=['time'], coords={'time': time})
+
         for i, f in enumerate(flows):
-            lb_da = as_dataarray(f.relative_minimum, {'time': time})
-            ub_da = as_dataarray(f.relative_maximum, {'time': time})
-            rel_lb[i] = lb_da.values
-            rel_ub[i] = ub_da.values
+            rel_lbs.append(as_dataarray(f.relative_minimum, {'time': time}))
+            rel_ubs.append(as_dataarray(f.relative_maximum, {'time': time}))
 
             if isinstance(f.size, Sizing):
                 sizing_items.append((f.id, f.size))
             elif f.size is not None:
-                size[i] = float(f.size)
+                size_vals[i] = float(f.size)
 
             if f.fixed_relative_profile is not None:
-                profile = as_dataarray(f.fixed_relative_profile, {'time': time})
-                fixed_profile[i] = profile.values
+                profiles.append(as_dataarray(f.fixed_relative_profile, {'time': time}))
                 bound_type.append('profile')
             elif f.size is None:
+                profiles.append(nan_time)
                 bound_type.append('unsized')
             else:
+                profiles.append(nan_time)
                 bound_type.append('bounded')
 
+            # Effect coefficients for this flow
+            ec = xr.DataArray(
+                np.zeros((n_effects, n_time)),
+                dims=['effect', 'time'],
+                coords={'effect': effect_ids, 'time': time},
+            )
             for effect_label, factor in f.effects_per_flow_hour.items():
                 if effect_label in effect_ids:
-                    j = effect_ids.index(effect_label)
-                    factor_da = as_dataarray(factor, {'time': time})
-                    effect_coeff[i, j] = factor_da.values
+                    ec.loc[effect_label] = as_dataarray(factor, {'time': time})
+            effect_coeffs.append(ec)
 
+        flow_idx = pd.Index(flow_ids, name='flow')
         sz = _SizingArrays.build(sizing_items, effect_ids, dim='sizing_flow')
 
         return cls(
             bound_type=xr.DataArray(bound_type, dims=['flow'], coords={'flow': flow_ids}),
-            rel_lb=xr.DataArray(rel_lb, dims=['flow', 'time'], coords={'flow': flow_ids, 'time': time}),
-            rel_ub=xr.DataArray(rel_ub, dims=['flow', 'time'], coords={'flow': flow_ids, 'time': time}),
-            fixed_profile=xr.DataArray(fixed_profile, dims=['flow', 'time'], coords={'flow': flow_ids, 'time': time}),
-            size=xr.DataArray(size, dims=['flow'], coords={'flow': flow_ids}),
-            effect_coeff=xr.DataArray(
-                effect_coeff,
-                dims=['flow', 'effect', 'time'],
-                coords={'flow': flow_ids, 'effect': effect_ids, 'time': time},
-            ),
+            rel_lb=xr.concat(rel_lbs, dim=flow_idx),
+            rel_ub=xr.concat(rel_ubs, dim=flow_idx),
+            fixed_profile=xr.concat(profiles, dim=flow_idx),
+            size=xr.DataArray(size_vals, dims=['flow'], coords={'flow': flow_ids}),
+            effect_coeff=xr.concat(effect_coeffs, dim=flow_idx),
             sizing_min=sz.min,
             sizing_max=sz.max,
             sizing_mandatory=sz.mandatory,
@@ -319,33 +321,33 @@ class ConvertersData:
 
         max_eq = max(len(c.conversion_factors) for c in converters)
         n_time = len(time)
+        eq_idx_list = list(range(max_eq))
 
-        coeff = np.full((len(conv_ids), max_eq, len(all_flow_ids), n_time), np.nan)
-        eq_mask = np.zeros((len(conv_ids), max_eq), dtype=bool)
+        eq_mask_rows: list[np.ndarray] = []
+        coeff_slices: list[xr.DataArray] = []
 
-        for ci, conv in enumerate(converters):
-            for eq_idx, equation in enumerate(conv.conversion_factors):
-                eq_mask[ci, eq_idx] = True
+        for conv in converters:
+            mask_row = np.zeros(max_eq, dtype=bool)
+            conv_coeff = xr.DataArray(
+                np.full((max_eq, len(all_flow_ids), n_time), np.nan),
+                dims=['eq_idx', 'flow', 'time'],
+                coords={'eq_idx': eq_idx_list, 'flow': all_flow_ids, 'time': time},
+            )
+            for eq_i, equation in enumerate(conv.conversion_factors):
+                mask_row[eq_i] = True
                 for flow_obj, factor in equation.items():
-                    fi = all_flow_ids.index(flow_obj.id)
-                    factor_da = as_dataarray(factor, {'time': time})
-                    coeff[ci, eq_idx, fi, :] = factor_da.values
+                    conv_coeff.loc[eq_i, flow_obj.id] = as_dataarray(factor, {'time': time})
+            eq_mask_rows.append(mask_row)
+            coeff_slices.append(conv_coeff)
+
+        conv_idx = pd.Index(conv_ids, name='converter')
 
         return cls(
-            flow_coeff=xr.DataArray(
-                coeff,
-                dims=['converter', 'eq_idx', 'flow', 'time'],
-                coords={
-                    'converter': conv_ids,
-                    'eq_idx': list(range(max_eq)),
-                    'flow': all_flow_ids,
-                    'time': time,
-                },
-            ),
+            flow_coeff=xr.concat(coeff_slices, dim=conv_idx),
             eq_mask=xr.DataArray(
-                eq_mask,
+                np.array(eq_mask_rows),
                 dims=['converter', 'eq_idx'],
-                coords={'converter': conv_ids, 'eq_idx': list(range(max_eq))},
+                coords={'converter': conv_ids, 'eq_idx': eq_idx_list},
             ),
         )
 
@@ -400,30 +402,32 @@ class EffectsData:
 
         min_total = np.full(n, np.nan)
         max_total = np.full(n, np.nan)
-        min_per_hour = np.full((n, n_time), np.nan)
-        max_per_hour = np.full((n, n_time), np.nan)
+        min_per_hours: list[xr.DataArray] = []
+        max_per_hours: list[xr.DataArray] = []
         is_objective = np.zeros(n, dtype=bool)
+
+        nan_time = xr.DataArray(np.full(n_time, np.nan), dims=['time'], coords={'time': time})
 
         for i, e in enumerate(effects):
             if e.minimum_total is not None:
                 min_total[i] = e.minimum_total
             if e.maximum_total is not None:
                 max_total[i] = e.maximum_total
-            if e.minimum_per_hour is not None:
-                min_per_hour[i] = as_dataarray(e.minimum_per_hour, {'time': time}).values
-            if e.maximum_per_hour is not None:
-                max_per_hour[i] = as_dataarray(e.maximum_per_hour, {'time': time}).values
+            min_per_hours.append(
+                as_dataarray(e.minimum_per_hour, {'time': time}) if e.minimum_per_hour is not None else nan_time
+            )
+            max_per_hours.append(
+                as_dataarray(e.maximum_per_hour, {'time': time}) if e.maximum_per_hour is not None else nan_time
+            )
             is_objective[i] = e.is_objective
+
+        effect_idx = pd.Index(effect_ids, name='effect')
 
         return cls(
             min_total=xr.DataArray(min_total, dims=['effect'], coords={'effect': effect_ids}),
             max_total=xr.DataArray(max_total, dims=['effect'], coords={'effect': effect_ids}),
-            min_per_hour=xr.DataArray(
-                min_per_hour, dims=['effect', 'time'], coords={'effect': effect_ids, 'time': time}
-            ),
-            max_per_hour=xr.DataArray(
-                max_per_hour, dims=['effect', 'time'], coords={'effect': effect_ids, 'time': time}
-            ),
+            min_per_hour=xr.concat(min_per_hours, dim=effect_idx),
+            max_per_hour=xr.concat(max_per_hours, dim=effect_idx),
             is_objective=xr.DataArray(is_objective, dims=['effect'], coords={'effect': effect_ids}),
             objective_effect=objective_effect,
         )
@@ -504,17 +508,15 @@ class StoragesData:
         effect_ids = [e.id for e in effects] if effects else []
         stor_ids = [s.id for s in storages]
         n = len(storages)
-        n_time = len(time)
-        n_extra = len(time_extra)
 
-        capacity = np.full(n, np.nan)
-        eta_c = np.ones((n, n_time))
-        eta_d = np.ones((n, n_time))
-        loss = np.zeros((n, n_time))
-        rel_cs_lb = np.zeros((n, n_extra))
-        rel_cs_ub = np.ones((n, n_extra))
-        initial_charge = np.zeros(n)
-        cyclic = np.zeros(n, dtype=bool)
+        capacity_vals = np.full(n, np.nan)
+        eta_cs: list[xr.DataArray] = []
+        eta_ds: list[xr.DataArray] = []
+        losses: list[xr.DataArray] = []
+        cs_lbs: list[xr.DataArray] = []
+        cs_ubs: list[xr.DataArray] = []
+        initial_charge_vals = np.zeros(n)
+        cyclic_vals = np.zeros(n, dtype=bool)
         charge_flow: list[str] = []
         discharge_flow: list[str] = []
         sizing_items: list[tuple[str, Sizing]] = []
@@ -523,41 +525,38 @@ class StoragesData:
             if isinstance(s.capacity, Sizing):
                 sizing_items.append((s.id, s.capacity))
             elif s.capacity is not None:
-                capacity[i] = s.capacity
+                capacity_vals[i] = s.capacity
 
-            eta_c[i] = as_dataarray(s.eta_charge, {'time': time}).values
-            eta_d[i] = as_dataarray(s.eta_discharge, {'time': time}).values
-            loss[i] = as_dataarray(s.relative_loss_per_hour, {'time': time}).values
+            eta_cs.append(as_dataarray(s.eta_charge, {'time': time}))
+            eta_ds.append(as_dataarray(s.eta_discharge, {'time': time}))
+            losses.append(as_dataarray(s.relative_loss_per_hour, {'time': time}))
 
-            # Charge state bounds — broadcast to time_extra (replicate last for extra point)
-            cs_lb_t = as_dataarray(s.relative_minimum_charge_state, {'time': time}).values
-            cs_ub_t = as_dataarray(s.relative_maximum_charge_state, {'time': time}).values
-            rel_cs_lb[i, :n_time] = cs_lb_t
-            rel_cs_lb[i, n_time:] = cs_lb_t[-1]
-            rel_cs_ub[i, :n_time] = cs_ub_t
-            rel_cs_ub[i, n_time:] = cs_ub_t[-1]
+            # Charge state bounds — extend to time_extra (replicate last for extra point)
+            cs_lb_da = as_dataarray(s.relative_minimum_charge_state, {'time': time})
+            cs_ub_da = as_dataarray(s.relative_maximum_charge_state, {'time': time})
+            cs_lbs.append(_extend_time_extra(cs_lb_da, time_extra))
+            cs_ubs.append(_extend_time_extra(cs_ub_da, time_extra))
 
             is_cyclic = s.initial_charge_state == 'cyclic'
-            cyclic[i] = is_cyclic
+            cyclic_vals[i] = is_cyclic
             if not is_cyclic:
-                initial_charge[i] = float(s.initial_charge_state) if s.initial_charge_state is not None else 0.0
+                initial_charge_vals[i] = float(s.initial_charge_state) if s.initial_charge_state is not None else 0.0
 
             charge_flow.append(s.charging.id)
             discharge_flow.append(s.discharging.id)
 
-        coords_time: dict[str, object] = {'storage': stor_ids, 'time': time}
-        coords_extra: dict[str, object] = {'storage': stor_ids, 'time_extra': time_extra}
+        stor_idx = pd.Index(stor_ids, name='storage')
         sz = _SizingArrays.build(sizing_items, effect_ids, dim='sizing_storage')
 
         return cls(
-            capacity=xr.DataArray(capacity, dims=['storage'], coords={'storage': stor_ids}),
-            eta_c=xr.DataArray(eta_c, dims=['storage', 'time'], coords=coords_time),
-            eta_d=xr.DataArray(eta_d, dims=['storage', 'time'], coords=coords_time),
-            loss=xr.DataArray(loss, dims=['storage', 'time'], coords=coords_time),
-            rel_cs_lb=xr.DataArray(rel_cs_lb, dims=['storage', 'time_extra'], coords=coords_extra),
-            rel_cs_ub=xr.DataArray(rel_cs_ub, dims=['storage', 'time_extra'], coords=coords_extra),
-            initial_charge=xr.DataArray(initial_charge, dims=['storage'], coords={'storage': stor_ids}),
-            cyclic=xr.DataArray(cyclic, dims=['storage'], coords={'storage': stor_ids}),
+            capacity=xr.DataArray(capacity_vals, dims=['storage'], coords={'storage': stor_ids}),
+            eta_c=xr.concat(eta_cs, dim=stor_idx),
+            eta_d=xr.concat(eta_ds, dim=stor_idx),
+            loss=xr.concat(losses, dim=stor_idx),
+            rel_cs_lb=xr.concat(cs_lbs, dim=stor_idx),
+            rel_cs_ub=xr.concat(cs_ubs, dim=stor_idx),
+            initial_charge=xr.DataArray(initial_charge_vals, dims=['storage'], coords={'storage': stor_ids}),
+            cyclic=xr.DataArray(cyclic_vals, dims=['storage'], coords={'storage': stor_ids}),
             charge_flow=xr.DataArray(charge_flow, dims=['storage'], coords={'storage': stor_ids}),
             discharge_flow=xr.DataArray(discharge_flow, dims=['storage'], coords={'storage': stor_ids}),
             sizing_min=sz.min,
@@ -787,6 +786,17 @@ def _validate_system(
         if flow.id in flow_seen:
             raise ValueError(f'Duplicate flow id: {flow.id!r}')
         flow_seen.add(flow.id)
+
+
+def _extend_time_extra(da: xr.DataArray, time_extra: pd.Index) -> xr.DataArray:
+    """Extend a time-dimensioned DataArray to time_extra (N+1 points).
+
+    Args:
+        da: DataArray with 'time' dimension.
+        time_extra: N+1 time index.
+    """
+    vals = np.append(da.values, da.isel(time=-1).item())
+    return xr.DataArray(vals, dims=['time_extra'], coords={'time_extra': time_extra})
 
 
 def _compute_time_extra(time: pd.Index, dt: xr.DataArray) -> pd.Index:
