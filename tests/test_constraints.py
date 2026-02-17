@@ -14,7 +14,11 @@ import pytest
 import xarray as xr
 from linopy import Model
 
-from fluxopt.constraints import add_accumulation_constraints
+from fluxopt.constraints2 import (
+    add_accumulation_constraints,
+    add_min_downtime_constraint,
+    add_min_uptime_constraint,
+)
 
 
 @pytest.fixture
@@ -184,3 +188,267 @@ class TestAddAccumulationConstraint:
 
         s = stock.solution.values
         np.testing.assert_allclose(s, [50, 50, 50], atol=1e-6)
+
+
+class TestMinUptime:
+    def test_basic_min_uptime(self):
+        """Unit starts off, forced startup at t=2, must stay on for 3 periods."""
+        m = Model()
+        time = xr.DataArray(range(6), dims=['time'])
+        on = m.add_variables(binary=True, coords=[time], name='on')
+        startup = m.add_variables(binary=True, coords=[time], name='startup')
+        shutdown = m.add_variables(binary=True, coords=[time], name='shutdown')
+
+        # Transition: on[t] = on[t-1] + startup[t] - shutdown[t], initial=0
+        add_accumulation_constraints(
+            m,
+            on,
+            startup,
+            shutdown,
+            initial=0,
+            name='transition',
+        )
+
+        # Force startup at t=2
+        m.add_constraints(startup.sel(time=2) >= 1, name='force_start')
+
+        # Min uptime = 3
+        add_min_uptime_constraint(m, on, startup, periods=3)
+
+        # Minimize on-time → unit turns off as soon as allowed
+        m.add_objective(on.sum())
+        m.solve(solver_name='highs', io_api='direct')
+
+        np.testing.assert_allclose(
+            on.solution.values,
+            [0, 0, 1, 1, 1, 0],
+            atol=1e-6,
+        )
+
+    def test_initial_periods(self):
+        """Unit was on for 1 period, min_up=3, must stay on for 2 more."""
+        m = Model()
+        time = xr.DataArray(range(4), dims=['time'])
+        on = m.add_variables(binary=True, coords=[time], name='on')
+        startup = m.add_variables(binary=True, coords=[time], name='startup')
+        shutdown = m.add_variables(binary=True, coords=[time], name='shutdown')
+
+        add_accumulation_constraints(
+            m,
+            on,
+            startup,
+            shutdown,
+            initial=1,
+            name='transition',
+        )
+
+        cons = add_min_uptime_constraint(
+            m,
+            on,
+            startup,
+            periods=3,
+            initial_periods=1,
+        )
+
+        assert len(cons) == 2  # rolling + initial pin
+
+        m.add_objective(on.sum())
+        m.solve(solver_name='highs', io_api='direct')
+
+        # Must stay on for 2 more periods (remain = 3 - 1 = 2)
+        np.testing.assert_allclose(
+            on.solution.values,
+            [1, 1, 0, 0],
+            atol=1e-6,
+        )
+
+    def test_no_initial_pinning(self):
+        """Default initial_periods=0 returns a single constraint."""
+        m = Model()
+        time = xr.DataArray(range(4), dims=['time'])
+        on = m.add_variables(binary=True, coords=[time], name='on')
+        startup = m.add_variables(binary=True, coords=[time], name='startup')
+
+        result = add_min_uptime_constraint(m, on, startup, periods=2)
+
+        assert len(result) == 1
+
+    def test_batched_heterogeneous(self):
+        """Two elements with different min uptime: A=2, B=3."""
+        m = Model()
+        time = xr.DataArray(range(8), dims=['time'])
+        elem = xr.DataArray(['A', 'B'], dims=['elem'])
+        on = m.add_variables(binary=True, coords=[elem, time], name='on')
+        startup = m.add_variables(binary=True, coords=[elem, time], name='startup')
+        shutdown = m.add_variables(binary=True, coords=[elem, time], name='shutdown')
+
+        add_accumulation_constraints(
+            m,
+            on,
+            startup,
+            shutdown,
+            initial=0,
+            name='transition',
+        )
+        m.add_constraints(startup.sel(time=2) >= 1, name='force_start')
+
+        periods = xr.DataArray([2, 3], dims=['elem'], coords={'elem': ['A', 'B']})
+        add_min_uptime_constraint(m, on, startup, periods)
+
+        m.add_objective(on.sum())
+        m.solve(solver_name='highs', io_api='direct')
+
+        # A stays on for 2 periods (t=2,3), B for 3 (t=2,3,4)
+        np.testing.assert_allclose(
+            on.solution.sel(elem='A').values,
+            [0, 0, 1, 1, 0, 0, 0, 0],
+            atol=1e-6,
+        )
+        np.testing.assert_allclose(
+            on.solution.sel(elem='B').values,
+            [0, 0, 1, 1, 1, 0, 0, 0],
+            atol=1e-6,
+        )
+
+    def test_batched_initial_periods(self):
+        """Batched with per-element initial_periods: A=1, B=1; min_up A=3, B=4."""
+        m = Model()
+        time = xr.DataArray(range(6), dims=['time'])
+        elem = xr.DataArray(['A', 'B'], dims=['elem'])
+        on = m.add_variables(binary=True, coords=[elem, time], name='on')
+        startup = m.add_variables(binary=True, coords=[elem, time], name='startup')
+        shutdown = m.add_variables(binary=True, coords=[elem, time], name='shutdown')
+
+        add_accumulation_constraints(
+            m,
+            on,
+            startup,
+            shutdown,
+            initial=1,
+            name='transition',
+        )
+
+        periods = xr.DataArray([3, 4], dims=['elem'], coords={'elem': ['A', 'B']})
+        initial = xr.DataArray([1, 1], dims=['elem'], coords={'elem': ['A', 'B']})
+        add_min_uptime_constraint(m, on, startup, periods, initial_periods=initial)
+
+        m.add_objective(on.sum())
+        m.solve(solver_name='highs', io_api='direct')
+
+        # A: remain=2 → on[0],on[1] pinned; B: remain=3 → on[0],on[1],on[2] pinned
+        np.testing.assert_allclose(
+            on.solution.sel(elem='A').values,
+            [1, 1, 0, 0, 0, 0],
+            atol=1e-6,
+        )
+        np.testing.assert_allclose(
+            on.solution.sel(elem='B').values,
+            [1, 1, 1, 0, 0, 0],
+            atol=1e-6,
+        )
+
+
+class TestMinDowntime:
+    def test_basic_min_downtime(self):
+        """Unit starts on, forced shutdown at t=2, must stay off for 3 periods."""
+        m = Model()
+        time = xr.DataArray(range(6), dims=['time'])
+        on = m.add_variables(binary=True, coords=[time], name='on')
+        startup = m.add_variables(binary=True, coords=[time], name='startup')
+        shutdown = m.add_variables(binary=True, coords=[time], name='shutdown')
+
+        add_accumulation_constraints(
+            m,
+            on,
+            startup,
+            shutdown,
+            initial=1,
+            name='transition',
+        )
+
+        m.add_constraints(shutdown.sel(time=2) >= 1, name='force_stop')
+
+        add_min_downtime_constraint(m, on, shutdown, periods=3)
+
+        # Maximize on-time → unit turns back on as soon as allowed
+        m.add_objective(-on.sum())
+        m.solve(solver_name='highs', io_api='direct')
+
+        np.testing.assert_allclose(
+            on.solution.values,
+            [1, 1, 0, 0, 0, 1],
+            atol=1e-6,
+        )
+
+    def test_initial_periods(self):
+        """Unit was off for 1 period, min_down=3, must stay off for 2 more."""
+        m = Model()
+        time = xr.DataArray(range(4), dims=['time'])
+        on = m.add_variables(binary=True, coords=[time], name='on')
+        startup = m.add_variables(binary=True, coords=[time], name='startup')
+        shutdown = m.add_variables(binary=True, coords=[time], name='shutdown')
+
+        add_accumulation_constraints(
+            m,
+            on,
+            startup,
+            shutdown,
+            initial=0,
+            name='transition',
+        )
+
+        cons = add_min_downtime_constraint(
+            m,
+            on,
+            shutdown,
+            periods=3,
+            initial_periods=1,
+        )
+
+        assert len(cons) == 2  # rolling + initial pin
+
+        # Maximize on-time
+        m.add_objective(-on.sum())
+        m.solve(solver_name='highs', io_api='direct')
+
+        np.testing.assert_allclose(
+            on.solution.values,
+            [0, 0, 1, 1],
+            atol=1e-6,
+        )
+
+
+class TestTransitionViaAccumulation:
+    def test_transition_is_accumulation(self):
+        """Transition on[t] = on[t-1] + startup[t] - shutdown[t] via accumulation."""
+        m = Model()
+        time = xr.DataArray(range(4), dims=['time'])
+        on = m.add_variables(binary=True, coords=[time], name='on')
+        startup = m.add_variables(binary=True, coords=[time], name='startup')
+        shutdown = m.add_variables(binary=True, coords=[time], name='shutdown')
+
+        add_accumulation_constraints(
+            m,
+            on,
+            startup,
+            shutdown,
+            initial=0,
+            name='transition',
+        )
+
+        # Mutual exclusion: can't start and stop in the same period
+        m.add_constraints(startup + shutdown <= 1, name='mutex')
+
+        # Fix startup at t=1, shutdown at t=3
+        m.add_constraints(startup.sel(time=1) >= 1, name='start_t1')
+        m.add_constraints(shutdown.sel(time=3) >= 1, name='stop_t3')
+
+        m.add_objective(on.sum())
+        m.solve(solver_name='highs', io_api='direct')
+
+        # on = [0, 1, 1, 0]
+        np.testing.assert_allclose(
+            on.solution.values,
+            [0, 1, 1, 0],
+            atol=1e-6,
+        )
