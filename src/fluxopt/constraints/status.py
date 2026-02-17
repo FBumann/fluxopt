@@ -58,6 +58,7 @@ def add_duration_tracking(
     dt: xr.DataArray,
     *,
     name: str,
+    element_dim: str = 'flow',
     dim: str = 'time',
     minimum: xr.DataArray | None = None,
     maximum: xr.DataArray | None = None,
@@ -73,6 +74,7 @@ def add_duration_tracking(
         state: Binary state variable with (element_dim, time) dims.
         dt: Timestep durations (time,).
         name: Base name for created variables and constraints.
+        element_dim: Element dimension name in state.
         dim: Temporal dimension name.
         minimum: Minimum duration per element. NaN = no constraint.
         maximum: Maximum duration per element. NaN = no constraint.
@@ -81,7 +83,6 @@ def add_duration_tracking(
     Returns:
         Duration variable with same dims as state.
     """
-    element_dim = str(next(d for d in state.dims if d != dim))
     element_ids: xr.DataArray = state.coords[element_dim]
 
     # Big-M per element: total horizon + any previous carryover
@@ -92,7 +93,8 @@ def add_duration_tracking(
     # Variable upper bound: use maximum where provided, else mega
     upper: xr.DataArray = xr.where(maximum.notnull(), maximum, mega) if maximum is not None else mega
 
-    duration = m.add_variables(lower=0, upper=upper, coords=state.coords, name=name)
+    coords = [state.coords[element_dim], state.coords[dim]]
+    duration = m.add_variables(lower=0, upper=upper, coords=coords, name=name)
 
     # duration[e,t] <= state[e,t] * M[e]
     m.add_constraints(duration <= state * mega, name=f'{name}|ub')
@@ -153,7 +155,7 @@ def _add_initial_constraints(
     if not has_prev.any():
         return
 
-    prev_ids = [eid for eid, hp in zip(element_ids, has_prev.values, strict=False) if hp]
+    prev_ids = [str(eid) for eid, hp in zip(element_ids.values, has_prev.values, strict=False) if hp]
     prev_vals = previous.sel({element_dim: prev_ids})
     state_0 = state.sel({element_dim: prev_ids}).isel({dim: 0})
     dur_0 = duration.sel({element_dim: prev_ids}).isel({dim: 0})
@@ -167,7 +169,7 @@ def _add_initial_constraints(
         min_sub = minimum.sel({element_dim: prev_ids})
         needs_cont = (prev_vals > 0) & (prev_vals < min_sub)
         if needs_cont.any():
-            cont_ids = [eid for eid, nc in zip(prev_ids, needs_cont.values, strict=False) if nc]
+            cont_ids = [str(eid) for eid, nc in zip(prev_ids, needs_cont.values, strict=False) if nc]
             m.add_constraints(
                 state.sel({element_dim: cont_ids}).isel({dim: 0}) >= 1,
                 name=f'{name}|init_cont',

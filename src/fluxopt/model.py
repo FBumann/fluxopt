@@ -338,6 +338,15 @@ class FlowSystemModel:
         max_down = ds.status_max_downtime.rename({'status_flow': 'flow'})
         initial = ds.status_initial.rename({'status_flow': 'flow'})
 
+        prev_up = (
+            ds.status_previous_uptime.rename({'status_flow': 'flow'}) if ds.status_previous_uptime is not None else None
+        )
+        prev_down = (
+            ds.status_previous_downtime.rename({'status_flow': 'flow'})
+            if ds.status_previous_downtime is not None
+            else None
+        )
+
         # Previous state for initial transition (NaN → no constraint on t=0)
         has_initial = initial.notnull()
         previous_state = initial if has_initial.any() else None
@@ -363,6 +372,7 @@ class FlowSystemModel:
                 name='uptime',
                 minimum=min_up,
                 maximum=max_up,
+                previous=prev_up,
             )
 
         # Downtime tracking: state = 1 - on
@@ -375,6 +385,7 @@ class FlowSystemModel:
                 name='downtime',
                 minimum=min_down,
                 maximum=max_down,
+                previous=prev_down,
             )
 
     def _create_bus_balance(self) -> None:

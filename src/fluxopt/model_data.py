@@ -134,6 +134,8 @@ class _StatusArrays:
     initial: xr.DataArray | None = None  # (status_flow,) — NaN = free
     effects_running: xr.DataArray | None = None  # (status_flow, effect, time)
     effects_startup: xr.DataArray | None = None  # (status_flow, effect, time)
+    previous_uptime: xr.DataArray | None = None  # (status_flow,) — hours, NaN = no prior
+    previous_downtime: xr.DataArray | None = None  # (status_flow,) — hours, NaN = no prior
 
     def __post_init__(self) -> None:
         """Validate durations >= 0 and max >= min where both given."""
@@ -168,6 +170,8 @@ class _StatusArrays:
         effect_ids: list[str],
         time: pd.Index,
         dim: str,
+        prior_map: dict[str, list[float]] | None = None,
+        dt: float = 1.0,
     ) -> Self:
         """Validate Status objects and collect into DataArrays.
 
@@ -176,10 +180,15 @@ class _StatusArrays:
             effect_ids: Known effect ids for validation.
             time: Time index for effect arrays.
             dim: Dimension name for the resulting arrays.
+            prior_map: Flow id to prior flow rates (MW) before horizon.
+            dt: Scalar timestep duration in hours for prior duration computation.
         """
+        from fluxopt.constraints.status import compute_previous_duration
+
         if not items:
             return cls()
 
+        prior_map = prior_map or {}
         effect_set = set(effect_ids)
         n_effects = len(effect_ids)
         n_time = len(time)
@@ -190,6 +199,8 @@ class _StatusArrays:
         min_downs: list[float] = []
         max_downs: list[float] = []
         initials: list[float] = []
+        prev_ups: list[float] = []
+        prev_downs: list[float] = []
         er_slices: list[xr.DataArray] = []
         es_slices: list[xr.DataArray] = []
 
@@ -200,10 +211,16 @@ class _StatusArrays:
             min_downs.append(s.min_downtime if s.min_downtime is not None else np.nan)
             max_downs.append(s.max_downtime if s.max_downtime is not None else np.nan)
 
-            if s.initial_status is None:
-                initials.append(np.nan)
+            prior = prior_map.get(item_id)
+            if prior is not None:
+                initials.append(1.0 if prior[-1] > 0 else 0.0)
+                prior_da = xr.DataArray(prior, dims=['_prior_t'])
+                prev_ups.append(compute_previous_duration(prior_da, target_state=1, dt=dt))
+                prev_downs.append(compute_previous_duration(prior_da, target_state=0, dt=dt))
             else:
-                initials.append(1.0 if s.initial_status else 0.0)
+                initials.append(np.nan)
+                prev_ups.append(np.nan)
+                prev_downs.append(np.nan)
 
             # Effects per running hour — (effect, time)
             er = xr.DataArray(
@@ -232,6 +249,9 @@ class _StatusArrays:
         coords = {dim: ids}
         status_idx = pd.Index(ids, name=dim)
 
+        prev_up_arr = np.array(prev_ups)
+        prev_down_arr = np.array(prev_downs)
+
         return cls(
             min_uptime=xr.DataArray(np.array(min_ups), dims=[dim], coords=coords),
             max_uptime=xr.DataArray(np.array(max_ups), dims=[dim], coords=coords),
@@ -240,6 +260,12 @@ class _StatusArrays:
             initial=xr.DataArray(np.array(initials), dims=[dim], coords=coords),
             effects_running=xr.concat(er_slices, dim=status_idx),
             effects_startup=xr.concat(es_slices, dim=status_idx),
+            previous_uptime=xr.DataArray(prev_up_arr, dims=[dim], coords=coords)
+            if not np.all(np.isnan(prev_up_arr))
+            else None,
+            previous_downtime=xr.DataArray(prev_down_arr, dims=[dim], coords=coords)
+            if not np.all(np.isnan(prev_down_arr))
+            else None,
         )
 
 
@@ -263,6 +289,8 @@ class FlowsData:
     status_initial: xr.DataArray | None = None  # (status_flow,)
     status_effects_running: xr.DataArray | None = None  # (status_flow, effect, time)
     status_effects_startup: xr.DataArray | None = None  # (status_flow, effect, time)
+    status_previous_uptime: xr.DataArray | None = None  # (status_flow,)
+    status_previous_downtime: xr.DataArray | None = None  # (status_flow,)
 
     def __post_init__(self) -> None:
         """Validate relative bounds: non-negative and lb <= ub."""
@@ -290,13 +318,14 @@ class FlowsData:
         return cls(**kwargs)
 
     @classmethod
-    def build(cls, flows: list[Flow], time: pd.Index, effects: list[Effect]) -> Self:
+    def build(cls, flows: list[Flow], time: pd.Index, effects: list[Effect], dt: float = 1.0) -> Self:
         """Build FlowsData from element objects.
 
         Args:
             flows: All collected flows with qualified ids.
             time: Time index.
             effects: Effect definitions for cost coefficients.
+            dt: Scalar timestep duration in hours for prior duration computation.
         """
         from fluxopt.elements import Sizing
 
@@ -313,6 +342,7 @@ class FlowsData:
         effect_coeffs: list[xr.DataArray] = []
         sizing_items: list[tuple[str, Sizing]] = []
         status_items: list[tuple[str, Status]] = []
+        prior_map: dict[str, list[float]] = {}
 
         nan_time = xr.DataArray(np.full(n_time, np.nan), dims=['time'], coords={'time': time})
 
@@ -349,9 +379,12 @@ class FlowsData:
             if f.status is not None:
                 status_items.append((f.id, f.status))
 
+            if f.prior is not None:
+                prior_map[f.id] = f.prior
+
         flow_idx = pd.Index(flow_ids, name='flow')
         sz = _SizingArrays.build(sizing_items, effect_ids, dim='sizing_flow')
-        st = _StatusArrays.build(status_items, effect_ids, time, dim='status_flow')
+        st = _StatusArrays.build(status_items, effect_ids, time, dim='status_flow', prior_map=prior_map, dt=dt)
 
         return cls(
             bound_type=xr.DataArray(bound_type, dims=['flow'], coords={'flow': flow_ids}),
@@ -372,6 +405,8 @@ class FlowsData:
             status_initial=st.initial,
             status_effects_running=st.effects_running,
             status_effects_startup=st.effects_startup,
+            status_previous_uptime=st.previous_uptime,
+            status_previous_downtime=st.previous_downtime,
         )
 
 
@@ -822,7 +857,9 @@ class ModelData:
         time_extra = _compute_time_extra(time, dt_da)
         weights = xr.DataArray(np.ones(len(time)), dims=['time'], coords={'time': time}, name='weight')
 
-        flows_data = FlowsData.build(flows, time, effects)
+        # Scalar dt for prior duration computation (use first timestep)
+        dt_scalar = float(dt_da.values[0])
+        flows_data = FlowsData.build(flows, time, effects, dt=dt_scalar)
         buses_data = BusesData.build(buses, flows, bus_coeff)
         converters_data = ConvertersData.build(converters, time)
         effects_data = EffectsData.build(effects, time)

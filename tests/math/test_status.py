@@ -115,7 +115,7 @@ class TestStartupCosts:
     def test_startup_cost_added_to_objective(self):
         """Startup cost is charged per event.
 
-        Source: size=100, Status(initial_status=False, effects_per_startup={'costs': 50}), 1€/MWh.
+        Source: size=100, prior=[0] (was off), effects_per_startup={'costs': 50}, 1€/MWh.
         Demand: [60, 60] (constant). No backup.
 
         Source runs both hours: 1 startup event at t=0 (was off).
@@ -134,7 +134,8 @@ class TestStartupCosts:
                             bus='Heat',
                             size=100,
                             effects_per_flow_hour={'costs': 1},
-                            status=Status(initial_status=False, effects_per_startup={'costs': 50}),
+                            status=Status(effects_per_startup={'costs': 50}),
+                            prior=[0],
                         )
                     ],
                 ),
@@ -145,7 +146,7 @@ class TestStartupCosts:
     def test_startup_cost_discourages_cycling(self):
         """High startup cost keeps unit running rather than cycling.
 
-        Source: size=100, rel_min=0.3, initial_status=False,
+        Source: size=100, rel_min=0.3, prior=[0] (was off),
                 Status(effects_per_startup={'costs': 200}), 0.1€/MWh.
         Backup: 5€/MWh.
         Demand: [80, 0, 80].
@@ -168,7 +169,8 @@ class TestStartupCosts:
                             size=100,
                             relative_minimum=0.3,
                             effects_per_flow_hour={'costs': 0.1},
-                            status=Status(initial_status=False, effects_per_startup={'costs': 200}),
+                            status=Status(effects_per_startup={'costs': 200}),
+                            prior=[0],
                         )
                     ],
                 ),
@@ -185,7 +187,117 @@ class TestStartupCosts:
         assert_allclose(np.sum(startup), 1.0, atol=1e-5)
 
 
-class TestRunningCosts:
+class TestPrior:
+    def test_prior_none_gives_free_initial(self):
+        """Flow.prior=None with Status() leaves initial state free.
+
+        Source: size=100, Status(effects_per_startup={'costs': 1000}), no prior.
+        Demand: [50, 50]. No backup, so source must run.
+
+        Solver is free to assume on at t=-1 (no startup cost) or off (startup cost).
+        With high startup cost, solver prefers to assume it was already on.
+        Expected cost: 0 (no startup) + 0 (no flow cost) = 0.
+        """
+        result = solve(
+            _ts(2),
+            buses=[Bus('Heat')],
+            effects=[Effect('costs', is_objective=True)],
+            ports=[
+                Port('Demand', exports=[Flow(bus='Heat', size=1, fixed_relative_profile=[50, 50])]),
+                Port(
+                    'Src',
+                    imports=[
+                        Flow(
+                            bus='Heat',
+                            size=100,
+                            status=Status(effects_per_startup={'costs': 1000}),
+                        )
+                    ],
+                ),
+            ],
+        )
+        # With free initial, solver avoids startup cost entirely
+        startup = result.solution['flow--startup'].sel(flow='Src(Heat)').values
+        assert_allclose(np.sum(startup), 0.0, atol=1e-5)
+
+    def test_prior_on_carries_uptime(self):
+        """Prior with consecutive on-hours carries uptime into the horizon.
+
+        Source: size=100, min_uptime=3h, prior=[50, 60] (2h on already).
+        Demand: [80, 0, 0].
+
+        With 2h of prior uptime and min_uptime=3h, source must stay on for
+        at least 1 more hour. After that it can turn off.
+        t=0: must stay on (uptime=3h total). Flow=80.
+        t=1: can turn off. Demand=0, cheaper to turn off.
+        t=2: off.
+        """
+        result = solve(
+            _ts(3),
+            buses=[Bus('Heat')],
+            effects=[Effect('costs', is_objective=True)],
+            ports=[
+                Port('Demand', exports=[Flow(bus='Heat', size=1, fixed_relative_profile=[80, 0, 0])]),
+                Port(
+                    'Src',
+                    imports=[
+                        Flow(
+                            bus='Heat',
+                            size=100,
+                            effects_per_flow_hour={'costs': 1},
+                            status=Status(min_uptime=3),
+                            prior=[50, 60],
+                        )
+                    ],
+                ),
+                Port('Backup', imports=[Flow(bus='Heat', effects_per_flow_hour={'costs': 0.5})]),
+                _waste('Heat'),
+            ],
+        )
+        on = result.solution['flow--on'].sel(flow='Src(Heat)').values
+        # t=0: forced on by min_uptime continuation
+        assert_allclose(on[0], 1.0, atol=1e-5)
+
+    def test_prior_off_carries_downtime(self):
+        """Prior with consecutive off-hours carries downtime into the horizon.
+
+        Source: size=100, min_downtime=3h, prior=[0, 0] (2h off already).
+        Demand: [80, 80, 80].
+
+        With 2h of prior downtime and min_downtime=3h, source must stay off
+        for at least 1 more hour.
+        t=0: must stay off (downtime=3h total). Backup covers.
+        t=1: can turn on.
+        t=2: on.
+        """
+        result = solve(
+            _ts(3),
+            buses=[Bus('Heat')],
+            effects=[Effect('costs', is_objective=True)],
+            ports=[
+                Port('Demand', exports=[Flow(bus='Heat', size=1, fixed_relative_profile=[80, 80, 80])]),
+                Port(
+                    'Src',
+                    imports=[
+                        Flow(
+                            bus='Heat',
+                            size=100,
+                            effects_per_flow_hour={'costs': 1},
+                            status=Status(min_downtime=3),
+                            prior=[0, 0],
+                        )
+                    ],
+                ),
+                Port('Backup', imports=[Flow(bus='Heat', effects_per_flow_hour={'costs': 10})]),
+            ],
+        )
+        on = result.solution['flow--on'].sel(flow='Src(Heat)').values
+        # t=0: forced off by min_downtime continuation
+        assert_allclose(on[0], 0.0, atol=1e-5)
+        # t=1, t=2: can and should turn on (cheaper than backup)
+        assert_allclose(on[1], 1.0, atol=1e-5)
+        assert_allclose(on[2], 1.0, atol=1e-5)
+
     def test_running_cost_per_hour(self):
         """Running cost is charged per hour the unit is on.
 
