@@ -28,21 +28,11 @@ def _leontief(cf: xr.DataArray) -> xr.DataArray:
             or ``(effect, source_effect, time)``.
     """
     n = cf.sizes['effect']
-    eye = np.eye(n)
-
-    if 'time' not in cf.dims:
-        # 2D: single matrix inverse
-        inv = np.linalg.inv(eye - cf.values)
-        return xr.DataArray(inv, dims=cf.dims, coords=cf.coords)
-
-    # 3D: batch inverse over time axis
-    mat = eye[np.newaxis] - cf.transpose('time', 'effect', 'source_effect').values
-    inv = np.linalg.inv(mat)  # (T, n, n)
-    return xr.DataArray(
-        inv.transpose((1, 2, 0)),  # → (effect, source_effect, time)
-        dims=['effect', 'source_effect', 'time'],
-        coords=cf.coords,
-    )
+    other_dims = [d for d in cf.dims if d not in ('effect', 'source_effect')]
+    ordered = [*other_dims, 'effect', 'source_effect']
+    vals = cf.transpose(*ordered).values  # (..., n, n)
+    inv = np.linalg.inv(np.eye(n) - vals)  # (..., n, n)
+    return xr.DataArray(inv, dims=ordered, coords=cf.coords)
 
 
 def _apply_leontief(
@@ -132,9 +122,6 @@ def compute_effect_contributions(solution: xr.Dataset, data: ModelData) -> xr.Da
     flow_ids: list[str] = list(data.flows.effect_coeff.coords['flow'].values)
     effect_ids: list[str] = list(data.effects.min_total.coords['effect'].values)
 
-    if len(effect_ids) == 0:
-        return xr.Dataset()
-
     rate = solution['flow--rate']  # (flow, time)
     dt = data.dt  # (time,)
 
@@ -192,6 +179,17 @@ def compute_effect_contributions(solution: xr.Dataset, data: ModelData) -> xr.Da
 
     # --- Total per flow: operational (weighted sum over time) + flow investment ---
     total = (flow_op * data.weights).sum('time') + flow_inv
+
+    # --- Validate: contributions must sum to solver effect totals ---
+    computed = total.sum('flow')
+    if stor_inv is not None:
+        computed = computed + stor_inv.sum('storage')
+    solver = solution['effect--total']
+    if not np.allclose(computed.values, solver.values, atol=1e-6):
+        diff = abs(computed - solver)
+        raise ValueError(
+            f'Effect contributions do not sum to solver totals. Max deviation: {float(diff.max().values):.6g}'
+        )
 
     result_vars: dict[str, xr.DataArray] = {
         'operational': flow_op,
