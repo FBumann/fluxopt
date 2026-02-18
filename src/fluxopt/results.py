@@ -28,7 +28,7 @@ class SolvedModel:
 
     @property
     def storage_levels(self) -> xr.DataArray:
-        """All storage levels as (storage, time_extra) DataArray."""
+        """All storage levels as (storage, time) DataArray."""
         return self.solution['storage--level'] if 'storage--level' in self.solution else xr.DataArray()
 
     @property
@@ -105,7 +105,7 @@ class SolvedModel:
             'effect--per_timestep': model.effect_per_timestep.solution,
         }
 
-        if hasattr(model, 'storage_level'):
+        if model.storage_level is not None:
             sol_vars['storage--level'] = model.storage_level.solution
         if model.flow_size is not None:
             sol_vars['flow--size'] = model.flow_size.solution

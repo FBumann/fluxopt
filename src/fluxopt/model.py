@@ -7,6 +7,7 @@ import xarray as xr
 from linopy import Model, Variable
 
 from fluxopt.constraints.status import add_duration_tracking, add_switch_transitions
+from fluxopt.constraints.storage import add_accumulation_constraints
 from fluxopt.results import SolvedModel
 from fluxopt.types import as_dataarray
 
@@ -20,6 +21,10 @@ class FlowSystemModel:
     flow_size_indicator: Variable | None = None
     storage_capacity: Variable | None = None
     storage_capacity_indicator: Variable | None = None
+
+    # Storage variables — None when no storages
+    storage_level: Variable | None = None
+    storage_prior: Variable | None = None
 
     # Status variables — None when no status is configured
     flow_on: Variable | None = None
@@ -633,11 +638,10 @@ class FlowSystemModel:
         ds = d.storages
 
         stor_ids = ds.capacity.coords['storage']
-        time_extra = d.time_extra
-        te_vals = list(time_extra.values)
+        time = d.dt.coords['time']
 
-        # storage_level[storage, time_extra] >= 0
-        self.storage_level = self.m.add_variables(lower=0, coords=[stor_ids, time_extra], name='storage--level')
+        # storage_level[storage, time] >= 0  (end-of-period convention)
+        self.storage_level = self.m.add_variables(lower=0, coords=[stor_ids, time], name='storage--level')
 
         # --- Capacity bounds on storage_level ---
         cap = ds.capacity  # (storage,) — NaN for uncapped/investable
@@ -646,9 +650,7 @@ class FlowSystemModel:
 
         # Fixed-capacity storages: level <= capacity (parameter)
         if has_fixed_cap.any():
-            cap_2d = cap.broadcast_like(
-                xr.DataArray(np.nan, dims=['storage', 'time_extra'], coords=[stor_ids, time_extra])
-            )
+            cap_2d = cap.broadcast_like(xr.DataArray(np.nan, dims=['storage', 'time'], coords=[stor_ids, time]))
             mask_cap = has_fixed_cap.broadcast_like(cap_2d)
             self.m.add_constraints(self.storage_level <= cap_2d, name='level_cap', mask=mask_cap)
 
@@ -684,7 +686,7 @@ class FlowSystemModel:
             rel_ub_inv = ds.rel_level_ub.sel(storage=invest_ids)
             level_invest = self.storage_level.sel(storage=invest_ids)
 
-            has_lb = (rel_lb_inv > 1e-12).any('time_extra')
+            has_lb = (rel_lb_inv > 1e-12).any('time')
             if has_lb.any():
                 lb_mask = has_lb.broadcast_like(rel_lb_inv) & (rel_lb_inv > 1e-12)
                 self.m.add_constraints(
@@ -693,7 +695,7 @@ class FlowSystemModel:
                     mask=lb_mask,
                 )
 
-            has_ub = (rel_ub_inv < 1 - 1e-12).any('time_extra')
+            has_ub = (rel_ub_inv < 1 - 1e-12).any('time')
             if has_ub.any():
                 ub_mask = has_ub.broadcast_like(rel_ub_inv) & (rel_ub_inv < 1 - 1e-12)
                 self.m.add_constraints(
@@ -717,33 +719,41 @@ class FlowSystemModel:
         charge_factor = ds.eta_c * d.dt  # (storage, time)
         discharge_factor = d.dt / ds.eta_d  # (storage, time)
 
-        # Slice level into E[t] and E[t+1], rename time_extra -> time for alignment
-        level_curr = self.storage_level.isel(time_extra=slice(None, -1)).rename({'time_extra': 'time'})
-        level_curr = level_curr.assign_coords({'time': d.time})
-        level_next = self.storage_level.isel(time_extra=slice(1, None)).rename({'time_extra': 'time'})
-        level_next = level_next.assign_coords({'time': d.time})
+        inflow = charge_rates * charge_factor
+        outflow = discharge_rates * discharge_factor
 
-        # Fully vectorized energy balance over (storage, time)
-        balance_lhs = (
-            level_next - level_curr * loss_factor - charge_rates * charge_factor + discharge_rates * discharge_factor
+        # --- Prior variable + single balance for ALL storages ---
+        # prior[storage] is a free variable representing the state before period 0.
+        # Cyclic and fixed-prior constraints pin it; otherwise it's free.
+        self.storage_prior = self.m.add_variables(lower=0, coords=[stor_ids], name='storage--prior')
+
+        add_accumulation_constraints(
+            self.m,
+            self.storage_level,
+            inflow=inflow,
+            outflow=outflow,
+            decay=loss_factor,
+            initial=self.storage_prior,
+            name='storage_balance',
         )
-        self.m.add_constraints(balance_lhs == 0, name='storage_balance')
 
-        # Prior level and cyclic conditions (can be combined)
+        # Cyclic: prior == level[-1]
         cyclic_mask = ds.cyclic.values.astype(bool)
-        has_prior = ds.prior_level.notnull().values
-
         if np.any(cyclic_mask):
             cyc_ids = [str(s) for s, c in zip(stor_ids.values, cyclic_mask, strict=True) if c]
-            level_first = self.storage_level.sel(storage=cyc_ids, time_extra=te_vals[0])
-            level_last = self.storage_level.sel(storage=cyc_ids, time_extra=te_vals[-1])
-            self.m.add_constraints(level_last == level_first, name='level_cyclic')
+            self.m.add_constraints(
+                self.storage_prior.sel(storage=cyc_ids) == self.storage_level.sel(storage=cyc_ids).isel(time=-1),
+                name='storage_prior_cyc',
+            )
 
+        # Fixed prior: prior == value
+        has_prior = ds.prior_level.notnull().values
         if np.any(has_prior):
             prior_ids = [str(s) for s, p in zip(stor_ids.values, has_prior, strict=True) if p]
-            prior = ds.prior_level.sel(storage=prior_ids)
-            level_first = self.storage_level.sel(storage=prior_ids, time_extra=te_vals[0])
-            self.m.add_constraints(level_first == prior, name='level_prior')
+            self.m.add_constraints(
+                self.storage_prior.sel(storage=prior_ids) == ds.prior_level.sel(storage=prior_ids),
+                name='storage_prior_fix',
+            )
 
     def _set_objective(self) -> None:
         """Set objective: minimize the total of the objective effect."""

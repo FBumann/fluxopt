@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, fields
-from datetime import timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, Self
 
@@ -700,8 +699,8 @@ class StoragesData:
     eta_c: xr.DataArray  # (storage, time)
     eta_d: xr.DataArray  # (storage, time)
     loss: xr.DataArray  # (storage, time)
-    rel_level_lb: xr.DataArray  # (storage, time_extra)
-    rel_level_ub: xr.DataArray  # (storage, time_extra)
+    rel_level_lb: xr.DataArray  # (storage, time)
+    rel_level_ub: xr.DataArray  # (storage, time)
     prior_level: xr.DataArray  # (storage,) — NaN if not set
     cyclic: xr.DataArray  # (storage,)
     charge_flow: xr.DataArray  # (storage,) — str
@@ -748,7 +747,6 @@ class StoragesData:
         cls,
         storages: list[Storage],
         time: pd.Index,
-        time_extra: pd.Index,
         dt: xr.DataArray,
         effects: list[Effect] | None = None,
     ) -> Self | None:
@@ -757,7 +755,6 @@ class StoragesData:
         Args:
             storages: Storage definitions.
             time: Time index.
-            time_extra: N+1 time index for storage level.
             dt: Timestep durations.
             effects: Effect definitions for sizing cost validation.
         """
@@ -792,11 +789,8 @@ class StoragesData:
             eta_ds.append(as_dataarray(s.eta_discharge, {'time': time}))
             losses.append(as_dataarray(s.relative_loss_per_hour, {'time': time}))
 
-            # Level bounds — extend to time_extra (replicate last for extra point)
-            level_lb_da = as_dataarray(s.relative_minimum_level, {'time': time})
-            level_ub_da = as_dataarray(s.relative_maximum_level, {'time': time})
-            level_lbs.append(_extend_time_extra(level_lb_da, time_extra))
-            level_ubs.append(_extend_time_extra(level_ub_da, time_extra))
+            level_lbs.append(as_dataarray(s.relative_minimum_level, {'time': time}))
+            level_ubs.append(as_dataarray(s.relative_maximum_level, {'time': time}))
 
             cyclic_vals[i] = s.cyclic
             if s.prior_level is not None:
@@ -837,7 +831,6 @@ class ModelData:
     dt: xr.DataArray  # (time,)
     weights: xr.DataArray  # (time,)
     time: pd.Index = field(repr=False)
-    time_extra: pd.Index = field(repr=False)
 
     def to_netcdf(self, path: str | Path, *, mode: Literal['w', 'a'] = 'a') -> None:
         """Write model data as NetCDF groups under ``/model/``.
@@ -854,11 +847,13 @@ class ModelData:
             'effects': self.effects,
             'storages': self.storages,
         }
+        current_mode = mode
         for name, obj in dataset_fields.items():
             if obj is not None:
-                obj.to_dataset().to_netcdf(p, mode=mode, group=_NC_GROUPS[name], engine='netcdf4')
+                obj.to_dataset().to_netcdf(p, mode=current_mode, group=_NC_GROUPS[name], engine='netcdf4')
+                current_mode = 'a'
         meta = xr.Dataset({'dt': self.dt, 'weights': self.weights})
-        meta.to_netcdf(p, mode='a', group='model/meta', engine='netcdf4')
+        meta.to_netcdf(p, mode=current_mode, group='model/meta', engine='netcdf4')
 
     @classmethod
     def from_netcdf(cls, path: str | Path) -> ModelData | None:
@@ -892,12 +887,6 @@ class ModelData:
         effects = EffectsData.from_dataset(datasets['effects'])
         storages = StoragesData.from_dataset(datasets['storages']) if datasets['storages'].data_vars else None
 
-        if storages is not None and 'time_extra' in storages.rel_level_lb.coords:
-            time_extra = pd.Index(storages.rel_level_lb.coords['time_extra'].values)
-            time_extra.name = 'time_extra'
-        else:
-            time_extra = _compute_time_extra(time, dt)
-
         return cls(
             flows=flows,
             buses=buses,
@@ -907,7 +896,6 @@ class ModelData:
             dt=dt,
             weights=meta['weights'],
             time=time,
-            time_extra=time_extra,
         )
 
     @classmethod
@@ -942,7 +930,6 @@ class ModelData:
         flows, bus_coeff = _collect_flows(ports, converters, stor_list)
         _validate_system(buses, effects, ports, converters, stor_list, flows)
 
-        time_extra = _compute_time_extra(time, dt_da)
         weights = xr.DataArray(np.ones(len(time)), dims=['time'], coords={'time': time}, name='weight')
 
         # Scalar dt for prior duration computation (use first timestep)
@@ -951,7 +938,7 @@ class ModelData:
         buses_data = BusesData.build(buses, flows, bus_coeff)
         converters_data = ConvertersData.build(converters, time)
         effects_data = EffectsData.build(effects, time)
-        storages_data = StoragesData.build(stor_list, time, time_extra, dt_da, effects)
+        storages_data = StoragesData.build(stor_list, time, dt_da, effects)
 
         return cls(
             flows=flows_data,
@@ -962,7 +949,6 @@ class ModelData:
             dt=dt_da,
             weights=weights,
             time=time,
-            time_extra=time_extra,
         )
 
 
@@ -1048,33 +1034,3 @@ def _validate_system(
         if flow.id in flow_seen:
             raise ValueError(f'Duplicate flow id: {flow.id!r}')
         flow_seen.add(flow.id)
-
-
-def _extend_time_extra(da: xr.DataArray, time_extra: pd.Index) -> xr.DataArray:
-    """Extend a time-dimensioned DataArray to time_extra (N+1 points).
-
-    Args:
-        da: DataArray with 'time' dimension.
-        time_extra: N+1 time index.
-    """
-    vals = np.append(da.values, da.isel(time=-1).item())
-    return xr.DataArray(vals, dims=['time_extra'], coords={'time_extra': time_extra})
-
-
-def _compute_time_extra(time: pd.Index, dt: xr.DataArray) -> pd.Index:
-    """Compute N+1 time index for storage charge state.
-
-    Args:
-        time: Original time index.
-        dt: Timestep durations (last value determines extra point offset).
-    """
-    if isinstance(time, pd.DatetimeIndex):
-        last_dt_hours: float = float(dt.values[-1])
-        end_time = time[-1] + timedelta(hours=last_dt_hours)
-        result = time.append(pd.DatetimeIndex([end_time]))
-    else:
-        # Integer index
-        last_val: int = int(time[-1])
-        result = time.append(pd.Index([last_val + 1]))
-    result.name = 'time_extra'
-    return result

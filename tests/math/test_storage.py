@@ -42,7 +42,7 @@ class TestStorage:
         assert discharge[3] > 0  # t3: expensive
 
     def test_level_starts_at_prior(self, timesteps_4):
-        """Prior level pins the initial storage level."""
+        """Prior level feeds into the balance at t=0."""
         source_flow = Flow(bus='elec', size=200, effects_per_flow_hour={'cost': 0.04})
         demand_flow = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.5, 0.5, 0.5])
 
@@ -66,11 +66,15 @@ class TestStorage:
         )
 
         cs = result.storage_level('battery')
-        # First value is the initial charge state
-        assert float(cs.values[0]) == pytest.approx(0.0, abs=1e-6)
+        charge_t0 = float(result.flow_rate('battery(charge)').values[0])
+        discharge_t0 = float(result.flow_rate('battery(discharge)').values[0])
+        # End-of-period: level[0] = prior * decay + charge[0] * eta_c * dt - discharge[0] * dt / eta_d
+        # With prior=0, dt=1, eta=1, loss=0: level[0] = charge[0] - discharge[0]
+        expected = 0.0 + charge_t0 - discharge_t0
+        assert float(cs.values[0]) == pytest.approx(expected, abs=1e-6)
 
     def test_cyclic_storage(self):
-        """Cyclic constraint: level at end == start."""
+        """Cyclic constraint: initial for period 0 equals level at end of last period."""
         timesteps = [datetime(2024, 1, 1, h) for h in range(2)]
         source_flow = Flow(bus='elec', size=200, effects_per_flow_hour={'cost': [0.02, 0.08]})
         demand_flow = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.5])
@@ -93,9 +97,16 @@ class TestStorage:
         )
 
         cs = result.storage_level('battery')
-        first = float(cs.values[0])
-        last = float(cs.values[-1])
-        assert last == pytest.approx(first, abs=1e-6)
+        charge = result.flow_rate('battery(charge)').values
+        discharge = result.flow_rate('battery(discharge)').values
+
+        # End-of-period: level[0] = initial * decay + charge[0] - discharge[0]
+        # Cyclic: initial = level[-1]. With dt=1, eta=1, loss=0:
+        # level[0] = level[-1] + charge[0] - discharge[0]
+        level_0 = float(cs.values[0])
+        level_last = float(cs.values[-1])
+        expected = level_last + float(charge[0]) - float(discharge[0])
+        assert level_0 == pytest.approx(expected, abs=1e-6)
 
     def test_storage_with_efficiency(self, timesteps_3):
         """With eta_charge < 1, more energy is drawn from bus than stored."""
@@ -123,10 +134,12 @@ class TestStorage:
 
         # With charging efficiency, stored energy = charge_rate * eta_c
         cs = result.storage_level('battery')
-        charge_t0 = float(result.flow_rate('battery(charge)').values[0])
+        # Check balance between period 1 and period 2 (both observable):
+        # level[2] = level[1] * decay + charge[2] * eta_c * dt - discharge[2] * dt / eta_d
+        # With dt=1, loss=0, eta_d=1: level[2] = level[1] + charge[2] * eta_c - discharge[2]
+        charge_t2 = float(result.flow_rate('battery(charge)').values[2])
+        discharge_t2 = float(result.flow_rate('battery(discharge)').values[2])
         cs_t1 = float(cs.values[1])
-        cs_t0 = float(cs.values[0])
-        # cs[t1] = cs[t0] + charge[t0] * eta_c - discharge[t0] / eta_d
-        discharge_t0 = float(result.flow_rate('battery(discharge)').values[0])
-        expected_cs_t1 = cs_t0 + charge_t0 * eta_c - discharge_t0
-        assert cs_t1 == pytest.approx(expected_cs_t1, abs=1e-6)
+        cs_t2 = float(cs.values[2])
+        expected_cs_t2 = cs_t1 + charge_t2 * eta_c - discharge_t2
+        assert cs_t2 == pytest.approx(expected_cs_t2, abs=1e-6)
