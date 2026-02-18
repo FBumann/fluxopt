@@ -6,6 +6,7 @@ import numpy as np
 import xarray as xr
 from linopy import Model, Variable
 
+from fluxopt.constraints.sparse import sparse_weighted_sum
 from fluxopt.constraints.status import add_duration_tracking, add_switch_transitions
 from fluxopt.constraints.storage import add_accumulation_constraints
 from fluxopt.results import Result
@@ -481,7 +482,7 @@ class FlowSystem:
         coeff_filled = coeff.fillna(0)
 
         # Bus balance: sum over flow dim of (coeff * flow_rate) == 0
-        lhs = (coeff_filled * self.flow_rate).sum('flow')
+        lhs = sparse_weighted_sum(self.flow_rate, coeff_filled, sum_dim='flow', group_dim='bus')
         self.m.add_constraints(lhs == 0, name='bus_balance')
 
     def _create_converter_constraints(self) -> None:
@@ -497,13 +498,12 @@ class FlowSystem:
         # Replace NaN with 0 for summation
         coeff_filled = coeff.fillna(0)
 
-        # Need to align flow_rate with converter flow coord
-        # The converter dataset may have a different flow coord than the full flow_rate
         # Select only the flows that appear in the converter dataset
         conv_flow_ids = ds.flow_coeff.coords['flow'].values
         flow_rate_sel = self.flow_rate.sel(flow=conv_flow_ids)
 
-        lhs = (coeff_filled * flow_rate_sel).sum('flow')
+        # Sparse sum: each converter references only 2-3 flows out of hundreds
+        lhs = sparse_weighted_sum(flow_rate_sel, coeff_filled, sum_dim='flow', group_dim='converter')
 
         # Broadcast eq_mask (converter, eq_idx) to (converter, eq_idx, time)
         mask_3d = eq_mask.expand_dims(time=ds.flow_coeff.coords['time'])
@@ -529,7 +529,9 @@ class FlowSystem:
 
         contribution: Any = 0
         if has_any_coeff:
-            contribution = (effect_coeff * self.flow_rate * d.dt).sum('flow')
+            # Pre-multiply dt into coefficients, then sparse sum over flow
+            coeff_dt = effect_coeff * d.dt
+            contribution = sparse_weighted_sum(self.flow_rate, coeff_dt, sum_dim='flow', group_dim='effect')
 
         # Status running costs: sum_f(running_coeff[f,k,t] * on[f,t] * dt[t])
         if d.flows.status_effects_running is not None:
