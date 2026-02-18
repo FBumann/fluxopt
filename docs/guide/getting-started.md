@@ -93,16 +93,25 @@ gas bus ──▶ [boiler η=0.9] ──▶ heat bus ──▶ demand
 
 === "YAML"
 
-    ### 1. Model File
+    ### 1. Time Series CSV
 
-    Create `model.yaml` — all topology and parameters in one file:
+    Put timesteps and profiles in `data.csv` — the index becomes the time
+    axis, columns become variables:
+
+    ```csv
+    time,demand_profile
+    2024-01-01 00:00,0.4
+    2024-01-01 01:00,0.7
+    2024-01-01 02:00,0.5
+    2024-01-01 03:00,0.6
+    ```
+
+    ### 2. Model File
+
+    Create `model.yaml` next to the CSV:
 
     ```yaml
-    timesteps:
-      - "2024-01-01 00:00"
-      - "2024-01-01 01:00"
-      - "2024-01-01 02:00"
-      - "2024-01-01 03:00"
+    timeseries: data.csv
 
     buses:
       - id: gas
@@ -123,7 +132,7 @@ gas bus ──▶ [boiler η=0.9] ──▶ heat bus ──▶ demand
         exports:
           - bus: heat
             size: 100
-            fixed_relative_profile: [0.4, 0.7, 0.5, 0.6]
+            fixed_relative_profile: "demand_profile"
 
     converters:
       - id: boiler
@@ -137,7 +146,11 @@ gas bus ──▶ [boiler η=0.9] ──▶ heat bus ──▶ demand
           size: 200
     ```
 
-    ### 2. Solve
+    Timesteps are derived from the CSV index. String values like
+    `"demand_profile"` reference CSV columns — you can also write
+    expressions like `"demand_profile * 1.1"`.
+
+    ### 3. Solve
 
     ```python
     from fluxopt import solve_yaml
@@ -145,8 +158,7 @@ gas bus ──▶ [boiler η=0.9] ──▶ heat bus ──▶ demand
     result = solve_yaml('model.yaml')
     ```
 
-    See [YAML Loader](yaml-loader.md) for the full reference, including CSV
-    time series and expressions.
+    See [YAML Loader](yaml-loader.md) for the full reference.
 
 ## Inspect Results
 
