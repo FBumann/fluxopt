@@ -20,9 +20,9 @@ from datetime import datetime
 
 import pytest
 
-from fluxopt import Flow, FlowSystemModel, ModelData, Port
+from fluxopt import Flow, FlowSystem, ModelData, Port
 from fluxopt import optimize as fluxopt_optimize
-from fluxopt.results import SolvedModel
+from fluxopt.results import Result
 
 
 def ts(n: int) -> list[datetime]:
@@ -45,7 +45,7 @@ def _waste(bus: str) -> Port:
 def optimize(request, tmp_path):
     """Callable fixture: each test runs 3 pipelines to verify IO roundtrip."""
 
-    def _optimize(**kwargs) -> SolvedModel:
+    def _optimize(**kwargs) -> Result:
         if request.param == 'optimize':
             return fluxopt_optimize(**kwargs)
         if request.param == 'save->reload->optimize':
@@ -61,13 +61,13 @@ def optimize(request, tmp_path):
             path = tmp_path / 'data.nc'
             data.to_netcdf(path, mode='w')
             loaded = ModelData.from_netcdf(path)
-            model = FlowSystemModel(loaded)
+            model = FlowSystem(loaded)
             model.build()
             return model.solve()
         # optimize->save->reload
         result = fluxopt_optimize(**kwargs)
         path = tmp_path / 'result.nc'
         result.to_netcdf(path)
-        return SolvedModel.from_netcdf(path)
+        return Result.from_netcdf(path)
 
     return _optimize

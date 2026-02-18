@@ -7,12 +7,12 @@ from typing import TYPE_CHECKING
 import xarray as xr
 
 if TYPE_CHECKING:
-    from fluxopt.model import FlowSystemModel
+    from fluxopt.model import FlowSystem
     from fluxopt.model_data import ModelData
 
 
 @dataclass
-class SolvedModel:
+class Result:
     solution: xr.Dataset
     data: ModelData | None = field(default=None, repr=False)
 
@@ -79,8 +79,8 @@ class SolvedModel:
             self.data.to_netcdf(p)
 
     @classmethod
-    def from_netcdf(cls, path: str | Path) -> SolvedModel:
-        """Read a SolvedModel from a NetCDF file.
+    def from_netcdf(cls, path: str | Path) -> Result:
+        """Read a Result from a NetCDF file.
 
         Args:
             path: Input file path.
@@ -93,11 +93,11 @@ class SolvedModel:
         return cls(solution=solution, data=data)
 
     @classmethod
-    def from_model(cls, model: FlowSystemModel) -> SolvedModel:
+    def from_model(cls, model: FlowSystem) -> Result:
         """Extract solution from a solved linopy model.
 
         Args:
-            model: Solved FlowSystemModel instance.
+            model: Solved FlowSystem instance.
         """
         sol_vars: dict[str, xr.DataArray] = {
             'flow--rate': model.flow_rate.solution,

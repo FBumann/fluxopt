@@ -1,7 +1,7 @@
 """Status (on/off) constraint helpers.
 
 Module-level functions that add binary status tracking constraints
-to a linopy Model. Used by FlowSystemModel to build status features.
+to a linopy Model. Used by FlowSystem to build status features.
 """
 
 from __future__ import annotations

@@ -8,7 +8,7 @@ from linopy import Model, Variable
 
 from fluxopt.constraints.status import add_duration_tracking, add_switch_transitions
 from fluxopt.constraints.storage import add_accumulation_constraints
-from fluxopt.results import SolvedModel
+from fluxopt.results import Result
 from fluxopt.types import as_dataarray
 
 if TYPE_CHECKING:
@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from fluxopt.model_data import ModelData
 
 
-class FlowSystemModel:
+class FlowSystem:
     # Sizing variables — None when no sizing is configured
     flow_size: Variable | None = None
     flow_size_indicator: Variable | None = None
@@ -92,11 +92,11 @@ class FlowSystemModel:
 
     def optimize(
         self,
-        customize: Callable[[FlowSystemModel], None] | None = None,
+        customize: Callable[[FlowSystem], None] | None = None,
         *,
         solver: str = 'highs',
         **kwargs: Any,
-    ) -> SolvedModel:
+    ) -> Result:
         """Build, optionally customize, and solve the model.
 
         Args:
@@ -110,7 +110,7 @@ class FlowSystemModel:
             customize(self)
         return self.solve(solver_name=solver, **kwargs)
 
-    def solve(self, **kwargs: Any) -> SolvedModel:
+    def solve(self, **kwargs: Any) -> Result:
         """Solve the built model and return results.
 
         Thin wrapper around ``linopy.Model.solve()``. Call :meth:`build` first.
@@ -119,7 +119,7 @@ class FlowSystemModel:
             **kwargs: Passed through to ``linopy.Model.solve()``.
         """
         self.m.solve(**kwargs)
-        return SolvedModel.from_model(self)
+        return Result.from_model(self)
 
     def _create_flow_variables(self) -> None:
         """Create flow rate decision variables P_{f,t} >= 0."""

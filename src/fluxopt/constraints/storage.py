@@ -1,7 +1,7 @@
 """Storage constraint helpers.
 
 Module-level functions that add accumulation balance constraints
-to a linopy Model. Used by FlowSystemModel to build storage features.
+to a linopy Model. Used by FlowSystem to build storage features.
 """
 
 from __future__ import annotations

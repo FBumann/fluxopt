@@ -7,7 +7,7 @@ import pytest
 import xarray as xr
 
 from fluxopt import Bus, Converter, Effect, Flow, Port, Storage, optimize
-from fluxopt.results import SolvedModel
+from fluxopt.results import Result
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -18,7 +18,7 @@ def tmp_nc(tmp_path: Path) -> Path:
     return tmp_path / 'result.nc'
 
 
-def _solve_simple(timesteps: list[datetime] | list[int]) -> SolvedModel:
+def _solve_simple(timesteps: list[datetime] | list[int]) -> Result:
     """Simple source -> demand system with cost tracking."""
     demand = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.8, 0.6])
     source = Flow(bus='elec', size=200, effects_per_flow_hour={'cost': 0.04})
@@ -30,7 +30,7 @@ def _solve_simple(timesteps: list[datetime] | list[int]) -> SolvedModel:
     )
 
 
-def _solve_with_storage(timesteps: list[datetime]) -> SolvedModel:
+def _solve_with_storage(timesteps: list[datetime]) -> Result:
     """Boiler + storage system."""
     demand = Flow(bus='heat', size=100, fixed_relative_profile=[0.5, 0.5, 0.5])
     gas_source = Flow(bus='gas', size=500, effects_per_flow_hour={'cost': [0.02, 0.08, 0.02]})
@@ -56,7 +56,7 @@ class TestRoundtrip:
         result = _solve_simple(ts)
 
         result.to_netcdf(tmp_nc)
-        loaded = SolvedModel.from_netcdf(tmp_nc)
+        loaded = Result.from_netcdf(tmp_nc)
 
         assert loaded.objective == pytest.approx(result.objective, abs=1e-6)
 
@@ -66,7 +66,7 @@ class TestRoundtrip:
         result = _solve_with_storage(ts)
 
         result.to_netcdf(tmp_nc)
-        loaded = SolvedModel.from_netcdf(tmp_nc)
+        loaded = Result.from_netcdf(tmp_nc)
 
         assert loaded.objective == pytest.approx(result.objective, abs=1e-6)
 
@@ -77,7 +77,7 @@ class TestRoundtrip:
         assert result.data is not None
 
         result.to_netcdf(tmp_nc)
-        loaded = SolvedModel.from_netcdf(tmp_nc)
+        loaded = Result.from_netcdf(tmp_nc)
 
         assert loaded.data is not None
         # Flows dataset preserved
@@ -103,13 +103,13 @@ class TestRoundtrip:
         result = _solve_with_storage(ts)
 
         result.to_netcdf(tmp_nc)
-        loaded = SolvedModel.from_netcdf(tmp_nc)
+        loaded = Result.from_netcdf(tmp_nc)
         assert loaded.data is not None
 
         # Re-solve from loaded data
-        from fluxopt import FlowSystemModel
+        from fluxopt import FlowSystem
 
-        model = FlowSystemModel(loaded.data)
+        model = FlowSystem(loaded.data)
         model.build()
         result2 = model.solve()
         assert result2.objective == pytest.approx(result.objective, abs=1e-6)
@@ -136,7 +136,7 @@ class TestRoundtripContributionFrom:
         assert result.data.effects.cf_per_hour is not None
 
         result.to_netcdf(tmp_nc)
-        loaded = SolvedModel.from_netcdf(tmp_nc)
+        loaded = Result.from_netcdf(tmp_nc)
 
         assert loaded.data is not None
         assert loaded.data.effects.cf_invest is not None
@@ -145,9 +145,9 @@ class TestRoundtripContributionFrom:
         xr.testing.assert_equal(loaded.data.effects.cf_per_hour, result.data.effects.cf_per_hour)
 
         # Re-solve gives same objective
-        from fluxopt import FlowSystemModel
+        from fluxopt import FlowSystem
 
-        model = FlowSystemModel(loaded.data)
+        model = FlowSystem(loaded.data)
         model.build()
         result2 = model.solve()
         assert result2.objective == pytest.approx(result.objective, abs=1e-6)
@@ -167,12 +167,12 @@ class TestSolutionDataset:
 
 class TestEdgeCases:
     def test_no_data_field(self, tmp_nc: Path) -> None:
-        """SolvedModel without data field still serializes solution."""
+        """Result without data field still serializes solution."""
         ts = [datetime(2024, 1, 1, h) for h in range(3)]
         result = _solve_simple(ts)
         result.data = None
 
         result.to_netcdf(tmp_nc)
-        loaded = SolvedModel.from_netcdf(tmp_nc)
+        loaded = Result.from_netcdf(tmp_nc)
 
         assert loaded.objective == pytest.approx(result.objective, abs=1e-6)

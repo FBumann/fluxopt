@@ -3,9 +3,9 @@ from typing import Any
 
 from fluxopt.components import Converter, Port
 from fluxopt.elements import Bus, Effect, Flow, Sizing, Status, Storage
-from fluxopt.model import FlowSystemModel
+from fluxopt.model import FlowSystem
 from fluxopt.model_data import ModelData
-from fluxopt.results import SolvedModel
+from fluxopt.results import Result
 from fluxopt.types import (
     IdList,
     TimeSeries,
@@ -25,9 +25,9 @@ def optimize(
     storages: list[Storage] | None = None,
     dt: float | list[float] | None = None,
     solver: str = 'highs',
-    customize: Callable[[FlowSystemModel], None] | None = None,
+    customize: Callable[[FlowSystem], None] | None = None,
     **kwargs: Any,
-) -> SolvedModel:
+) -> Result:
     """Build data, build model, optimize, return results.
 
     Args:
@@ -40,11 +40,11 @@ def optimize(
         dt: Timestep duration in hours. Auto-derived if None.
         solver: Solver backend name.
         customize: Optional callback to modify the linopy model between build and solve.
-            Receives the built FlowSystemModel; use ``model.m`` to add variables/constraints.
+            Receives the built FlowSystem; use ``model.m`` to add variables/constraints.
         **kwargs: Passed through to ``linopy.Model.solve()``.
     """
     data = ModelData.build(timesteps, buses, effects, ports, converters, storages, dt)
-    model = FlowSystemModel(data)
+    model = FlowSystem(data)
     return model.optimize(customize=customize, solver=solver, **kwargs)
 
 
@@ -53,12 +53,12 @@ __all__ = [
     'Converter',
     'Effect',
     'Flow',
-    'FlowSystemModel',
+    'FlowSystem',
     'IdList',
     'ModelData',
     'Port',
+    'Result',
     'Sizing',
-    'SolvedModel',
     'Status',
     'Storage',
     'TimeSeries',

@@ -122,7 +122,7 @@ formulation.
 
 ## Accessing Results
 
-After solving, the `SolvedModel` provides several views into effect values:
+After solving, the `Result` provides several views into effect values:
 
 ```python
 result = optimize(...)

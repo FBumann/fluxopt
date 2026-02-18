@@ -14,7 +14,7 @@ from fluxopt import (
     Storage,
     optimize,
 )
-from fluxopt.model import FlowSystemModel
+from fluxopt.model import FlowSystem
 
 
 class TestEndToEnd:
@@ -96,7 +96,7 @@ class TestEndToEnd:
         # Change demand from 0.5 to 0.7 (relative); absolute = 0.7 * 100 = 70
         data.flows.fixed_profile.loc[{'flow': 'demand(elec)'}] = 0.7
 
-        model = FlowSystemModel(data)
+        model = FlowSystem(data)
         model.build()
         result = model.solve()
 
@@ -105,7 +105,7 @@ class TestEndToEnd:
             assert rate == pytest.approx(70.0, abs=1e-6)
 
     def test_result_accessors(self, timesteps_3):
-        """Test SolvedModel accessor methods."""
+        """Test Result accessor methods."""
         sink_flow = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.8, 0.6])
         source_flow = Flow(bus='elec', size=200, effects_per_flow_hour={'cost': 0.04})
 
