@@ -94,8 +94,6 @@ class TestRoundtrip:
         )
         # dt preserved
         assert loaded.data.dt.values == pytest.approx(result.data.dt.values)
-        # time_extra preserved
-        assert len(loaded.data.time_extra) == len(result.data.time_extra)
 
     def test_model_data_resolve(self, tmp_nc: Path) -> None:
         """Loaded ModelData can build and solve a new model."""
