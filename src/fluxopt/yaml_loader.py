@@ -99,6 +99,16 @@ def _tokenize(text: str) -> list[_Token]:
                     i += 1
             tokens.append(_Token(_TokenType.NUMBER, text[start:i]))
             continue
+        if ch == "'":
+            i += 1
+            start = i
+            while i < len(text) and text[i] != "'":
+                i += 1
+            if i >= len(text):
+                raise YamlLoadError(f'Unterminated quoted name in expression: {text!r}')
+            tokens.append(_Token(_TokenType.NAME, text[start:i]))
+            i += 1  # skip closing quote
+            continue
         if ch.isalpha() or ch == '_':
             start = i
             while i < len(text) and (text[i].isalnum() or text[i] == '_'):

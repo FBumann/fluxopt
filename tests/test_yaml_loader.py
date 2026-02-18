@@ -87,6 +87,20 @@ class TestExpressionParser:
         ns = {'x': 2.0}
         assert _evaluate_expression('(x + 3) * (x - 1) / 2', ns) == pytest.approx(2.5)
 
+    def test_quoted_name(self):
+        ns = {'gas-price': np.array([10.0, 20.0])}
+        result = _evaluate_expression("'gas-price' * 1.19", ns)
+        np.testing.assert_allclose(result, [11.9, 23.8])
+
+    def test_quoted_name_with_spaces(self):
+        ns = {'price [EUR/MWh]': np.array([5.0])}
+        result = _evaluate_expression("'price [EUR/MWh]' / 100", ns)
+        np.testing.assert_allclose(result, [0.05])
+
+    def test_unterminated_quote_raises(self):
+        with pytest.raises(YamlLoadError, match='Unterminated quoted name'):
+            _evaluate_expression("'oops", {})
+
 
 # ---------------------------------------------------------------------------
 # Element builders
