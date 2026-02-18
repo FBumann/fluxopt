@@ -74,7 +74,7 @@ def _compute_periodic(
         size_var: Solution variable name for size.
         indicator_var: Solution variable name for binary indicator.
     """
-    inv = xr.DataArray(
+    result = xr.DataArray(
         np.zeros((len(contributor_ids), len(effect_ids))),
         dims=['contributor', 'effect'],
         coords={'contributor': contributor_ids, 'effect': effect_ids},
@@ -85,7 +85,7 @@ def _compute_periodic(
     if effects_per_size is not None and size_var in solution:
         eps = effects_per_size.rename(rename)
         term = (eps * solution[size_var]).reindex({entity_dim: contributor_ids}, fill_value=0.0)
-        inv = inv + term.rename({entity_dim: 'contributor'})
+        result = result + term.rename({entity_dim: 'contributor'})
 
     # Fixed costs — optional (binary indicator * cost)
     if effects_fixed is not None and indicator_var in solution:
@@ -93,7 +93,7 @@ def _compute_periodic(
         opt_ids = list(indicator.coords[entity_dim].values)
         ef = effects_fixed.rename(rename).sel({entity_dim: opt_ids})
         term = (ef * indicator).reindex({entity_dim: contributor_ids}, fill_value=0.0)
-        inv = inv + term.rename({entity_dim: 'contributor'})
+        result = result + term.rename({entity_dim: 'contributor'})
 
     # Fixed costs — mandatory (constant)
     if effects_fixed is not None and mandatory is not None:
@@ -102,9 +102,9 @@ def _compute_periodic(
             mand_ids = list(mandatory.coords[sizing_dim].values[mand_mask])
             ef_mand = effects_fixed.sel({sizing_dim: mand_ids}).rename(rename)
             term = ef_mand.reindex({entity_dim: contributor_ids}, fill_value=0.0)
-            inv = inv + term.rename({entity_dim: 'contributor'})
+            result = result + term.rename({entity_dim: 'contributor'})
 
-    return inv
+    return result
 
 
 def compute_effect_contributions(solution: xr.Dataset, data: ModelData) -> xr.Dataset:
@@ -164,8 +164,6 @@ def compute_effect_contributions(solution: xr.Dataset, data: ModelData) -> xr.Da
         'flow--size',
         'flow--size_indicator',
     )
-    if data.effects.cf_periodic is not None:
-        flow_periodic = _apply_leontief(_leontief(data.effects.cf_periodic), flow_periodic)
 
     # --- Periodic: storage costs ---
     if stor_ids:
@@ -181,11 +179,13 @@ def compute_effect_contributions(solution: xr.Dataset, data: ModelData) -> xr.Da
             'storage--capacity',
             'storage--size_indicator',
         )
-        if data.effects.cf_periodic is not None:
-            stor_periodic = _apply_leontief(_leontief(data.effects.cf_periodic), stor_periodic)
         periodic = xr.concat([flow_periodic, stor_periodic], dim='contributor')
     else:
         periodic = flow_periodic
+
+    # Cross-effects on periodic via Leontief inverse
+    if data.effects.cf_periodic is not None:
+        periodic = _apply_leontief(_leontief(data.effects.cf_periodic), periodic)
 
     # --- Total: temporal (weighted sum over time) + periodic ---
     total = (temporal * data.weights).sum('time').reindex(contributor=all_ids, fill_value=0.0) + periodic.reindex(
