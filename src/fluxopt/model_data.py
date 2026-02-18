@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-from fluxopt.types import as_dataarray, normalize_timesteps
+from fluxopt.types import as_dataarray, fast_concat, normalize_timesteps
 
 if TYPE_CHECKING:
     from fluxopt.components import Converter, Port
@@ -257,8 +257,8 @@ class _StatusArrays:
             min_downtime=xr.DataArray(np.array(min_downs), dims=[dim], coords=coords),
             max_downtime=xr.DataArray(np.array(max_downs), dims=[dim], coords=coords),
             initial=xr.DataArray(np.array(initials), dims=[dim], coords=coords),
-            effects_running=xr.concat(er_slices, dim=status_idx),
-            effects_startup=xr.concat(es_slices, dim=status_idx),
+            effects_running=fast_concat(er_slices, status_idx),
+            effects_startup=fast_concat(es_slices, status_idx),
             previous_uptime=xr.DataArray(prev_up_arr, dims=[dim], coords=coords)
             if not np.all(np.isnan(prev_up_arr))
             else None,
@@ -387,11 +387,11 @@ class FlowsData:
 
         return cls(
             bound_type=xr.DataArray(bound_type, dims=['flow'], coords={'flow': flow_ids}),
-            rel_lb=xr.concat(rel_lbs, dim=flow_idx),
-            rel_ub=xr.concat(rel_ubs, dim=flow_idx),
-            fixed_profile=xr.concat(profiles, dim=flow_idx),
+            rel_lb=fast_concat(rel_lbs, flow_idx),
+            rel_ub=fast_concat(rel_ubs, flow_idx),
+            fixed_profile=fast_concat(profiles, flow_idx),
             size=xr.DataArray(size_vals, dims=['flow'], coords={'flow': flow_ids}),
-            effect_coeff=xr.concat(effect_coeffs, dim=flow_idx),
+            effect_coeff=fast_concat(effect_coeffs, flow_idx),
             sizing_min=sz.min,
             sizing_max=sz.max,
             sizing_mandatory=sz.mandatory,
