@@ -11,6 +11,7 @@ nav:
     - Converters: guide/converters.md
     - Storage: guide/storage.md
     - Effects: guide/effects.md
+    - YAML Loader: guide/yaml-loader.md
   - Notebooks:
     - Quickstart: notebooks/01-quickstart.ipynb
     - Heat System: notebooks/02-heat-system.ipynb

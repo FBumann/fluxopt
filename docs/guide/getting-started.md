@@ -120,3 +120,4 @@ Flow ids are qualified as `{component}({bus_or_id})` — e.g., `boiler(gas)`,
 - [Converters](converters.md) — boiler, heat pump, CHP, custom conversion
 - [Storage](storage.md) — batteries, thermal storage
 - [Effects](effects.md) — multi-effect tracking, bounds, contributions
+- [YAML Loader](yaml-loader.md) — define models as YAML + CSV instead of Python
