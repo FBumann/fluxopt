@@ -89,9 +89,9 @@ def _compute_periodic(
 
     # Fixed costs — optional (binary indicator * cost)
     if effects_fixed is not None and indicator_var in solution:
-        indicator = solution[indicator_var]
+        indicator = solution[indicator_var].dropna(entity_dim)
         opt_ids = list(indicator.coords[entity_dim].values)
-        ef = effects_fixed.rename(rename).sel({entity_dim: opt_ids})
+        ef = effects_fixed.rename(rename).reindex({entity_dim: opt_ids}, fill_value=0.0)
         term = (ef * indicator).reindex({entity_dim: contributor_ids}, fill_value=0.0)
         result = result + term.rename({entity_dim: 'contributor'})
 

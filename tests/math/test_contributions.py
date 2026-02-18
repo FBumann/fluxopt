@@ -206,6 +206,30 @@ class TestSizing:
         total_from_contrib = float(contrib['total'].sel(effect='cost').sum('contributor').values)
         assert total_from_contrib == pytest.approx(float(result.effect_totals.sel(effect='cost').values), abs=1e-6)
 
+    def test_optional_sizing_fixed_costs(self, timesteps_3):
+        """Optional sizing with fixed costs uses binary indicator in contributions."""
+        source = Flow(
+            bus='elec',
+            size=Sizing(min_size=0, max_size=200, effects_fixed={'cost': 1000}),
+            effects_per_flow_hour={'cost': 0.04},
+        )
+        sink = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.5, 0.5])
+
+        result = optimize(
+            timesteps=timesteps_3,
+            buses=[Bus('elec')],
+            effects=[Effect('cost', is_objective=True)],
+            ports=[Port('grid', imports=[source]), Port('demand', exports=[sink])],
+        )
+
+        contrib = result.effect_contributions()
+        total_from_contrib = float(contrib['total'].sel(effect='cost').sum('contributor').values)
+        assert total_from_contrib == pytest.approx(float(result.effect_totals.sel(effect='cost').values), abs=1e-6)
+
+        # Grid has investment cost from fixed costs
+        grid_periodic = float(contrib['periodic'].sel(contributor='grid(elec)', effect='cost').values)
+        assert grid_periodic == pytest.approx(1000, abs=1e-6)
+
     def test_sizing_cross_effect_investment(self, timesteps_3):
         """Sizing CO2 priced into cost via contribution_from."""
         source = Flow(
@@ -329,6 +353,43 @@ class TestStorage:
         total_from_contrib = float(contrib['total'].sel(effect='cost').sum('contributor').values)
         solver_total = float(result.effect_totals.sel(effect='cost').values)
         assert total_from_contrib == pytest.approx(solver_total, abs=1e-6)
+
+    def test_storage_sizing_cross_effect(self, timesteps_4):
+        """Storage sizing CO2 priced into cost via contribution_from."""
+        charge = Flow(bus='elec')
+        discharge = Flow(bus='elec')
+        source = Flow(bus='elec', size=100, effects_per_flow_hour={'cost': 0.04, 'co2': 0.1})
+        sink = Flow(bus='elec', size=50, fixed_relative_profile=[0.5, 0.5, 0.5, 0.5])
+
+        result = optimize(
+            timesteps=timesteps_4,
+            buses=[Bus('elec')],
+            effects=[
+                Effect('cost', is_objective=True, contribution_from={'co2': 50}),
+                Effect('co2', unit='kg'),
+            ],
+            ports=[Port('grid', imports=[source]), Port('demand', exports=[sink])],
+            storages=[
+                Storage(
+                    'battery',
+                    charging=charge,
+                    discharging=discharge,
+                    capacity=Sizing(min_size=10, max_size=100, mandatory=True, effects_per_size={'co2': 5}),
+                )
+            ],
+        )
+
+        contrib = result.effect_contributions()
+        total_from_contrib = float(contrib['total'].sel(effect='cost').sum('contributor').values)
+        solver_total = float(result.effect_totals.sel(effect='cost').values)
+        assert total_from_contrib == pytest.approx(solver_total, abs=1e-6)
+
+        # Storage has CO2 investment cost that gets priced into cost via cross-effect
+        bat_periodic_cost = float(contrib['periodic'].sel(contributor='battery', effect='cost').values)
+        bat_capacity = float(result.storage_capacities.sel(storage='battery').values)
+        expected_co2_inv = bat_capacity * 5
+        expected_cost_inv = expected_co2_inv * 50
+        assert bat_periodic_cost == pytest.approx(expected_cost_inv, abs=1e-6)
 
 
 class TestEdgeCases:

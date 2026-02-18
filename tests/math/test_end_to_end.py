@@ -128,6 +128,9 @@ class TestEndToEnd:
         assert 'effect' in result.effects_temporal.dims
         assert 'time' in result.effects_temporal.dims
 
+        # effects_periodic
+        assert 'effect' in result.effects_periodic.dims
+
     def test_int_timesteps(self):
         """Smoke test: int timesteps work end-to-end."""
         timesteps = [0, 1, 2, 3]
