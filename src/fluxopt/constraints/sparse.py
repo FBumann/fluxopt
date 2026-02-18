@@ -7,7 +7,7 @@ out of hundreds).
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 import xarray as xr
@@ -96,5 +96,4 @@ def sparse_weighted_sum(
     result = result.sel({group_dim: group_ids})
 
     # Vectorized sel() leaves sum_dim as a non-dim coord — drop it
-    result = result.drop_vars(sum_dim, errors='ignore')
-    return result
+    return cast('linopy.LinearExpression', result.drop_vars(sum_dim, errors='ignore'))

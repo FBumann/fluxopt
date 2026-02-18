@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, fields
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, Self
+from typing import TYPE_CHECKING, Any, Literal, Self
 
 import numpy as np
 import pandas as pd
@@ -313,7 +313,7 @@ class FlowsData:
         Args:
             ds: Dataset with matching variable names.
         """
-        kwargs: dict[str, object] = {f.name: ds.get(f.name) for f in fields(cls)}
+        kwargs: dict[str, Any] = {f.name: ds.get(f.name) for f in fields(cls)}
         return cls(**kwargs)
 
     @classmethod
@@ -762,7 +762,7 @@ class StoragesData:
         Args:
             ds: Dataset with matching variable names.
         """
-        kwargs: dict[str, object] = {f.name: ds.get(f.name) for f in fields(cls)}
+        kwargs: dict[str, Any] = {f.name: ds.get(f.name) for f in fields(cls)}
         return cls(**kwargs)
 
     @classmethod
