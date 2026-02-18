@@ -21,7 +21,7 @@ class TestSumToTotal:
         )
 
         contrib = result.effect_contributions()
-        total_from_contrib = float(contrib['total'].sel(effect='cost').sum('flow').values)
+        total_from_contrib = float(contrib['total'].sel(effect='cost').sum('contributor').values)
         total_from_solver = float(result.effect_totals.sel(effect='cost').values)
         assert total_from_contrib == pytest.approx(total_from_solver, abs=1e-6)
 
@@ -43,12 +43,12 @@ class TestSumToTotal:
         )
 
         contrib = result.effect_contributions()
-        total_from_contrib = float(contrib['total'].sel(effect='cost').sum('flow').values)
+        total_from_contrib = float(contrib['total'].sel(effect='cost').sum('contributor').values)
         total_from_solver = float(result.effect_totals.sel(effect='cost').values)
         assert total_from_contrib == pytest.approx(total_from_solver, abs=1e-6)
 
     def test_per_timestep_sum_to_effect_temporal(self, timesteps_3):
-        """Operational contributions summed over flows match effect_temporal."""
+        """Temporal contributions summed over contributors match effect_temporal."""
         source = Flow(bus='elec', size=200, effects_per_flow_hour={'cost': 0.04})
         sink = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.8, 0.6])
 
@@ -60,14 +60,14 @@ class TestSumToTotal:
         )
 
         contrib = result.effect_contributions()
-        op_sum = contrib['operational'].sel(effect='cost').sum('flow')
+        temporal_sum = contrib['temporal'].sel(effect='cost').sum('contributor')
         ept = result.effects_temporal.sel(effect='cost')
-        xr.testing.assert_allclose(op_sum, ept)
+        xr.testing.assert_allclose(temporal_sum, ept)
 
 
 class TestProportionalSplit:
     def test_cheap_gets_all_demand(self, timesteps_3):
-        """With fixed demand, cheaper source serves everything → gets all cost."""
+        """With fixed demand, cheaper source serves everything -> gets all cost."""
         cheap = Flow(bus='elec', size=200, effects_per_flow_hour={'cost': 0.02})
         expensive = Flow(bus='elec', size=200, effects_per_flow_hour={'cost': 0.10})
         sink = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.8, 0.6])
@@ -84,8 +84,8 @@ class TestProportionalSplit:
         )
 
         contrib = result.effect_contributions()
-        cheap_cost = float(contrib['total'].sel(flow='cheap_src(elec)', effect='cost').values)
-        exp_cost = float(contrib['total'].sel(flow='exp_src(elec)', effect='cost').values)
+        cheap_cost = float(contrib['total'].sel(contributor='cheap_src(elec)', effect='cost').values)
+        exp_cost = float(contrib['total'].sel(contributor='exp_src(elec)', effect='cost').values)
         demand_total = 50 + 80 + 60
         assert cheap_cost == pytest.approx(demand_total * 0.02, abs=1e-6)
         assert exp_cost == pytest.approx(0.0, abs=1e-6)
@@ -115,11 +115,11 @@ class TestCrossEffects:
         co2_cost = co2_total * 50
         expected_cost = direct_cost + co2_cost
 
-        grid_cost = float(contrib['total'].sel(flow='grid(elec)', effect='cost').values)
+        grid_cost = float(contrib['total'].sel(contributor='grid(elec)', effect='cost').values)
         assert grid_cost == pytest.approx(expected_cost, abs=1e-6)
 
         # Sum matches solver
-        total_from_contrib = float(contrib['total'].sel(effect='cost').sum('flow').values)
+        total_from_contrib = float(contrib['total'].sel(effect='cost').sum('contributor').values)
         assert total_from_contrib == pytest.approx(float(result.effect_totals.sel(effect='cost').values), abs=1e-6)
 
     def test_cross_effect_two_emitters(self, timesteps_3):
@@ -144,16 +144,16 @@ class TestCrossEffects:
         )
 
         contrib = result.effect_contributions()
-        # Clean source has zero CO2 → zero carbon tax contribution
-        clean_co2 = float(contrib['operational'].sel(flow='clean_src(elec)', effect='co2').sum('time').values)
+        # Clean source has zero CO2 -> zero carbon tax contribution
+        clean_co2 = float(contrib['temporal'].sel(contributor='clean_src(elec)', effect='co2').sum('time').values)
         assert clean_co2 == pytest.approx(0.0, abs=1e-6)
 
         # Totals still match
-        total_from_contrib = float(contrib['total'].sel(effect='cost').sum('flow').values)
+        total_from_contrib = float(contrib['total'].sel(effect='cost').sum('contributor').values)
         assert total_from_contrib == pytest.approx(float(result.effect_totals.sel(effect='cost').values), abs=1e-6)
 
     def test_transitive_cross_effects(self, timesteps_3):
-        """PE → CO2 → cost chain: contributions propagate transitively."""
+        """PE -> CO2 -> cost chain: contributions propagate transitively."""
         demand = [50.0, 80.0, 60.0]
         source = Flow(bus='elec', size=200, effects_per_flow_hour={'pe': 2.0})
         sink = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.8, 0.6])
@@ -175,7 +175,7 @@ class TestCrossEffects:
         co2_total = pe_total * 0.3
         cost_total = co2_total * 50
 
-        grid_cost = float(contrib['total'].sel(flow='grid(elec)', effect='cost').values)
+        grid_cost = float(contrib['total'].sel(contributor='grid(elec)', effect='cost').values)
         assert grid_cost == pytest.approx(cost_total, abs=1e-6)
 
 
@@ -197,13 +197,13 @@ class TestSizing:
         )
 
         contrib = result.effect_contributions()
-        grid_inv = float(contrib['investment'].sel(flow='grid(elec)', effect='cost').values)
-        demand_inv = float(contrib['investment'].sel(flow='demand(elec)', effect='cost').values)
+        grid_inv = float(contrib['periodic'].sel(contributor='grid(elec)', effect='cost').values)
+        demand_inv = float(contrib['periodic'].sel(contributor='demand(elec)', effect='cost').values)
         assert grid_inv > 0
         assert demand_inv == pytest.approx(0.0, abs=1e-6)
 
         # Sum matches solver
-        total_from_contrib = float(contrib['total'].sel(effect='cost').sum('flow').values)
+        total_from_contrib = float(contrib['total'].sel(effect='cost').sum('contributor').values)
         assert total_from_contrib == pytest.approx(float(result.effect_totals.sel(effect='cost').values), abs=1e-6)
 
     def test_sizing_cross_effect_investment(self, timesteps_3):
@@ -226,11 +226,11 @@ class TestSizing:
         )
 
         contrib = result.effect_contributions()
-        total_from_contrib = float(contrib['total'].sel(effect='cost').sum('flow').values)
+        total_from_contrib = float(contrib['total'].sel(effect='cost').sum('contributor').values)
         assert total_from_contrib == pytest.approx(float(result.effect_totals.sel(effect='cost').values), abs=1e-6)
 
         # Grid flow gets the investment cost (including cross-effect from CO2)
-        grid_inv_cost = float(contrib['investment'].sel(flow='grid(elec)', effect='cost').values)
+        grid_inv_cost = float(contrib['periodic'].sel(contributor='grid(elec)', effect='cost').values)
         invest_size = float(result.sizes.sel(flow='grid(elec)').values)
         invest_co2 = invest_size * 10
         expected_inv_cost = invest_co2 * 50
@@ -257,13 +257,13 @@ class TestStatus:
         )
 
         contrib = result.effect_contributions()
-        total_from_contrib = float(contrib['total'].sel(effect='cost').sum('flow').values)
+        total_from_contrib = float(contrib['total'].sel(effect='cost').sum('contributor').values)
         total_from_solver = float(result.effect_totals.sel(effect='cost').values)
         assert total_from_contrib == pytest.approx(total_from_solver, abs=1e-6)
 
         # Grid has running costs, demand does not
-        grid_cost = float(contrib['total'].sel(flow='grid(elec)', effect='cost').values)
-        demand_cost = float(contrib['total'].sel(flow='demand(elec)', effect='cost').values)
+        grid_cost = float(contrib['total'].sel(contributor='grid(elec)', effect='cost').values)
+        demand_cost = float(contrib['total'].sel(contributor='demand(elec)', effect='cost').values)
         assert grid_cost > 0
         assert demand_cost == pytest.approx(0.0, abs=1e-6)
 
@@ -286,20 +286,20 @@ class TestConverter:
 
         contrib = result.effect_contributions()
         # Boiler fuel flow has cost
-        boiler_fuel_cost = float(contrib['total'].sel(flow='boiler(gas)', effect='cost').values)
+        boiler_fuel_cost = float(contrib['total'].sel(contributor='boiler(gas)', effect='cost').values)
         assert boiler_fuel_cost > 0
         # Boiler heat flow has no direct cost
-        boiler_heat_cost = float(contrib['total'].sel(flow='boiler(heat)', effect='cost').values)
+        boiler_heat_cost = float(contrib['total'].sel(contributor='boiler(heat)', effect='cost').values)
         assert boiler_heat_cost == pytest.approx(0.0, abs=1e-6)
 
         # Total matches
-        total_from_contrib = float(contrib['total'].sel(effect='cost').sum('flow').values)
+        total_from_contrib = float(contrib['total'].sel(effect='cost').sum('contributor').values)
         assert total_from_contrib == pytest.approx(float(result.effect_totals.sel(effect='cost').values), abs=1e-6)
 
 
 class TestStorage:
     def test_storage_sizing_costs(self, timesteps_4):
-        """Storage sizing investment costs appear in storage_investment."""
+        """Storage sizing investment costs appear on contributor dim."""
         charge = Flow(bus='elec')
         discharge = Flow(bus='elec')
         source = Flow(bus='elec', size=100, effects_per_flow_hour={'cost': [0.02, 0.08, 0.02, 0.08]})
@@ -321,15 +321,14 @@ class TestStorage:
         )
 
         contrib = result.effect_contributions()
-        assert 'storage_investment' in contrib
-        bat_inv = float(contrib['storage_investment'].sel(storage='battery', effect='cost').values)
+        # Storage appears as a contributor in periodic
+        bat_inv = float(contrib['periodic'].sel(contributor='battery', effect='cost').values)
         assert bat_inv > 0
 
-        # Full total: flow totals + storage investment = solver total
-        flow_total = float(contrib['total'].sel(effect='cost').sum('flow').values)
-        stor_inv_total = float(contrib['storage_investment'].sel(effect='cost').sum('storage').values)
+        # Total (summed over all contributors) matches solver
+        total_from_contrib = float(contrib['total'].sel(effect='cost').sum('contributor').values)
         solver_total = float(result.effect_totals.sel(effect='cost').values)
-        assert flow_total + stor_inv_total == pytest.approx(solver_total, abs=1e-6)
+        assert total_from_contrib == pytest.approx(solver_total, abs=1e-6)
 
 
 class TestEdgeCases:
@@ -378,7 +377,7 @@ class TestEdgeCases:
 
         contrib = result.effect_contributions()
         for eff in ['cost', 'co2']:
-            total_from_contrib = float(contrib['total'].sel(effect=eff).sum('flow').values)
+            total_from_contrib = float(contrib['total'].sel(effect=eff).sum('contributor').values)
             total_from_solver = float(result.effect_totals.sel(effect=eff).values)
             assert total_from_contrib == pytest.approx(total_from_solver, abs=1e-6)
 

@@ -74,12 +74,13 @@ class Result:
         return self.storage_levels.sel(storage=id)
 
     def effect_contributions(self) -> xr.Dataset:
-        """Per-flow breakdown of effect contributions.
+        """Per-contributor breakdown of effect contributions.
 
         Returns:
-            Dataset with ``operational`` (flow, effect, time),
-            ``investment`` (flow, effect), ``total`` (flow, effect),
-            and optionally ``storage_investment`` (storage, effect).
+            Dataset with ``temporal`` (contributor, effect, time),
+            ``periodic`` (contributor, effect), and ``total``
+            (contributor, effect). The contributor dim contains flow
+            IDs and (if present) storage IDs.
 
         Raises:
             ValueError: If ``data`` is not available on this Result.

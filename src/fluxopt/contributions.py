@@ -1,9 +1,8 @@
-"""Per-flow effect contribution breakdown.
+"""Per-contributor effect breakdown.
 
-Computes how much each flow contributes to each effect, broken down into
-operational and investment parts. Storage investment costs are reported
-separately on the storage dimension. All math is post-hoc xarray arithmetic
-on solved values — no linopy variables.
+Decomposes solver effect totals into per-contributor (flow/storage) parts,
+split into temporal (per-timestep) and periodic (sizing, fixed costs) domains — matching
+the model's own temporal/periodic structure.
 
 Cross-effects use the Leontief inverse: total = (I - C)^-1 * direct,
 where C is the cross-effect coefficient matrix.
@@ -25,7 +24,7 @@ def _leontief(cf: xr.DataArray) -> xr.DataArray:
 
     Args:
         cf: Cross-effect coefficients with dims ``(effect, source_effect)``
-            or ``(effect, source_effect, time)``.
+            and optionally extra batch dims (e.g. ``time``).
     """
     n = cf.sizes['effect']
     other_dims = [d for d in cf.dims if d not in ('effect', 'source_effect')]
@@ -42,33 +41,33 @@ def _apply_leontief(
     """Apply Leontief inverse to an array with an ``effect`` dimension.
 
     Args:
-        leontief: Leontief inverse ``(effect, source_effect[, time])``.
+        leontief: Leontief inverse ``(effect, source_effect[, ...])``.
         arr: Array whose ``effect`` dim is contracted over.
     """
     result: xr.DataArray = xr.dot(leontief, arr.rename({'effect': 'source_effect'}), dim='source_effect')
     return result
 
 
-def _compute_investment(
+def _compute_periodic(
     effects_per_size: xr.DataArray | None,
     effects_fixed: xr.DataArray | None,
     mandatory: xr.DataArray | None,
     solution: xr.Dataset,
-    entity_ids: list[str],
+    contributor_ids: list[str],
     effect_ids: list[str],
     sizing_dim: str,
     entity_dim: str,
     size_var: str,
     indicator_var: str,
 ) -> xr.DataArray:
-    """Compute investment contributions for flows or storages.
+    """Compute periodic contributions for flows or storages.
 
     Args:
         effects_per_size: Per-unit sizing costs ``(sizing_dim, effect)`` or None.
         effects_fixed: Fixed sizing costs ``(sizing_dim, effect)`` or None.
         mandatory: Boolean mask for mandatory sizing ``(sizing_dim,)`` or None.
         solution: Solved variable dataset.
-        entity_ids: All entity ids (flow or storage).
+        contributor_ids: Contributor ids for this entity type.
         effect_ids: All effect ids.
         sizing_dim: Sizing dimension name (``sizing_flow`` or ``sizing_storage``).
         entity_dim: Entity dimension name (``flow`` or ``storage``).
@@ -76,23 +75,25 @@ def _compute_investment(
         indicator_var: Solution variable name for binary indicator.
     """
     inv = xr.DataArray(
-        np.zeros((len(entity_ids), len(effect_ids))),
-        dims=[entity_dim, 'effect'],
-        coords={entity_dim: entity_ids, 'effect': effect_ids},
+        np.zeros((len(contributor_ids), len(effect_ids))),
+        dims=['contributor', 'effect'],
+        coords={'contributor': contributor_ids, 'effect': effect_ids},
     )
     rename = {sizing_dim: entity_dim}
 
     # Per-size costs
     if effects_per_size is not None and size_var in solution:
         eps = effects_per_size.rename(rename)
-        inv = inv + (eps * solution[size_var]).reindex({entity_dim: entity_ids}, fill_value=0.0)
+        term = (eps * solution[size_var]).reindex({entity_dim: contributor_ids}, fill_value=0.0)
+        inv = inv + term.rename({entity_dim: 'contributor'})
 
     # Fixed costs — optional (binary indicator * cost)
     if effects_fixed is not None and indicator_var in solution:
         indicator = solution[indicator_var]
         opt_ids = list(indicator.coords[entity_dim].values)
         ef = effects_fixed.rename(rename).sel({entity_dim: opt_ids})
-        inv = inv + (ef * indicator).reindex({entity_dim: entity_ids}, fill_value=0.0)
+        term = (ef * indicator).reindex({entity_dim: contributor_ids}, fill_value=0.0)
+        inv = inv + term.rename({entity_dim: 'contributor'})
 
     # Fixed costs — mandatory (constant)
     if effects_fixed is not None and mandatory is not None:
@@ -100,13 +101,17 @@ def _compute_investment(
         if mand_mask.any():
             mand_ids = list(mandatory.coords[sizing_dim].values[mand_mask])
             ef_mand = effects_fixed.sel({sizing_dim: mand_ids}).rename(rename)
-            inv = inv + ef_mand.reindex({entity_dim: entity_ids}, fill_value=0.0)
+            term = ef_mand.reindex({entity_dim: contributor_ids}, fill_value=0.0)
+            inv = inv + term.rename({entity_dim: 'contributor'})
 
     return inv
 
 
 def compute_effect_contributions(solution: xr.Dataset, data: ModelData) -> xr.Dataset:
-    """Compute per-flow effect contributions from solved values.
+    """Compute per-contributor effect breakdown from solved values.
+
+    Decomposes solver totals into per-contributor parts on a unified
+    ``contributor`` dimension (flow IDs + storage IDs).
 
     Args:
         solution: Solved variable dataset from ``Result.solution``.
@@ -114,36 +119,40 @@ def compute_effect_contributions(solution: xr.Dataset, data: ModelData) -> xr.Da
 
     Returns:
         Dataset with:
-        - ``operational`` (flow, effect, time) — per-flow operational contributions
-        - ``investment`` (flow, effect) — per-flow investment (flow sizing)
-        - ``storage_investment`` (storage, effect) — storage sizing investment
-        - ``total`` (flow, effect) — operational summed over time + flow investment
+        - ``temporal`` (contributor, effect, time) — per-timestep contributions (flows only)
+        - ``periodic`` (contributor, effect) — periodic contributions (flows + storages)
+        - ``total`` (contributor, effect) — temporal summed over time + periodic
     """
     flow_ids: list[str] = list(data.flows.effect_coeff.coords['flow'].values)
     effect_ids: list[str] = list(data.effects.min_total.coords['effect'].values)
+    stor_ids: list[str] = list(data.storages.capacity.coords['storage'].values) if data.storages is not None else []
+    all_ids = flow_ids + stor_ids
 
     rate = solution['flow--rate']  # (flow, time)
     dt = data.dt  # (time,)
 
-    # --- Operational: direct per-flow contributions (flow, effect, time) ---
-    flow_op = data.flows.effect_coeff * rate * dt
+    # --- Temporal: per-flow contributions (flow, effect, time) ---
+    temporal_flow = data.flows.effect_coeff * rate * dt
 
     # Status running costs
     if data.flows.status_effects_running is not None and 'flow--on' in solution:
         er = data.flows.status_effects_running.rename({'status_flow': 'flow'})
-        flow_op = flow_op + (er * solution['flow--on'] * dt).reindex(flow=flow_ids, fill_value=0.0)
+        temporal_flow = temporal_flow + (er * solution['flow--on'] * dt).reindex(flow=flow_ids, fill_value=0.0)
 
     # Status startup costs
     if data.flows.status_effects_startup is not None and 'flow--startup' in solution:
         es = data.flows.status_effects_startup.rename({'status_flow': 'flow'})
-        flow_op = flow_op + (es * solution['flow--startup']).reindex(flow=flow_ids, fill_value=0.0)
+        temporal_flow = temporal_flow + (es * solution['flow--startup']).reindex(flow=flow_ids, fill_value=0.0)
 
-    # Cross-effects on operational via Leontief inverse
+    # Cross-effects on temporal via Leontief inverse
     if data.effects.cf_temporal is not None:
-        flow_op = _apply_leontief(_leontief(data.effects.cf_temporal), flow_op)
+        temporal_flow = _apply_leontief(_leontief(data.effects.cf_temporal), temporal_flow)
 
-    # --- Flow investment ---
-    flow_inv = _compute_investment(
+    # Rename to contributor dim
+    temporal = temporal_flow.rename({'flow': 'contributor'})
+
+    # --- Periodic: flow costs ---
+    flow_periodic = _compute_periodic(
         data.flows.sizing_effects_per_size,
         data.flows.sizing_effects_fixed,
         data.flows.sizing_mandatory,
@@ -156,16 +165,14 @@ def compute_effect_contributions(solution: xr.Dataset, data: ModelData) -> xr.Da
         'flow--size_indicator',
     )
     if data.effects.cf_periodic is not None:
-        flow_inv = _apply_leontief(_leontief(data.effects.cf_periodic), flow_inv)
+        flow_periodic = _apply_leontief(_leontief(data.effects.cf_periodic), flow_periodic)
 
-    # --- Storage investment ---
-    stor_inv: xr.DataArray | None = None
-    if data.storages is not None:
-        stor_ids: list[str] = list(data.storages.capacity.coords['storage'].values)
-        stor_inv = _compute_investment(
-            data.storages.sizing_effects_per_size,
-            data.storages.sizing_effects_fixed,
-            data.storages.sizing_mandatory,
+    # --- Periodic: storage costs ---
+    if stor_ids:
+        stor_periodic = _compute_periodic(
+            data.storages.sizing_effects_per_size,  # type: ignore[union-attr]
+            data.storages.sizing_effects_fixed,  # type: ignore[union-attr]
+            data.storages.sizing_mandatory,  # type: ignore[union-attr]
             solution,
             stor_ids,
             effect_ids,
@@ -175,28 +182,23 @@ def compute_effect_contributions(solution: xr.Dataset, data: ModelData) -> xr.Da
             'storage--size_indicator',
         )
         if data.effects.cf_periodic is not None:
-            stor_inv = _apply_leontief(_leontief(data.effects.cf_periodic), stor_inv)
+            stor_periodic = _apply_leontief(_leontief(data.effects.cf_periodic), stor_periodic)
+        periodic = xr.concat([flow_periodic, stor_periodic], dim='contributor')
+    else:
+        periodic = flow_periodic
 
-    # --- Total per flow: operational (weighted sum over time) + flow investment ---
-    total = (flow_op * data.weights).sum('time') + flow_inv
+    # --- Total: temporal (weighted sum over time) + periodic ---
+    total = (temporal * data.weights).sum('time').reindex(contributor=all_ids, fill_value=0.0) + periodic.reindex(
+        contributor=all_ids, fill_value=0.0
+    )
 
     # --- Validate: contributions must sum to solver effect totals ---
-    computed = total.sum('flow')
-    if stor_inv is not None:
-        computed = computed + stor_inv.sum('storage')
     solver = solution['effect--total']
+    computed = total.sum('contributor')
     if not np.allclose(computed.values, solver.values, atol=1e-6):
         diff = abs(computed - solver)
         raise ValueError(
             f'Effect contributions do not sum to solver totals. Max deviation: {float(diff.max().values):.6g}'
         )
 
-    result_vars: dict[str, xr.DataArray] = {
-        'operational': flow_op,
-        'investment': flow_inv,
-        'total': total,
-    }
-    if stor_inv is not None:
-        result_vars['storage_investment'] = stor_inv
-
-    return xr.Dataset(result_vars)
+    return xr.Dataset({'temporal': temporal, 'periodic': periodic, 'total': total})

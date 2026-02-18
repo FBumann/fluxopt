@@ -69,9 +69,10 @@ An effect can include a weighted contribution from another effect using
 `contribution_from`. This is useful for carbon pricing, primary energy factors,
 or any chain where one tracked quantity feeds into another.
 
-### Scalar (investment + per-hour)
+### Scalar (temporal + periodic)
 
-A scalar factor applies to both investment and per-timestep values:
+A scalar factor applies to **both** domains — temporal (per-timestep) and
+periodic (sizing, yearly costs):
 
 ```python
 effects = [
@@ -80,21 +81,21 @@ effects = [
 ]
 ```
 
-Here, every kg of CO₂ adds 50 € to cost — both for operational emissions and
-investment-related emissions (e.g., from `Sizing.effects_per_size`).
+Here, every kg of CO₂ adds 50 € to cost — both for temporal emissions
+(from flow operation) and periodic emissions (e.g., from `Sizing.effects_per_size`).
 
-### Time-Varying (per-hour only)
+### Time-Varying (temporal only)
 
 Use `contribution_from_per_hour` for time-varying factors that override the
-scalar for the per-timestep constraint:
+scalar in the temporal domain:
 
 ```python
 effects = [
     Effect(
         'cost',
         is_objective=True,
-        contribution_from={'co2': 50},  # scalar for investment
-        contribution_from_per_hour={'co2': [40, 50, 60]},  # time-varying for operations
+        contribution_from={'co2': 50},  # scalar for periodic domain
+        contribution_from_per_hour={'co2': [40, 50, 60]},  # time-varying for temporal domain
     ),
     Effect('co2', unit='kg'),
 ]
@@ -136,36 +137,34 @@ print(result.effect_totals)
 # Temporal: per-timestep effect values as (effect, time) DataArray
 print(result.effects_temporal)
 
-# Periodic: investment effect values as (effect,) DataArray
+# Periodic: sizing and fixed-cost effect values as (effect,) DataArray
 print(result.effects_periodic)
 ```
 
-### Per-Flow Breakdown
+### Per-Contributor Breakdown
 
-`effect_contributions()` decomposes effect totals into per-flow contributions,
-including cross-effect propagation:
+`effect_contributions()` decomposes effect totals into per-contributor parts
+on a unified `contributor` dimension (flow IDs + storage IDs), matching the
+model's temporal/periodic domain structure:
 
 ```python
 contrib = result.effect_contributions()
 
-# Per-flow operational contributions (flow, effect, time)
-contrib['operational']
+# Per-timestep contributions (contributor, effect, time) — flows only
+contrib['temporal']
 
-# Per-flow investment contributions (flow, effect)
-contrib['investment']
+# Periodic contributions (contributor, effect) — flows + storages
+contrib['periodic']
 
-# Storage investment contributions (storage, effect) — only if storages present
-contrib['storage_investment']
-
-# Total per flow: operational summed over time + investment (flow, effect)
+# Total per contributor: temporal summed over time + periodic (contributor, effect)
 contrib['total']
 ```
 
 The contributions are validated against the solver totals — if they don't sum
 to `effect_totals`, a `ValueError` is raised.
 
-Cross-effects (e.g., CO₂ → cost) are attributed to the originating flow. If
-a gas flow emits CO₂ priced at 50 €/kg, its cost contribution includes both
+Cross-effects (e.g., CO₂ → cost) are attributed to the originating contributor.
+If a gas flow emits CO₂ priced at 50 €/kg, its cost contribution includes both
 the direct cost and the carbon tax portion.
 
 ## Full Example
@@ -211,5 +210,5 @@ print(result.effect_totals)
 | `minimum_total` | `float \| None` | `None` | Lower bound on total |
 | `maximum_per_hour` | `TimeSeries \| None` | `None` | Upper bound per timestep |
 | `minimum_per_hour` | `TimeSeries \| None` | `None` | Lower bound per timestep |
-| `contribution_from` | `dict[str, float]` | `{}` | Scalar cross-effect factors (temporal + periodic) |
-| `contribution_from_per_hour` | `dict[str, TimeSeries]` | `{}` | Time-varying cross-effect factors (temporal only) |
+| `contribution_from` | `dict[str, float]` | `{}` | Cross-effect factor (both domains) |
+| `contribution_from_per_hour` | `dict[str, TimeSeries]` | `{}` | Cross-effect factor (temporal domain only) |

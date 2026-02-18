@@ -9,7 +9,7 @@ minimize.
 Effects are split into two **domains**:
 
 - **Temporal** (with time dimension): per-timestep flow contributions, status costs
-- **Periodic** (without time dimension): investment costs from sizing
+- **Periodic** (without time dimension): sizing costs, fixed yearly costs
 
 Both domains support cross-effect chains via `contribution_from`.
 
@@ -31,7 +31,7 @@ multi-level chains (e.g., PE → CO₂ → cost) automatically.
 
 ## Periodic Domain
 
-Investment costs from sizing (per-size and fixed) are accumulated per effect:
+Sizing costs and fixed costs (not time-varying) are accumulated per effect:
 
 \[
 \Phi_k^{\text{periodic}} = \underbrace{\Phi_k^{\text{invest,direct}}}_{\text{direct sizing costs}} + \underbrace{\sum_{j \in \mathcal{K}} \alpha_{k,j} \cdot \Phi_j^{\text{periodic}}}_{\text{cross-effect contributions}} \quad \forall \, k
@@ -44,7 +44,7 @@ where the direct investment term is:
 \]
 
 Because \(\Phi_k^{\text{periodic}}\) is a **variable** (not an expression), the
-solver resolves multi-level investment chains correctly: if PE has investment costs
+solver resolves multi-level chains correctly: if PE has sizing costs
 and CO₂ depends on PE and cost depends on CO₂, the chain propagates through the
 periodic domain just as it does through the temporal domain.
 
@@ -98,7 +98,7 @@ This enforces per-hour limits (e.g., maximum hourly emissions).
 | Symbol | Description | Reference |
 |---|---|---|
 | \(\Phi_{k,t}^{\text{temporal}}\) | Per-timestep effect variable | `effect_temporal[effect, time]` |
-| \(\Phi_k^{\text{periodic}}\) | Per-period (investment) effect variable | `effect_periodic[effect]` |
+| \(\Phi_k^{\text{periodic}}\) | Periodic effect variable (sizing, fixed costs) | `effect_periodic[effect]` |
 | \(\Phi_k\) | Total effect variable | `effect_total[effect]` |
 | \(c_{f,k,t}\) | Effect coefficient per flow-hour | `Flow.effects_per_flow_hour` |
 | \(\alpha_{k,j,t}\) | Cross-effect contribution factor (per hour) | `Effect.contribution_from_per_hour` |
