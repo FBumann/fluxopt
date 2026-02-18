@@ -313,7 +313,7 @@ class FlowsData:
         Args:
             ds: Dataset with matching variable names.
         """
-        kwargs: dict[str, xr.DataArray | None] = {f.name: ds.get(f.name) for f in fields(cls)}
+        kwargs: dict[str, object] = {f.name: ds.get(f.name) for f in fields(cls)}
         return cls(**kwargs)
 
     @classmethod
@@ -762,7 +762,7 @@ class StoragesData:
         Args:
             ds: Dataset with matching variable names.
         """
-        kwargs: dict[str, xr.DataArray | None] = {f.name: ds.get(f.name) for f in fields(cls)}
+        kwargs: dict[str, object] = {f.name: ds.get(f.name) for f in fields(cls)}
         return cls(**kwargs)
 
     @classmethod

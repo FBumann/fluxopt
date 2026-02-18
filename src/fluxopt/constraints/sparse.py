@@ -21,7 +21,7 @@ def sparse_weighted_sum(
     coeffs: xr.DataArray,
     sum_dim: str,
     group_dim: str,
-) -> object:
+) -> linopy.LinearExpression:
     """Compute ``(var * coeffs).sum(sum_dim)`` using only non-zero pairs.
 
     When *coeffs* is sparse along ``(group_dim, sum_dim)`` — e.g. a
@@ -96,4 +96,5 @@ def sparse_weighted_sum(
     result = result.sel({group_dim: group_ids})
 
     # Vectorized sel() leaves sum_dim as a non-dim coord — drop it
-    return result.drop_vars(sum_dim, errors='ignore')
+    result = result.drop_vars(sum_dim, errors='ignore')
+    return result

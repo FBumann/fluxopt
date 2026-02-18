@@ -94,8 +94,9 @@ def fast_concat(arrays: list[xr.DataArray], dim: pd.Index) -> xr.DataArray:
     dims = [name, *expected_dims]
     coords: dict[str, object] = {name: dim}
     for d in expected_dims:
-        if d in first.coords:
-            coords[d] = first.coords[d]
+        key = str(d)
+        if key in first.coords:
+            coords[key] = first.coords[key]
     return xr.DataArray(data, dims=dims, coords=coords)
 
 
