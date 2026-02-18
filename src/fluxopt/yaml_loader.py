@@ -556,21 +556,33 @@ def _load_raw(yaml_path: Path) -> tuple[dict[str, Any], dict[str, Any], list[Any
     if ts_spec is not None:
         yaml_dir = yaml_path.parent
         if isinstance(ts_spec, str):
-            csv_path = yaml_dir / ts_spec
+            csv_paths = {'_default': yaml_dir / ts_spec}
         elif isinstance(ts_spec, dict):
-            # Take the first (and for now only) file
-            csv_path = yaml_dir / next(iter(ts_spec.values()))
+            csv_paths = {name: yaml_dir / fname for name, fname in ts_spec.items()}
         else:
             raise YamlLoadError(f"'timeseries' must be a string or mapping, got {type(ts_spec).__name__}")
 
-        if not csv_path.exists():
-            raise YamlLoadError(f'CSV file not found: {csv_path}')
+        n_rows: int | None = None
+        for name, csv_path in csv_paths.items():
+            if not csv_path.exists():
+                raise YamlLoadError(f'CSV file not found: {csv_path}')
 
-        df = pd.read_csv(csv_path, index_col=0, parse_dates=True)
-        namespace = {col: df[col].values for col in df.columns}
+            df = pd.read_csv(csv_path, index_col=0, parse_dates=True)
 
-        # Derive timesteps from CSV index
-        timesteps = list(df.index.to_pydatetime()) if isinstance(df.index, pd.DatetimeIndex) else df.index.tolist()
+            # Derive timesteps from first CSV
+            if timesteps is None:
+                timesteps = (
+                    list(df.index.to_pydatetime()) if isinstance(df.index, pd.DatetimeIndex) else df.index.tolist()
+                )
+                n_rows = len(df)
+            elif len(df) != n_rows:
+                raise YamlLoadError(f"CSV '{name}' has {len(df)} rows, expected {n_rows} (must match first CSV)")
+
+            # Merge columns into namespace, checking for duplicates
+            for col in df.columns:
+                if col in namespace:
+                    raise YamlLoadError(f"Duplicate column '{col}' across CSV files")
+                namespace[col] = df[col].values
 
     # Explicit timesteps override
     if 'timesteps' in raw and timesteps is None:

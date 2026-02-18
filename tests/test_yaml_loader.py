@@ -415,6 +415,95 @@ class TestLoadYaml:
         assert s.capacity == 100.0
         assert s.eta_charge == 0.95
 
+    def test_multi_csv(self, tmp_path: Path):
+        """Multiple CSVs merge into one namespace."""
+        prices_csv = dedent("""\
+            time,gas_price,elec_price
+            2024-01-01 00:00,0.03,0.10
+            2024-01-01 01:00,0.05,0.12
+        """)
+        weather_csv = dedent("""\
+            time,solar_cf
+            2024-01-01 00:00,0.0
+            2024-01-01 01:00,0.8
+        """)
+        yaml_content = dedent("""\
+            timeseries:
+              prices: prices.csv
+              weather: weather.csv
+
+            buses:
+              - id: gas
+              - id: elec
+
+            effects:
+              - id: cost
+                is_objective: true
+
+            ports:
+              - id: grid
+                imports:
+                  - bus: gas
+                    size: 500
+                    effects_per_flow_hour:
+                      cost: "gas_price"
+                  - bus: elec
+                    size: 200
+                    effects_per_flow_hour:
+                      cost: "elec_price"
+              - id: pv
+                imports:
+                  - bus: elec
+                    size: 100
+                    fixed_relative_profile: "solar_cf"
+        """)
+        (tmp_path / 'prices.csv').write_text(prices_csv)
+        (tmp_path / 'weather.csv').write_text(weather_csv)
+        (tmp_path / 'model.yaml').write_text(yaml_content)
+
+        result = load_yaml(tmp_path / 'model.yaml')
+        assert len(result['timesteps']) == 2
+
+        # Columns from both CSVs are accessible
+        grid = result['ports'][0]
+        assert grid.imports[0].effects_per_flow_hour['cost'] == pytest.approx([0.03, 0.05])
+        assert grid.imports[1].effects_per_flow_hour['cost'] == pytest.approx([0.10, 0.12])
+
+        pv = result['ports'][1]
+        assert pv.imports[0].fixed_relative_profile == pytest.approx([0.0, 0.8])
+
+    def test_multi_csv_length_mismatch_raises(self, tmp_path: Path):
+        """CSVs with different row counts raise an error."""
+        (tmp_path / 'a.csv').write_text('time,x\n2024-01-01,1\n2024-01-02,2\n')
+        (tmp_path / 'b.csv').write_text('time,y\n2024-01-01,1\n')
+        yaml_content = dedent("""\
+            timeseries:
+              a: a.csv
+              b: b.csv
+            buses: []
+            effects: []
+            ports: []
+        """)
+        (tmp_path / 'model.yaml').write_text(yaml_content)
+        with pytest.raises(YamlLoadError, match='rows, expected'):
+            load_yaml(tmp_path / 'model.yaml')
+
+    def test_multi_csv_duplicate_column_raises(self, tmp_path: Path):
+        """Duplicate column names across CSVs raise an error."""
+        (tmp_path / 'a.csv').write_text('time,price\n2024-01-01,1\n')
+        (tmp_path / 'b.csv').write_text('time,price\n2024-01-01,2\n')
+        yaml_content = dedent("""\
+            timeseries:
+              a: a.csv
+              b: b.csv
+            buses: []
+            effects: []
+            ports: []
+        """)
+        (tmp_path / 'model.yaml').write_text(yaml_content)
+        with pytest.raises(YamlLoadError, match="Duplicate column 'price'"):
+            load_yaml(tmp_path / 'model.yaml')
+
     def test_missing_csv_raises(self, tmp_path: Path):
         yaml_content = dedent("""\
             timeseries: nonexistent.csv
