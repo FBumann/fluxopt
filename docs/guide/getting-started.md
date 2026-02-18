@@ -16,80 +16,139 @@ gas bus ──▶ [boiler η=0.9] ──▶ heat bus ──▶ demand
 
 ## Step by Step
 
-### 1. Imports and Timesteps
+=== "Python"
 
-```python
-from datetime import datetime
-from fluxopt import Bus, Converter, Effect, Flow, Port, solve
+    ### 1. Imports and Timesteps
 
-timesteps = [datetime(2024, 1, 1, h) for h in range(4)]
-```
+    ```python
+    from datetime import datetime
+    from fluxopt import Bus, Converter, Effect, Flow, Port, solve
 
-Timesteps can be `datetime` objects or plain integers. The duration `dt` is
-inferred from consecutive timestamps (here 1 h each).
+    timesteps = [datetime(2024, 1, 1, h) for h in range(4)]
+    ```
 
-### 2. Define Buses
+    Timesteps can be `datetime` objects or plain integers. The duration `dt` is
+    inferred from consecutive timestamps (here 1 h each).
 
-Buses are energy carriers — nodes where flows must balance.
+    ### 2. Define Buses
 
-```python
-buses = [Bus('gas'), Bus('heat')]
-```
+    Buses are energy carriers — nodes where flows must balance.
 
-### 3. Define Effects
+    ```python
+    buses = [Bus('gas'), Bus('heat')]
+    ```
 
-Effects track quantities across the horizon. Mark one as the objective.
+    ### 3. Define Effects
 
-```python
-effects = [Effect('cost', is_objective=True)]
-```
+    Effects track quantities across the horizon. Mark one as the objective.
 
-### 4. Define Flows
+    ```python
+    effects = [Effect('cost', is_objective=True)]
+    ```
 
-Flows carry energy on a bus. Each flow has a `size` (nominal capacity) and
-optional parameters like `fixed_relative_profile` or `effects_per_flow_hour`.
+    ### 4. Define Flows
 
-```python
-# Gas source: up to 500 MW, costs 0.04 €/kWh
-gas_source = Flow(bus='gas', size=500, effects_per_flow_hour={'cost': 0.04})
+    Flows carry energy on a bus. Each flow has a `size` (nominal capacity) and
+    optional parameters like `fixed_relative_profile` or `effects_per_flow_hour`.
 
-# Boiler fuel input and heat output
-fuel = Flow(bus='gas', size=300)
-heat = Flow(bus='heat', size=200)
+    ```python
+    # Gas source: up to 500 MW, costs 0.04 €/kWh
+    gas_source = Flow(bus='gas', size=500, effects_per_flow_hour={'cost': 0.04})
 
-# Heat demand: 100 MW capacity, profile sets actual demand per timestep
-demand = Flow(bus='heat', size=100, fixed_relative_profile=[0.4, 0.7, 0.5, 0.6])
-```
+    # Boiler fuel input and heat output
+    fuel = Flow(bus='gas', size=300)
+    heat = Flow(bus='heat', size=200)
 
-### 5. Define Ports and Converters
+    # Heat demand: 100 MW capacity, profile sets actual demand per timestep
+    demand = Flow(bus='heat', size=100, fixed_relative_profile=[0.4, 0.7, 0.5, 0.6])
+    ```
 
-**Ports** connect flows to the outside world (sources and sinks).
-**Converters** couple input and output flows with conversion equations.
+    ### 5. Define Ports and Converters
 
-```python
-ports = [
-    Port('grid', imports=[gas_source]),
-    Port('demand', exports=[demand]),
-]
+    **Ports** connect flows to the outside world (sources and sinks).
+    **Converters** couple input and output flows with conversion equations.
 
-converters = [
-    Converter.boiler('boiler', thermal_efficiency=0.9, fuel_flow=fuel, thermal_flow=heat),
-]
-```
+    ```python
+    ports = [
+        Port('grid', imports=[gas_source]),
+        Port('demand', exports=[demand]),
+    ]
 
-### 6. Solve
+    converters = [
+        Converter.boiler('boiler', thermal_efficiency=0.9, fuel_flow=fuel, thermal_flow=heat),
+    ]
+    ```
 
-```python
-result = solve(
-    timesteps=timesteps,
-    buses=buses,
-    effects=effects,
-    ports=ports,
-    converters=converters,
-)
-```
+    ### 6. Solve
 
-### 7. Inspect Results
+    ```python
+    result = solve(
+        timesteps=timesteps,
+        buses=buses,
+        effects=effects,
+        ports=ports,
+        converters=converters,
+    )
+    ```
+
+=== "YAML"
+
+    ### 1. Model File
+
+    Create `model.yaml` — all topology and parameters in one file:
+
+    ```yaml
+    timesteps:
+      - "2024-01-01 00:00"
+      - "2024-01-01 01:00"
+      - "2024-01-01 02:00"
+      - "2024-01-01 03:00"
+
+    buses:
+      - id: gas
+      - id: heat
+
+    effects:
+      - id: cost
+        is_objective: true
+
+    ports:
+      - id: grid
+        imports:
+          - bus: gas
+            size: 500
+            effects_per_flow_hour:
+              cost: 0.04
+      - id: demand
+        exports:
+          - bus: heat
+            size: 100
+            fixed_relative_profile: [0.4, 0.7, 0.5, 0.6]
+
+    converters:
+      - id: boiler
+        type: boiler
+        thermal_efficiency: 0.9
+        fuel:
+          bus: gas
+          size: 300
+        thermal:
+          bus: heat
+          size: 200
+    ```
+
+    ### 2. Solve
+
+    ```python
+    from fluxopt import solve_yaml
+
+    result = solve_yaml('model.yaml')
+    ```
+
+    See [YAML Loader](yaml-loader.md) for the full reference, including CSV
+    time series and expressions.
+
+## Inspect Results
 
 ```python
 # Objective value (total cost)
