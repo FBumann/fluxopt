@@ -11,7 +11,7 @@ from datetime import datetime
 import numpy as np
 from numpy.testing import assert_allclose
 
-from fluxopt import Bus, Effect, Flow, Port, Sizing, Status, solve
+from fluxopt import Bus, Effect, Flow, Port, Sizing, Status, optimize
 
 
 def _ts(n: int) -> list[datetime]:
@@ -38,7 +38,7 @@ class TestSemiContinuous:
         t=2: demand=0. Source off (cost 0), backup off.
         Total: 50 + 60 = 110.
         """
-        result = solve(
+        result = optimize(
             _ts(3),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
@@ -85,7 +85,7 @@ class TestSemiContinuous:
              actually backup is cheaper. So source stays off, backup covers both.
         Total with all-backup: 10*0.5 + 80*0.5 = 45.
         """
-        result = solve(
+        result = optimize(
             _ts(2),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
@@ -121,7 +121,7 @@ class TestStartupCosts:
         Source runs both hours: 1 startup event at t=0 (was off).
         Operational: 60*1*2 = 120. Startup: 50. Total: 170.
         """
-        result = solve(
+        result = optimize(
             _ts(2),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
@@ -156,7 +156,7 @@ class TestStartupCosts:
         Cycling on/off/on: 2*200 + (80+80)*0.1=416.
         Stays on to avoid 2nd startup.
         """
-        result = solve(
+        result = optimize(
             _ts(3),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
@@ -199,7 +199,7 @@ class TestPrior:
         With high startup cost, solver prefers to assume it was already on.
         Expected cost: 0 (no startup) + 0 (no flow cost) = 0.
         """
-        result = solve(
+        result = optimize(
             _ts(2),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
@@ -234,7 +234,7 @@ class TestPrior:
         t=1: can turn off. Demand=0, cheaper to turn off.
         t=2: off.
         """
-        result = solve(
+        result = optimize(
             _ts(3),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
@@ -273,7 +273,7 @@ class TestPrior:
         t=1: can turn on.
         t=2: on.
         """
-        result = solve(
+        result = optimize(
             _ts(3),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
@@ -311,7 +311,7 @@ class TestPrior:
         Operational: 50*1*2 = 100. Running: 10*1*2 = 20. Startup: 10*1 = 10 (1 event).
         Total: 100 + 20 = 120.
         """
-        result = solve(
+        result = optimize(
             _ts(2),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
@@ -349,7 +349,7 @@ class TestStatusSizing:
         t=2: demand=0. Source off, cost=0.
         Optimal size=80 (just enough for peak). Total operational: 40+80=120.
         """
-        result = solve(
+        result = optimize(
             _ts(3),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
@@ -404,7 +404,7 @@ class TestStatusSizing:
         Without status: min_load=25 forces Src to produce 25 even when demand=5,
         requiring waste absorption. With status, cleaner: just turn off.
         """
-        result = solve(
+        result = optimize(
             _ts(2),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
@@ -448,7 +448,7 @@ class TestStatusSizing:
         Solver should NOT invest. indicator=0 → on=0 → flow rate=0.
         The on<=indicator constraint prevents spurious running/startup costs.
         """
-        result = solve(
+        result = optimize(
             _ts(3),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
@@ -491,7 +491,7 @@ class TestStatusSizing:
         Src runs all 3h: 1 startup(100) + operational(150) + invest_cost(0) = 250.
         All backup: 50*5*3 = 750. Src is cheaper despite startup cost.
         """
-        result = solve(
+        result = optimize(
             _ts(3),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
@@ -535,7 +535,7 @@ class TestStatusSizing:
         it must stay on through t=2 (even with zero demand), producing at
         least 0.3*S each hour. Waste absorbs excess at t=1,t=2.
         """
-        result = solve(
+        result = optimize(
             _ts(4),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
@@ -594,7 +594,7 @@ class TestMaxUptime:
         Src 4h: 4*10*1 = 40. Backup 1h: 1*10*10 = 100. Total = 140.
         Without: 5*10*1 = 50. So cost > 50 proves the constraint works.
         """
-        result = solve(
+        result = optimize(
             _ts(5),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
@@ -647,7 +647,7 @@ class TestMaxDowntime:
         it was previously on, it can turn off but must restart within 1h.
         This forces Src on for ≥2 of 4 hours → cost > 40.
         """
-        result = solve(
+        result = optimize(
             _ts(4),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
@@ -692,7 +692,7 @@ class TestDurationCombinations:
         Src covers t=0,1,3,4; Backup covers t=2.
         Src cost: (5+10+18+12)*1 = 45. Backup cost: 20*5 = 100. Total = 145.
         """
-        result = solve(
+        result = optimize(
             _ts(5),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
@@ -730,7 +730,7 @@ class TestDurationCombinations:
         ≥2h then on ≥2h. Patterns like [off,off,on,on,on,on] or
         [off,off,on,on,off,off]. Cheapest: maximize Src hours.
         """
-        result = solve(
+        result = optimize(
             _ts(6),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
@@ -795,7 +795,7 @@ class TestDurationCombinations:
         With 2h prior uptime and max_uptime=3, Src can run at most 1 more
         hour before forced shutdown. Then can restart for up to 3h.
         """
-        result = solve(
+        result = optimize(
             _ts(5),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
@@ -850,7 +850,7 @@ class TestDurationCombinations:
         40€ operational + 100€ backup = 240€.
         Without max_uptime: 1 startup = 50 + 50 operational = 100€.
         """
-        result = solve(
+        result = optimize(
             _ts(5),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
@@ -903,7 +903,7 @@ class TestDurationCombinations:
         With 2h prior downtime and max_downtime=2, Src must restart
         immediately at t=0 (can't stay off any longer).
         """
-        result = solve(
+        result = optimize(
             _ts(4),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
@@ -958,7 +958,7 @@ class TestDurationCombinations:
         """
         # 30-minute timesteps: 8 slots = 4 hours
         ts = [datetime(2020, 1, 1, h, m) for h in range(4) for m in (0, 30)]
-        result = solve(
+        result = optimize(
             ts,
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
@@ -1009,7 +1009,7 @@ class TestDurationCombinations:
         [on,on,off,on,on,off] → Src covers 4 slots, Backup covers 2.
         """
         ts = [datetime(2020, 1, 1, h, m) for h in range(3) for m in (0, 30)]
-        result = solve(
+        result = optimize(
             ts,
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],

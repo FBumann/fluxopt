@@ -20,7 +20,7 @@ from datetime import datetime
 
 from numpy.testing import assert_allclose
 
-from fluxopt import Bus, Converter, Effect, Flow, Port, Storage, solve
+from fluxopt import Bus, Converter, Effect, Flow, Port, Storage, optimize
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -50,7 +50,7 @@ class TestBusBalance:
         Sensitivity: Without merit order, cost could be 100 (Src2 first).
         Only correct bus balance with merit order yields cost=80.
         """
-        result = solve(
+        result = optimize(
             _ts(2),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
@@ -80,7 +80,7 @@ class TestConversionEfficiency:
         """
         fuel = Flow(bus='Gas')
         thermal = Flow(bus='Heat')
-        result = solve(
+        result = optimize(
             _ts(3),
             buses=[Bus('Heat'), Bus('Gas')],
             effects=[Effect('costs', is_objective=True)],
@@ -99,7 +99,7 @@ class TestConversionEfficiency:
         """
         fuel = Flow(bus='Gas')
         thermal = Flow(bus='Heat')
-        result = solve(
+        result = optimize(
             _ts(2),
             buses=[Bus('Heat'), Bus('Gas')],
             effects=[Effect('costs', is_objective=True)],
@@ -120,7 +120,7 @@ class TestConversionEfficiency:
         fuel = Flow(bus='Gas')
         thermal = Flow(bus='Heat')
         electrical = Flow(bus='Elec')
-        result = solve(
+        result = optimize(
             _ts(2),
             buses=[Bus('Heat'), Bus('Elec'), Bus('Gas')],
             effects=[Effect('costs', is_objective=True)],
@@ -146,7 +146,7 @@ class TestEffects:
 
         Sensitivity: If only one effect applied, the other would be wrong.
         """
-        result = solve(
+        result = optimize(
             _ts(2),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True), Effect('CO2')],
@@ -165,7 +165,7 @@ class TestEffects:
 
         Sensitivity: Without CO2 cap, all Dirty → cost=20.
         """
-        result = solve(
+        result = optimize(
             _ts(2),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True), Effect('CO2', maximum_total=15)],
@@ -185,7 +185,7 @@ class TestEffects:
 
         Sensitivity: Without minimum_total, Dirty=20 → cost=20.
         """
-        result = solve(
+        result = optimize(
             _ts(2),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True), Effect('CO2', minimum_total=25)],
@@ -207,7 +207,7 @@ class TestEffects:
 
         Sensitivity: Without max_per_hour, all Dirty → cost=20.
         """
-        result = solve(
+        result = optimize(
             _ts(2),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True), Effect('CO2', maximum_per_hour=8)],
@@ -226,7 +226,7 @@ class TestEffects:
 
         Sensitivity: Without min_per_hour, Dirty=5/ts → cost=10.
         """
-        result = solve(
+        result = optimize(
             _ts(2),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True), Effect('CO2', minimum_per_hour=10)],
@@ -247,7 +247,7 @@ class TestEffects:
 
         Sensitivity: Without cap, all Dirty → cost=20.
         """
-        result = solve(
+        result = optimize(
             _ts(2),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True), Effect('CO2', maximum_total=12)],
@@ -267,7 +267,7 @@ class TestEffects:
 
         Sensitivity: Without floor, Dirty=20 → cost=20.
         """
-        result = solve(
+        result = optimize(
             _ts(2),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True), Effect('CO2', minimum_total=25)],
@@ -296,7 +296,7 @@ class TestFlowConstraints:
         """
         fuel = Flow(bus='Gas')
         thermal = Flow(bus='Heat', size=100, relative_minimum=0.4)
-        result = solve(
+        result = optimize(
             _ts(2),
             buses=[Bus('Heat'), Bus('Gas')],
             effects=[Effect('costs', is_objective=True)],
@@ -317,7 +317,7 @@ class TestFlowConstraints:
 
         Sensitivity: Without relative_maximum, all from CheapSrc → cost=120.
         """
-        result = solve(
+        result = optimize(
             _ts(2),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
@@ -347,7 +347,7 @@ class TestStorage:
 
         Sensitivity: Without storage, buy at t=2 @10€ → cost=200.
         """
-        result = solve(
+        result = optimize(
             _ts(3),
             buses=[Bus('Elec')],
             effects=[Effect('costs', is_objective=True)],
@@ -377,7 +377,7 @@ class TestStorage:
 
         Sensitivity: Without losses, charge only 90 → cost=90.
         """
-        result = solve(
+        result = optimize(
             _ts(2),
             buses=[Bus('Elec')],
             effects=[Effect('costs', is_objective=True)],
@@ -408,7 +408,7 @@ class TestStorage:
         Sensitivity: eta_c broken → cost=90. eta_d broken → cost=80.
         Both broken → cost=72. Only both correct yields 100.
         """
-        result = solve(
+        result = optimize(
             _ts(2),
             buses=[Bus('Elec')],
             effects=[Effect('costs', is_objective=True)],
@@ -438,7 +438,7 @@ class TestStorage:
 
         Sensitivity: Without SOC bound, store 60 → cost=60.
         """
-        result = solve(
+        result = optimize(
             _ts(2),
             buses=[Bus('Elec')],
             effects=[Effect('costs', is_objective=True)],
@@ -469,7 +469,7 @@ class TestStorage:
 
         Sensitivity: Without cyclic, start full (free energy) → cost=0.
         """
-        result = solve(
+        result = optimize(
             _ts(2),
             buses=[Bus('Elec')],
             effects=[Effect('costs', is_objective=True)],
@@ -499,7 +499,7 @@ class TestStorage:
 
         Sensitivity: Without min level, discharge all → no grid → cost=50 less.
         """
-        result = solve(
+        result = optimize(
             _ts(3),
             buses=[Bus('Elec')],
             effects=[Effect('costs', is_objective=True)],

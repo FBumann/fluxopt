@@ -6,11 +6,11 @@ that the objective (or key solution variables) match a hand-calculated value.
 The ``optimize`` fixture is parametrized so every test runs three times,
 each verifying a different pipeline:
 
-``solve``
+``optimize``
     Baseline correctness check.
-``save->reload->solve``
+``save->reload->optimize``
     Proves the ModelData definition survives IO.
-``solve->save->reload``
+``optimize->save->reload``
     Proves the solution data survives IO.
 """
 
@@ -20,7 +20,8 @@ from datetime import datetime
 
 import pytest
 
-from fluxopt import Flow, FlowSystemModel, ModelData, Port, solve
+from fluxopt import Flow, FlowSystemModel, ModelData, Port
+from fluxopt import optimize as fluxopt_optimize
 from fluxopt.results import SolvedModel
 
 
@@ -36,18 +37,18 @@ def _waste(bus: str) -> Port:
 
 @pytest.fixture(
     params=[
-        'solve',
-        'save->reload->solve',
-        'solve->save->reload',
+        'optimize',
+        'save->reload->optimize',
+        'optimize->save->reload',
     ]
 )
 def optimize(request, tmp_path):
     """Callable fixture: each test runs 3 pipelines to verify IO roundtrip."""
 
     def _optimize(**kwargs) -> SolvedModel:
-        if request.param == 'solve':
-            return solve(**kwargs)
-        if request.param == 'save->reload->solve':
+        if request.param == 'optimize':
+            return fluxopt_optimize(**kwargs)
+        if request.param == 'save->reload->optimize':
             data = ModelData.build(
                 kwargs['timesteps'],
                 kwargs['buses'],
@@ -60,11 +61,11 @@ def optimize(request, tmp_path):
             path = tmp_path / 'data.nc'
             data.to_netcdf(path, mode='w')
             loaded = ModelData.from_netcdf(path)
-            model = FlowSystemModel(loaded, solver='highs')
+            model = FlowSystemModel(loaded)
             model.build()
-            return model.solve(silent=True)
-        # solve->save->reload
-        result = solve(**kwargs)
+            return model.solve()
+        # optimize->save->reload
+        result = fluxopt_optimize(**kwargs)
         path = tmp_path / 'result.nc'
         result.to_netcdf(path)
         return SolvedModel.from_netcdf(path)

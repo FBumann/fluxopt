@@ -12,7 +12,7 @@ from fluxopt import (
     ModelData,
     Port,
     Storage,
-    solve,
+    optimize,
 )
 from fluxopt.model import FlowSystemModel
 
@@ -29,7 +29,7 @@ class TestEndToEnd:
         fuel = Flow(bus='gas', size=300)
         heat = Flow(bus='heat', size=200)
 
-        result = solve(
+        result = optimize(
             timesteps=timesteps,
             buses=[Bus('gas'), Bus('heat')],
             effects=[Effect('cost', is_objective=True)],
@@ -65,7 +65,7 @@ class TestEndToEnd:
         discharge_flow = Flow(bus='heat', size=100)
         storage = Storage('heat_store', charging=charge_flow, discharging=discharge_flow, capacity=200.0)
 
-        result = solve(
+        result = optimize(
             timesteps=timesteps,
             buses=[Bus('gas'), Bus('heat')],
             effects=[Effect('cost', is_objective=True)],
@@ -109,7 +109,7 @@ class TestEndToEnd:
         sink_flow = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.8, 0.6])
         source_flow = Flow(bus='elec', size=200, effects_per_flow_hour={'cost': 0.04})
 
-        result = solve(
+        result = optimize(
             timesteps=timesteps_3,
             buses=[Bus('elec')],
             effects=[Effect('cost', is_objective=True)],
@@ -137,7 +137,7 @@ class TestEndToEnd:
         fuel = Flow(bus='gas', size=300)
         heat = Flow(bus='heat', size=200)
 
-        result = solve(
+        result = optimize(
             timesteps=timesteps,
             buses=[Bus('gas'), Bus('heat')],
             effects=[Effect('cost', is_objective=True)],

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from fluxopt import Bus, Effect, Flow, Port, Sizing, solve
+from fluxopt import Bus, Effect, Flow, Port, Sizing, optimize
 
 
 class TestEffects:
@@ -12,7 +12,7 @@ class TestEffects:
         sink_flow = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.8, 0.6])
         source_flow = Flow(bus='elec', size=200, effects_per_flow_hour={'cost': 0.04})
 
-        result = solve(
+        result = optimize(
             timesteps=timesteps_3,
             buses=[Bus('elec')],
             effects=[Effect('cost', is_objective=True)],
@@ -35,7 +35,7 @@ class TestEffects:
             effects_per_flow_hour={'cost': 0.04, 'co2': 0.5},
         )
 
-        result = solve(
+        result = optimize(
             timesteps=timesteps_3,
             buses=[Bus('elec')],
             effects=[Effect('cost', is_objective=True), Effect('co2', unit='kg')],
@@ -58,7 +58,7 @@ class TestEffects:
         expensive_clean = Flow(bus='elec', size=200, effects_per_flow_hour={'cost': 0.10, 'co2': 0.0})
 
         co2_limit = 100.0  # demand_total = 190, so can't use all cheap
-        result = solve(
+        result = optimize(
             timesteps=timesteps_3,
             buses=[Bus('elec')],
             effects=[Effect('cost', is_objective=True), Effect('co2', maximum_total=co2_limit)],
@@ -78,7 +78,7 @@ class TestEffects:
         sink_flow = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.5, 0.5])
         source_flow = Flow(bus='elec', size=200, effects_per_flow_hour={'cost': prices})
 
-        result = solve(
+        result = optimize(
             timesteps=timesteps_3,
             buses=[Bus('elec')],
             effects=[Effect('cost', is_objective=True)],
@@ -96,7 +96,7 @@ class TestContributionFrom:
         sink = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.5, 0.5])
 
         with pytest.raises(ValueError, match='cannot reference itself'):
-            solve(
+            optimize(
                 timesteps=timesteps_3,
                 buses=[Bus('elec')],
                 effects=[Effect('cost', is_objective=True, contribution_from={'cost': 0.5})],
@@ -109,7 +109,7 @@ class TestContributionFrom:
         sink = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.5, 0.5])
 
         with pytest.raises(ValueError, match='Circular contribution_from dependency'):
-            solve(
+            optimize(
                 timesteps=timesteps_3,
                 buses=[Bus('elec')],
                 effects=[
@@ -129,7 +129,7 @@ class TestContributionFrom:
         )
         sink = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.8, 0.6])
 
-        result = solve(
+        result = optimize(
             timesteps=timesteps_3,
             buses=[Bus('elec')],
             effects=[
@@ -156,7 +156,7 @@ class TestContributionFrom:
         )
         sink = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.8, 0.6])
 
-        result = solve(
+        result = optimize(
             timesteps=timesteps_3,
             buses=[Bus('elec')],
             effects=[
@@ -181,7 +181,7 @@ class TestContributionFrom:
         )
         sink = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.8, 0.6])
 
-        result = solve(
+        result = optimize(
             timesteps=timesteps_3,
             buses=[Bus('elec')],
             effects=[
@@ -212,7 +212,7 @@ class TestContributionFrom:
         sink = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.8, 0.6])
 
         carbon_prices = [40.0, 50.0, 60.0]
-        result = solve(
+        result = optimize(
             timesteps=timesteps_3,
             buses=[Bus('elec')],
             effects=[
@@ -243,7 +243,7 @@ class TestContributionFrom:
         )
         sink = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.5, 0.5])
 
-        result = solve(
+        result = optimize(
             timesteps=timesteps_3,
             buses=[Bus('elec')],
             effects=[

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from fluxopt import Bus, Effect, Flow, Port, solve
+from fluxopt import Bus, Effect, Flow, Port, optimize
 
 
 class TestBusBalance:
@@ -12,7 +12,7 @@ class TestBusBalance:
         sink_flow = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.8, 0.6])
         source_flow = Flow(bus='elec', size=200, effects_per_flow_hour={'cost': 0.04})
 
-        result = solve(
+        result = optimize(
             timesteps=timesteps_3,
             buses=[Bus('elec')],
             effects=[Effect('cost', is_objective=True)],
@@ -28,7 +28,7 @@ class TestBusBalance:
         sink_flow = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.8, 0.6])
         source_flow = Flow(bus='elec', size=200, effects_per_flow_hour={'cost': 0.04})
 
-        result = solve(
+        result = optimize(
             timesteps=timesteps_3,
             buses=[Bus('elec')],
             effects=[Effect('cost', is_objective=True)],
@@ -44,7 +44,7 @@ class TestBusBalance:
         cheap_flow = Flow(bus='elec', size=200, effects_per_flow_hour={'cost': 0.02})
         expensive_flow = Flow(bus='elec', size=200, effects_per_flow_hour={'cost': 0.10})
 
-        result = solve(
+        result = optimize(
             timesteps=timesteps_3,
             buses=[Bus('elec')],
             effects=[Effect('cost', is_objective=True)],

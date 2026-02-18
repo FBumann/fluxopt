@@ -12,6 +12,8 @@ from fluxopt.results import SolvedModel
 from fluxopt.types import as_dataarray
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from fluxopt.model_data import ModelData
 
 
@@ -31,17 +33,13 @@ class FlowSystemModel:
     flow_startup: Variable | None = None
     flow_shutdown: Variable | None = None
 
-    def __init__(self, data: ModelData, solver: str = 'highs', *, silent: bool = True) -> None:
+    def __init__(self, data: ModelData) -> None:
         """Initialize the flow system optimization model.
 
         Args:
             data: Pre-built model data.
-            solver: Solver backend name.
-            silent: Suppress solver output.
         """
         self.data = data
-        self.solver = solver
-        self.silent = silent
         self.m = Model()
 
     def _add_variables(
@@ -92,13 +90,35 @@ class FlowSystemModel:
         self._set_objective()
         self._builtin_var_names: frozenset[str] = frozenset(self.m.variables)
 
-    def solve(self, silent: bool = True) -> SolvedModel:
-        """Solve the model and return a SolvedModel.
+    def optimize(
+        self,
+        customize: Callable[[FlowSystemModel], None] | None = None,
+        *,
+        solver: str = 'highs',
+        **kwargs: Any,
+    ) -> SolvedModel:
+        """Build, optionally customize, and solve the model.
 
         Args:
-            silent: Suppress solver output.
+            customize: Optional callback to modify the linopy model between build and solve.
+                Receives ``self``; use ``model.m`` to add variables/constraints.
+            solver: Solver backend name.
+            **kwargs: Passed through to ``linopy.Model.solve()``.
         """
-        self.m.solve(solver_name=self.solver, io_api='direct', output_flag=not silent)
+        self.build()
+        if customize is not None:
+            customize(self)
+        return self.solve(solver_name=solver, **kwargs)
+
+    def solve(self, **kwargs: Any) -> SolvedModel:
+        """Solve the built model and return results.
+
+        Thin wrapper around ``linopy.Model.solve()``. Call :meth:`build` first.
+
+        Args:
+            **kwargs: Passed through to ``linopy.Model.solve()``.
+        """
+        self.m.solve(**kwargs)
         return SolvedModel.from_model(self)
 
     def _create_flow_variables(self) -> None:

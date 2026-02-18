@@ -4,7 +4,7 @@ from datetime import datetime
 
 import pytest
 
-from fluxopt import Bus, Effect, Flow, ModelData, Port, solve
+from fluxopt import Bus, Effect, Flow, ModelData, Port, optimize
 from fluxopt.model import FlowSystemModel
 
 
@@ -28,7 +28,7 @@ class TestCustomize:
     def test_customize_adds_constraint(self, simple_system):
         """A custom constraint restricting flow rate should affect the solution."""
         # Without customize: grid imports 50 MW each hour (matching demand)
-        result_base = solve(**simple_system)
+        result_base = optimize(**simple_system)
         base_rates = result_base.flow_rate('grid(elec)').values
         for rate in base_rates:
             assert rate == pytest.approx(50.0, abs=1e-6)
@@ -40,7 +40,7 @@ class TestCustomize:
             grid_rate = model.m.variables['flow--rate'].sel(flow='grid(elec)')
             model.m.add_constraints(grid_rate <= 60, name='custom_grid_cap')
 
-        result = solve(**simple_system, customize=cap_at_60)
+        result = optimize(**simple_system, customize=cap_at_60)
         rates = result.flow_rate('grid(elec)').values
         for rate in rates:
             assert rate == pytest.approx(50.0, abs=1e-6)
@@ -59,7 +59,7 @@ class TestCustomize:
             model.m.add_constraints(grid + slack >= 60, name='slack_floor')
             model.m.objective += 100 * slack.sum()
 
-        result = solve(**simple_system, customize=add_slack)
+        result = optimize(**simple_system, customize=add_slack)
 
         assert 'my_slack' in result.solution
         slack_vals = result.solution['my_slack'].values
@@ -67,8 +67,8 @@ class TestCustomize:
             assert val == pytest.approx(10.0, abs=1e-6)
 
     def test_no_customize_works(self, simple_system):
-        """solve() without customize callback works as before."""
-        result = solve(**simple_system)
+        """optimize() without customize callback works as before."""
+        result = optimize(**simple_system)
         assert result.objective > 0
         rates = result.flow_rate('grid(elec)').values
         for rate in rates:

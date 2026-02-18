@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 import pytest
 import xarray as xr
 
-from fluxopt import Bus, Converter, Effect, Flow, Port, Storage, solve
+from fluxopt import Bus, Converter, Effect, Flow, Port, Storage, optimize
 from fluxopt.results import SolvedModel
 
 if TYPE_CHECKING:
@@ -22,7 +22,7 @@ def _solve_simple(timesteps: list[datetime] | list[int]) -> SolvedModel:
     """Simple source -> demand system with cost tracking."""
     demand = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.8, 0.6])
     source = Flow(bus='elec', size=200, effects_per_flow_hour={'cost': 0.04})
-    return solve(
+    return optimize(
         timesteps=timesteps,
         buses=[Bus('elec')],
         effects=[Effect('cost', is_objective=True)],
@@ -39,7 +39,7 @@ def _solve_with_storage(timesteps: list[datetime]) -> SolvedModel:
     charge = Flow(bus='heat', size=100)
     discharge = Flow(bus='heat', size=100)
     storage = Storage('heat_store', charging=charge, discharging=discharge, capacity=200.0)
-    return solve(
+    return optimize(
         timesteps=timesteps,
         buses=[Bus('gas'), Bus('heat')],
         effects=[Effect('cost', is_objective=True)],
@@ -122,7 +122,7 @@ class TestRoundtripContributionFrom:
         source = Flow(bus='elec', size=200, effects_per_flow_hour={'cost': 0.04, 'co2': 0.5})
         sink = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.8, 0.6])
 
-        result = solve(
+        result = optimize(
             timesteps=ts,
             buses=[Bus('elec')],
             effects=[

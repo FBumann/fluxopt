@@ -4,7 +4,7 @@ from datetime import datetime
 
 import pytest
 
-from fluxopt import Bus, Effect, Flow, Port, Storage, solve
+from fluxopt import Bus, Effect, Flow, Port, Storage, optimize
 
 
 class TestStorage:
@@ -19,7 +19,7 @@ class TestStorage:
         discharge_flow = Flow(bus='elec', size=50)
         battery = Storage('battery', charging=charge_flow, discharging=discharge_flow, capacity=100.0)
 
-        result = solve(
+        result = optimize(
             timesteps=timesteps_4,
             buses=[Bus('elec')],
             effects=[Effect('cost', is_objective=True)],
@@ -57,7 +57,7 @@ class TestStorage:
             cyclic=False,
         )
 
-        result = solve(
+        result = optimize(
             timesteps=timesteps_4,
             buses=[Bus('elec')],
             effects=[Effect('cost', is_objective=True)],
@@ -88,7 +88,7 @@ class TestStorage:
             capacity=100.0,
         )
 
-        result = solve(
+        result = optimize(
             timesteps=timesteps,
             buses=[Bus('elec')],
             effects=[Effect('cost', is_objective=True)],
@@ -124,7 +124,7 @@ class TestStorage:
             eta_charge=eta_c,
         )
 
-        result = solve(
+        result = optimize(
             timesteps=timesteps_3,
             buses=[Bus('elec')],
             effects=[Effect('cost', is_objective=True)],
