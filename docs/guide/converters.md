@@ -94,7 +94,7 @@ Gas boiler serving a heat demand:
 
 ```python
 from datetime import datetime
-from fluxopt import Bus, Converter, Effect, Flow, Port, solve
+from fluxopt import Bus, Converter, Effect, Flow, Port, optimize
 
 timesteps = [datetime(2024, 1, 1, h) for h in range(4)]
 demand = [40.0, 70.0, 50.0, 60.0]
@@ -104,7 +104,7 @@ fuel = Flow(bus='gas', size=300)
 heat = Flow(bus='heat', size=200)
 demand_flow = Flow(bus='heat', size=100, fixed_relative_profile=[0.4, 0.7, 0.5, 0.6])
 
-result = solve(
+result = optimize(
     timesteps=timesteps,
     buses=[Bus('gas'), Bus('heat')],
     effects=[Effect('cost', is_objective=True)],

@@ -125,32 +125,16 @@ formulation.
 After solving, the `SolvedModel` provides several views into effect values:
 
 ```python
-result = solve(...)
-
-# Total effect values (one row per effect)
-print(result.effects)
-
-# Per-timestep effect values
-print(result.effects_per_timestep)
+result = optimize(...)
 
 # Objective value (shortcut for the objective effect's total)
 print(result.objective)
 
-# Per-source contributions: which flows contributed what to each effect
-print(result.contributions)
-```
+# Total effect values as (effect,) DataArray
+print(result.effect_totals)
 
-### Filtering Contributions
-
-The `contributions` DataFrame has columns: `source`, `contributor`, `effect`,
-`time`, `solution`.
-
-```python
-# All flow contributions
-flow_contribs = result.contributions.filter(result.contributions['source'] == 'flow')
-
-# CO2 contributions only
-co2_contribs = result.contributions.filter(result.contributions['effect'] == 'co2')
+# Per-timestep effect values as (effect, time) DataArray
+print(result.effects_per_timestep)
 ```
 
 ## Full Example
@@ -159,7 +143,7 @@ Two sources with different cost/CO2 tradeoffs, subject to an emission cap:
 
 ```python
 from datetime import datetime
-from fluxopt import Bus, Effect, Flow, Port, solve
+from fluxopt import Bus, Effect, Flow, Port, optimize
 
 timesteps = [datetime(2024, 1, 1, h) for h in range(3)]
 
@@ -167,7 +151,7 @@ demand = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.8, 0.6])
 cheap_dirty = Flow(bus='elec', size=200, effects_per_flow_hour={'cost': 0.02, 'co2': 1.0})
 expensive_clean = Flow(bus='elec', size=200, effects_per_flow_hour={'cost': 0.10, 'co2': 0.0})
 
-result = solve(
+result = optimize(
     timesteps=timesteps,
     buses=[Bus('elec')],
     effects=[
@@ -182,8 +166,7 @@ result = solve(
 )
 
 print(f"Total cost: {result.objective:.2f}")
-print(result.effects)
-print(result.contributions)
+print(result.effect_totals)
 ```
 
 ## Parameters Summary
