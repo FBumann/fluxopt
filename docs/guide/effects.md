@@ -140,6 +140,34 @@ print(result.effects_temporal)
 print(result.effects_periodic)
 ```
 
+### Per-Flow Breakdown
+
+`effect_contributions()` decomposes effect totals into per-flow contributions,
+including cross-effect propagation:
+
+```python
+contrib = result.effect_contributions()
+
+# Per-flow operational contributions (flow, effect, time)
+contrib['operational']
+
+# Per-flow investment contributions (flow, effect)
+contrib['investment']
+
+# Storage investment contributions (storage, effect) — only if storages present
+contrib['storage_investment']
+
+# Total per flow: operational summed over time + investment (flow, effect)
+contrib['total']
+```
+
+The contributions are validated against the solver totals — if they don't sum
+to `effect_totals`, a `ValueError` is raised.
+
+Cross-effects (e.g., CO₂ → cost) are attributed to the originating flow. If
+a gas flow emits CO₂ priced at 50 €/kg, its cost contribution includes both
+the direct cost and the carbon tax portion.
+
 ## Full Example
 
 Two sources with different cost/CO2 tradeoffs, subject to an emission cap:
