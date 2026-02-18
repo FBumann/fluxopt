@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 class Result:
     solution: xr.Dataset
     data: ModelData | None = field(default=None, repr=False)
+    _contributions_cache: xr.Dataset | None = field(default=None, repr=False, init=False)
 
     @property
     def objective(self) -> float:
@@ -66,6 +67,28 @@ class Result:
             id: Storage id.
         """
         return self.storage_levels.sel(storage=id)
+
+    def effect_contributions(self) -> xr.Dataset:
+        """Per-flow breakdown of effect contributions.
+
+        Returns:
+            Dataset with ``operational`` (flow, effect, time),
+            ``investment`` (flow, effect), ``total`` (flow, effect),
+            and optionally ``storage_investment`` (storage, effect).
+
+        Raises:
+            ValueError: If ``data`` is not available on this Result.
+        """
+        if self._contributions_cache is not None:
+            return self._contributions_cache
+
+        if self.data is None:
+            raise ValueError('ModelData is required for effect_contributions (not available on this Result)')
+
+        from fluxopt.contributions import compute_effect_contributions
+
+        self._contributions_cache = compute_effect_contributions(self.solution, self.data)
+        return self._contributions_cache
 
     def to_netcdf(self, path: str | Path) -> None:
         """Write solution and model data to NetCDF.
