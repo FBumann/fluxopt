@@ -513,7 +513,7 @@ class FlowSystem:
         self.m.add_constraints(lhs == 0, name='conversion', mask=mask_3d)
 
     def _create_effects(self) -> None:
-        """Effect tracking: accumulate flow contributions into effect totals."""
+        """Effect tracking: temporal (per-timestep) and periodic (investment) domains."""
         d = self.data
         ds = d.effects
 
@@ -523,54 +523,62 @@ class FlowSystem:
         if len(effect_ids) == 0:
             return
 
-        # effect_per_timestep[effect, time]
-        self.effect_per_timestep = self.m.add_variables(coords=[effect_ids, time], name='effect--per_timestep')
+        # --- Temporal domain: effect_temporal[effect, time] ---
+        self.effect_temporal = self.m.add_variables(coords=[effect_ids, time], name='effect--temporal')
 
-        # Flow contributions: sum_f(coeff_{f,k,t} * P_{f,t} * dt_t) for each (effect, time)
+        # Flow contributions: sum_f(coeff_{f,k,t} * P_{f,t} * dt_t)
         effect_coeff = d.flows.effect_coeff  # (flow, effect, time)
         has_any_coeff = (effect_coeff != 0).any()
 
-        contribution: Any = 0
+        temporal_rhs: Any = 0
         if has_any_coeff:
-            # Pre-multiply dt into coefficients, then sparse sum over flow
             coeff_dt = effect_coeff * d.dt
-            contribution = sparse_weighted_sum(self.flow_rate, coeff_dt, sum_dim='flow', group_dim='effect')
+            temporal_rhs = sparse_weighted_sum(self.flow_rate, coeff_dt, sum_dim='flow', group_dim='effect')
 
         # Status running costs: sum_f(running_coeff[f,k,t] * on[f,t] * dt[t])
         if d.flows.status_effects_running is not None:
             assert self.flow_on is not None
             er = d.flows.status_effects_running.rename({'status_flow': 'flow'})
             if (er != 0).any():
-                contribution = contribution + (er * self.flow_on * d.dt).sum('flow')
+                temporal_rhs = temporal_rhs + (er * self.flow_on * d.dt).sum('flow')
 
         # Status startup costs: sum_f(startup_coeff[f,k,t] * startup[f,t]) — per event, no dt
         if d.flows.status_effects_startup is not None:
             assert self.flow_startup is not None
             es = d.flows.status_effects_startup.rename({'status_flow': 'flow'})
             if (es != 0).any():
-                contribution = contribution + (es * self.flow_startup).sum('flow')
+                temporal_rhs = temporal_rhs + (es * self.flow_startup).sum('flow')
 
-        # Cross-effect per-timestep contributions: cf_per_hour[k,j,t] * ept[j,t]
-        if ds.cf_per_hour is not None:
-            source_pts = self.effect_per_timestep.rename({'effect': 'source_effect'})
-            cf_contribution = (ds.cf_per_hour * source_pts).sum('source_effect')
-            contribution = contribution + cf_contribution
+        # Cross-effect temporal: cf_temporal[k,j,t] * effect_temporal[j,t]
+        if ds.cf_temporal is not None:
+            source_t = self.effect_temporal.rename({'effect': 'source_effect'})
+            temporal_rhs = temporal_rhs + (ds.cf_temporal * source_t).sum('source_effect')
 
-        self.m.add_constraints(self.effect_per_timestep == contribution, name='effect_per_ts_eq')
+        self.m.add_constraints(self.effect_temporal == temporal_rhs, name='effect_temporal_eq')
 
-        # effect_total[effect] = sum_t(ept * w) + invest_direct + invest_cross
-        self.effect_total = self.m.add_variables(coords=[effect_ids], name='effect--total')
-        rhs = (self.effect_per_timestep * d.weights).sum('time')
+        # Per-hour bounds on effect_temporal
+        min_ph = ds.min_per_hour  # (effect, time) — NaN = unbounded
+        has_min_ph = min_ph.notnull()
+        if has_min_ph.any():
+            self.m.add_constraints(self.effect_temporal >= min_ph, name='effect_min_ph', mask=has_min_ph)
+
+        max_ph = ds.max_per_hour
+        has_max_ph = max_ph.notnull()
+        if has_max_ph.any():
+            self.m.add_constraints(self.effect_temporal <= max_ph, name='effect_max_ph', mask=has_max_ph)
+
+        # --- Periodic domain: effect_periodic[effect] ---
+        self.effect_periodic = self.m.add_variables(coords=[effect_ids], name='effect--periodic')
 
         # Accumulate direct investment contributions per effect
-        invest_direct: Any = 0
+        periodic_direct: Any = 0
 
         # Flow sizing: per-size costs
         if self.flow_size is not None:
             assert d.flows.sizing_effects_per_size is not None
             eps = d.flows.sizing_effects_per_size.rename({'sizing_flow': 'flow'})
             if (eps != 0).any():
-                invest_direct = invest_direct + (eps * self.flow_size).sum('flow')
+                periodic_direct = periodic_direct + (eps * self.flow_size).sum('flow')
 
         # Flow sizing: fixed costs — optional (binary * cost), mandatory (constant)
         if self.flow_size_indicator is not None:
@@ -578,7 +586,7 @@ class FlowSystem:
             opt_ids = list(self.flow_size_indicator.coords['flow'].values)
             ef = d.flows.sizing_effects_fixed.rename({'sizing_flow': 'flow'}).sel(flow=opt_ids)
             if (ef != 0).any():
-                invest_direct = invest_direct + (ef * self.flow_size_indicator).sum('flow')
+                periodic_direct = periodic_direct + (ef * self.flow_size_indicator).sum('flow')
         if (
             self.flow_size is not None
             and d.flows.sizing_effects_fixed is not None
@@ -589,7 +597,7 @@ class FlowSystem:
                 mand_ids = list(d.flows.sizing_mandatory.coords['sizing_flow'].values[mand_mask])
                 ef_mand = d.flows.sizing_effects_fixed.sel(sizing_flow=mand_ids)
                 if (ef_mand != 0).any():
-                    invest_direct = invest_direct + ef_mand.sum('sizing_flow')
+                    periodic_direct = periodic_direct + ef_mand.sum('sizing_flow')
 
         # Storage sizing: per-size costs
         if (
@@ -599,7 +607,7 @@ class FlowSystem:
         ):
             eps = d.storages.sizing_effects_per_size.rename({'sizing_storage': 'storage'})
             if (eps != 0).any():
-                invest_direct = invest_direct + (eps * self.storage_capacity).sum('storage')
+                periodic_direct = periodic_direct + (eps * self.storage_capacity).sum('storage')
 
         # Storage sizing: fixed costs — optional (binary * cost), mandatory (constant)
         if (
@@ -610,7 +618,7 @@ class FlowSystem:
             opt_ids = list(self.storage_capacity_indicator.coords['storage'].values)
             ef = d.storages.sizing_effects_fixed.rename({'sizing_storage': 'storage'}).sel(storage=opt_ids)
             if (ef != 0).any():
-                invest_direct = invest_direct + (ef * self.storage_capacity_indicator).sum('storage')
+                periodic_direct = periodic_direct + (ef * self.storage_capacity_indicator).sum('storage')
         if (
             self.storage_capacity is not None
             and d.storages is not None
@@ -622,15 +630,19 @@ class FlowSystem:
                 mand_ids = list(d.storages.sizing_mandatory.coords['sizing_storage'].values[mand_mask])
                 ef_mand = d.storages.sizing_effects_fixed.sel(sizing_storage=mand_ids)
                 if (ef_mand != 0).any():
-                    invest_direct = invest_direct + ef_mand.sum('sizing_storage')
+                    periodic_direct = periodic_direct + ef_mand.sum('sizing_storage')
 
-        rhs = rhs + invest_direct
+        # Cross-effect periodic: cf_periodic[k,j] * effect_periodic[j]
+        periodic_rhs: Any = periodic_direct
+        if ds.cf_periodic is not None:
+            source_p = self.effect_periodic.rename({'effect': 'source_effect'})
+            periodic_rhs = periodic_rhs + (ds.cf_periodic * source_p).sum('source_effect')
 
-        # Cross-effect investment contributions: cf_invest[k,j] * invest_direct[j]
-        if ds.cf_invest is not None and not isinstance(invest_direct, int):
-            source_inv = invest_direct.rename({'effect': 'source_effect'})
-            rhs = rhs + (ds.cf_invest * source_inv).sum('source_effect')
+        self.m.add_constraints(self.effect_periodic == periodic_rhs, name='effect_periodic_eq')
 
+        # --- Total: effect_total[effect] = sum_t(temporal * w) + periodic ---
+        self.effect_total = self.m.add_variables(coords=[effect_ids], name='effect--total')
+        rhs = (self.effect_temporal * d.weights).sum('time') + self.effect_periodic
         self.m.add_constraints(self.effect_total == rhs, name='effect_total_eq')
 
         # Bounds on effect_total
@@ -644,17 +656,6 @@ class FlowSystem:
         has_max = max_total.notnull()
         if has_max.any():
             self.m.add_constraints(self.effect_total <= max_total, name='effect_max_total', mask=has_max)
-
-        # Per-hour bounds on effect_per_timestep
-        min_ph = ds.min_per_hour  # (effect, time) — NaN = unbounded
-        has_min_ph = min_ph.notnull()
-        if has_min_ph.any():
-            self.m.add_constraints(self.effect_per_timestep >= min_ph, name='effect_min_ph', mask=has_min_ph)
-
-        max_ph = ds.max_per_hour
-        has_max_ph = max_ph.notnull()
-        if has_max_ph.any():
-            self.m.add_constraints(self.effect_per_timestep <= max_ph, name='effect_max_ph', mask=has_max_ph)
 
     def _create_storage(self) -> None:
         """Create storage variables, level balance, and prior/cyclic conditions."""

@@ -133,8 +133,11 @@ print(result.objective)
 # Total effect values as (effect,) DataArray
 print(result.effect_totals)
 
-# Per-timestep effect values as (effect, time) DataArray
-print(result.effects_per_timestep)
+# Temporal: per-timestep effect values as (effect, time) DataArray
+print(result.effects_temporal)
+
+# Periodic: investment effect values as (effect,) DataArray
+print(result.effects_periodic)
 ```
 
 ## Full Example
@@ -180,5 +183,5 @@ print(result.effect_totals)
 | `minimum_total` | `float \| None` | `None` | Lower bound on total |
 | `maximum_per_hour` | `TimeSeries \| None` | `None` | Upper bound per timestep |
 | `minimum_per_hour` | `TimeSeries \| None` | `None` | Lower bound per timestep |
-| `contribution_from` | `dict[str, float]` | `{}` | Scalar cross-effect factors (invest + per-hour) |
-| `contribution_from_per_hour` | `dict[str, TimeSeries]` | `{}` | Time-varying cross-effect factors (per-hour only) |
+| `contribution_from` | `dict[str, float]` | `{}` | Scalar cross-effect factors (temporal + periodic) |
+| `contribution_from_per_hour` | `dict[str, TimeSeries]` | `{}` | Time-varying cross-effect factors (temporal only) |

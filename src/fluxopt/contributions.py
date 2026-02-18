@@ -4,6 +4,9 @@ Computes how much each flow contributes to each effect, broken down into
 operational and investment parts. Storage investment costs are reported
 separately on the storage dimension. All math is post-hoc xarray arithmetic
 on solved values — no linopy variables.
+
+Cross-effects use the Leontief inverse: total = (I - C)^-1 * direct,
+where C is the cross-effect coefficient matrix.
 """
 
 from __future__ import annotations
@@ -17,62 +20,99 @@ if TYPE_CHECKING:
     from fluxopt.model_data import ModelData
 
 
-def _topological_order(cf: xr.DataArray, dim: str = 'effect', src_dim: str = 'source_effect') -> list[str]:
-    """Return effects in dependency order (leaves first).
+def _leontief(cf: xr.DataArray) -> xr.DataArray:
+    """Compute Leontief inverse (I - C)^-1 from cross-effect coefficients.
 
     Args:
-        cf: Cross-effect coefficient array with *dim* and *src_dim* axes.
-        dim: Target effect dimension name.
-        src_dim: Source effect dimension name.
+        cf: Cross-effect coefficients with dims ``(effect, source_effect)``
+            or ``(effect, source_effect, time)``.
     """
-    effect_ids: list[str] = list(cf.coords[dim].values)
-    # Build in-degree map: effect k depends on j when cf[k, j] != 0
-    in_degree: dict[str, int] = dict.fromkeys(effect_ids, 0)
-    dependents: dict[str, list[str]] = {e: [] for e in effect_ids}
-    for k in effect_ids:
-        for j in effect_ids:
-            if k == j:
-                continue
-            sel = cf.sel({dim: k, src_dim: j})
-            if float(np.abs(sel).max()) > 0:
-                in_degree[k] += 1
-                dependents[j].append(k)
+    n = cf.sizes['effect']
+    eye = np.eye(n)
 
-    # Kahn's algorithm
-    queue = [e for e in effect_ids if in_degree[e] == 0]
-    order: list[str] = []
-    while queue:
-        node = queue.pop(0)
-        order.append(node)
-        for dep in dependents[node]:
-            in_degree[dep] -= 1
-            if in_degree[dep] == 0:
-                queue.append(dep)
-    return order
+    if 'time' not in cf.dims:
+        # 2D: single matrix inverse
+        inv = np.linalg.inv(eye - cf.values)
+        return xr.DataArray(inv, dims=cf.dims, coords=cf.coords)
+
+    # 3D: batch inverse over time axis
+    mat = eye[np.newaxis] - cf.transpose('time', 'effect', 'source_effect').values
+    inv = np.linalg.inv(mat)  # (T, n, n)
+    return xr.DataArray(
+        inv.transpose((1, 2, 0)),  # → (effect, source_effect, time)
+        dims=['effect', 'source_effect', 'time'],
+        coords=cf.coords,
+    )
 
 
-def _apply_cross_effects_2d(
+def _apply_leontief(
+    leontief: xr.DataArray,
     arr: xr.DataArray,
-    cf: xr.DataArray,
-    effect_ids: list[str],
-    entity_dim: str,
-) -> None:
-    """Propagate cross-effects in-place on a 2D (entity, effect) array.
+) -> xr.DataArray:
+    """Apply Leontief inverse to an array with an ``effect`` dimension.
 
     Args:
-        arr: Mutable array with dims (*entity_dim*, 'effect').
-        cf: Cross-effect coefficients (effect, source_effect).
-        effect_ids: All effect ids.
-        entity_dim: Name of the non-effect dimension ('flow' or 'storage').
+        leontief: Leontief inverse ``(effect, source_effect[, time])``.
+        arr: Array whose ``effect`` dim is contracted over.
     """
-    order = _topological_order(cf)
-    for k in order:
-        for j in effect_ids:
-            if k == j:
-                continue
-            cf_kj = float(cf.sel(effect=k, source_effect=j))
-            if abs(cf_kj) > 0:
-                arr.loc[{entity_dim: slice(None), 'effect': k}] = arr.sel(effect=k) + cf_kj * arr.sel(effect=j)
+    result: xr.DataArray = xr.dot(leontief, arr.rename({'effect': 'source_effect'}), dim='source_effect')
+    return result
+
+
+def _compute_investment(
+    effects_per_size: xr.DataArray | None,
+    effects_fixed: xr.DataArray | None,
+    mandatory: xr.DataArray | None,
+    solution: xr.Dataset,
+    entity_ids: list[str],
+    effect_ids: list[str],
+    sizing_dim: str,
+    entity_dim: str,
+    size_var: str,
+    indicator_var: str,
+) -> xr.DataArray:
+    """Compute investment contributions for flows or storages.
+
+    Args:
+        effects_per_size: Per-unit sizing costs ``(sizing_dim, effect)`` or None.
+        effects_fixed: Fixed sizing costs ``(sizing_dim, effect)`` or None.
+        mandatory: Boolean mask for mandatory sizing ``(sizing_dim,)`` or None.
+        solution: Solved variable dataset.
+        entity_ids: All entity ids (flow or storage).
+        effect_ids: All effect ids.
+        sizing_dim: Sizing dimension name (``sizing_flow`` or ``sizing_storage``).
+        entity_dim: Entity dimension name (``flow`` or ``storage``).
+        size_var: Solution variable name for size.
+        indicator_var: Solution variable name for binary indicator.
+    """
+    inv = xr.DataArray(
+        np.zeros((len(entity_ids), len(effect_ids))),
+        dims=[entity_dim, 'effect'],
+        coords={entity_dim: entity_ids, 'effect': effect_ids},
+    )
+    rename = {sizing_dim: entity_dim}
+
+    # Per-size costs
+    if effects_per_size is not None and size_var in solution:
+        eps = effects_per_size.rename(rename)
+        inv = inv + (eps * solution[size_var]).reindex({entity_dim: entity_ids}, fill_value=0.0)
+
+    # Fixed costs — optional (binary indicator * cost)
+    if effects_fixed is not None and indicator_var in solution:
+        indicator = solution[indicator_var]
+        opt_ids = list(indicator.coords[entity_dim].values)
+        ef = effects_fixed.rename(rename).sel({entity_dim: opt_ids})
+        inv = inv + (ef * indicator).reindex({entity_dim: entity_ids}, fill_value=0.0)
+
+    # Fixed costs — mandatory (constant)
+    if effects_fixed is not None and mandatory is not None:
+        mand_mask = mandatory.values
+        if mand_mask.any():
+            mand_ids = list(mandatory.coords[sizing_dim].values[mand_mask])
+            ef_mand = effects_fixed.sel({sizing_dim: mand_ids}).rename(rename)
+            inv = inv + ef_mand.reindex({entity_dim: entity_ids}, fill_value=0.0)
+
+    return inv
 
 
 def compute_effect_contributions(solution: xr.Dataset, data: ModelData) -> xr.Dataset:
@@ -95,9 +135,6 @@ def compute_effect_contributions(solution: xr.Dataset, data: ModelData) -> xr.Da
     if len(effect_ids) == 0:
         return xr.Dataset()
 
-    n_flows = len(flow_ids)
-    n_eff = len(effect_ids)
-
     rate = solution['flow--rate']  # (flow, time)
     dt = data.dt  # (time,)
 
@@ -107,96 +144,51 @@ def compute_effect_contributions(solution: xr.Dataset, data: ModelData) -> xr.Da
     # Status running costs
     if data.flows.status_effects_running is not None and 'flow--on' in solution:
         er = data.flows.status_effects_running.rename({'status_flow': 'flow'})
-        on = solution['flow--on']
-        flow_op = flow_op + (er * on * dt).reindex(flow=flow_ids, fill_value=0.0)
+        flow_op = flow_op + (er * solution['flow--on'] * dt).reindex(flow=flow_ids, fill_value=0.0)
 
     # Status startup costs
     if data.flows.status_effects_startup is not None and 'flow--startup' in solution:
         es = data.flows.status_effects_startup.rename({'status_flow': 'flow'})
-        startup = solution['flow--startup']
-        flow_op = flow_op + (es * startup).reindex(flow=flow_ids, fill_value=0.0)
+        flow_op = flow_op + (es * solution['flow--startup']).reindex(flow=flow_ids, fill_value=0.0)
 
-    # Cross-effects on operational (topological order)
-    if data.effects.cf_per_hour is not None:
-        cf = data.effects.cf_per_hour  # (effect, source_effect, time)
-        order = _topological_order(cf)
-        for k in order:
-            for j in effect_ids:
-                if k == j:
-                    continue
-                cf_kj = cf.sel(effect=k, source_effect=j)
-                if float(np.abs(cf_kj).max()) > 0:
-                    flow_op.loc[:, k, :] = flow_op.sel(effect=k) + cf_kj * flow_op.sel(effect=j)
+    # Cross-effects on operational via Leontief inverse
+    if data.effects.cf_temporal is not None:
+        flow_op = _apply_leontief(_leontief(data.effects.cf_temporal), flow_op)
 
-    # --- Investment: per-flow (flow sizing) ---
-    flow_inv = xr.DataArray(
-        np.zeros((n_flows, n_eff)),
-        dims=['flow', 'effect'],
-        coords={'flow': flow_ids, 'effect': effect_ids},
+    # --- Flow investment ---
+    flow_inv = _compute_investment(
+        data.flows.sizing_effects_per_size,
+        data.flows.sizing_effects_fixed,
+        data.flows.sizing_mandatory,
+        solution,
+        flow_ids,
+        effect_ids,
+        'sizing_flow',
+        'flow',
+        'flow--size',
+        'flow--size_indicator',
     )
-
-    # Flow sizing: per-size costs
-    if data.flows.sizing_effects_per_size is not None and 'flow--size' in solution:
-        eps = data.flows.sizing_effects_per_size.rename({'sizing_flow': 'flow'})  # (flow, effect)
-        flow_size = solution['flow--size']  # (flow,)
-        flow_inv = flow_inv + (eps * flow_size).reindex(flow=flow_ids, fill_value=0.0)
-
-    # Flow sizing: fixed costs — optional (binary * cost)
-    if data.flows.sizing_effects_fixed is not None and 'flow--size_indicator' in solution:
-        indicator = solution['flow--size_indicator']  # (flow,)
-        opt_ids = list(indicator.coords['flow'].values)
-        ef = data.flows.sizing_effects_fixed.rename({'sizing_flow': 'flow'}).sel(flow=opt_ids)
-        flow_inv = flow_inv + (ef * indicator).reindex(flow=flow_ids, fill_value=0.0)
-
-    # Flow sizing: fixed costs — mandatory (constant)
-    if data.flows.sizing_effects_fixed is not None and data.flows.sizing_mandatory is not None:
-        mand_mask = data.flows.sizing_mandatory.values
-        if mand_mask.any():
-            mand_ids = list(data.flows.sizing_mandatory.coords['sizing_flow'].values[mand_mask])
-            ef_mand = data.flows.sizing_effects_fixed.sel(sizing_flow=mand_ids).rename({'sizing_flow': 'flow'})
-            flow_inv = flow_inv + ef_mand.reindex(flow=flow_ids, fill_value=0.0)
-
-    # Cross-effects on flow investment (topological order)
-    if data.effects.cf_invest is not None:
-        _apply_cross_effects_2d(flow_inv, data.effects.cf_invest, effect_ids, 'flow')
+    if data.effects.cf_periodic is not None:
+        flow_inv = _apply_leontief(_leontief(data.effects.cf_periodic), flow_inv)
 
     # --- Storage investment ---
     stor_inv: xr.DataArray | None = None
     if data.storages is not None:
         stor_ids: list[str] = list(data.storages.capacity.coords['storage'].values)
-        n_stor = len(stor_ids)
-        stor_inv = xr.DataArray(
-            np.zeros((n_stor, n_eff)),
-            dims=['storage', 'effect'],
-            coords={'storage': stor_ids, 'effect': effect_ids},
+        stor_inv = _compute_investment(
+            data.storages.sizing_effects_per_size,
+            data.storages.sizing_effects_fixed,
+            data.storages.sizing_mandatory,
+            solution,
+            stor_ids,
+            effect_ids,
+            'sizing_storage',
+            'storage',
+            'storage--capacity',
+            'storage--size_indicator',
         )
-
-        # Storage sizing: per-size costs
-        if data.storages.sizing_effects_per_size is not None and 'storage--capacity' in solution:
-            eps_s = data.storages.sizing_effects_per_size.rename({'sizing_storage': 'storage'})
-            cap = solution['storage--capacity']
-            stor_inv = stor_inv + (eps_s * cap).reindex(storage=stor_ids, fill_value=0.0)
-
-        # Storage sizing: fixed costs — optional (binary * cost)
-        if data.storages.sizing_effects_fixed is not None and 'storage--size_indicator' in solution:
-            s_indicator = solution['storage--size_indicator']
-            opt_ids_s = list(s_indicator.coords['storage'].values)
-            ef_s = data.storages.sizing_effects_fixed.rename({'sizing_storage': 'storage'}).sel(storage=opt_ids_s)
-            stor_inv = stor_inv + (ef_s * s_indicator).reindex(storage=stor_ids, fill_value=0.0)
-
-        # Storage sizing: fixed costs — mandatory (constant)
-        if data.storages.sizing_effects_fixed is not None and data.storages.sizing_mandatory is not None:
-            mand_mask_s = data.storages.sizing_mandatory.values
-            if mand_mask_s.any():
-                mand_ids_s = list(data.storages.sizing_mandatory.coords['sizing_storage'].values[mand_mask_s])
-                ef_mand_s = data.storages.sizing_effects_fixed.sel(sizing_storage=mand_ids_s).rename(
-                    {'sizing_storage': 'storage'}
-                )
-                stor_inv = stor_inv + ef_mand_s.reindex(storage=stor_ids, fill_value=0.0)
-
-        # Cross-effects on storage investment
-        if data.effects.cf_invest is not None:
-            _apply_cross_effects_2d(stor_inv, data.effects.cf_invest, effect_ids, 'storage')
+        if data.effects.cf_periodic is not None:
+            stor_inv = _apply_leontief(_leontief(data.effects.cf_periodic), stor_inv)
 
     # --- Total per flow: operational (weighted sum over time) + flow investment ---
     total = (flow_op * data.weights).sum('time') + flow_inv

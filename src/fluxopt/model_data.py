@@ -587,8 +587,8 @@ class EffectsData:
     max_per_hour: xr.DataArray  # (effect, time)
     is_objective: xr.DataArray  # (effect,)
     objective_effect: str
-    cf_invest: xr.DataArray | None = None  # (effect, source_effect)
-    cf_per_hour: xr.DataArray | None = None  # (effect, source_effect, time)
+    cf_periodic: xr.DataArray | None = None  # (effect, source_effect)
+    cf_temporal: xr.DataArray | None = None  # (effect, source_effect, time)
 
     def __post_init__(self) -> None:
         """Validate exactly one objective effect exists."""
@@ -659,8 +659,8 @@ class EffectsData:
                 has_contributions = True
 
         # Build cross-effect contribution arrays
-        cf_invest: xr.DataArray | None = None
-        cf_per_hour: xr.DataArray | None = None
+        cf_periodic: xr.DataArray | None = None
+        cf_temporal: xr.DataArray | None = None
         if has_contributions:
             # Self-reference check
             for e in effects:
@@ -677,27 +677,27 @@ class EffectsData:
             if cycle is not None:
                 raise ValueError(f'Circular contribution_from dependency: {" -> ".join(cycle)}')
 
-            invest_mat = np.zeros((n, n))
-            ph_mat = np.zeros((n, n, n_time))
+            periodic_mat = np.zeros((n, n))
+            temporal_mat = np.zeros((n, n, n_time))
             for i, e in enumerate(effects):
                 for src_id, factor in e.contribution_from.items():
                     if src_id not in effect_set:
                         raise ValueError(f'Unknown effect {src_id!r} in Effect.contribution_from on {e.id!r}')
                     j = effect_ids.index(src_id)
-                    invest_mat[i, j] = factor
-                    ph_mat[i, j, :] = factor  # default per_hour = scalar
+                    periodic_mat[i, j] = factor
+                    temporal_mat[i, j, :] = factor  # default temporal = scalar
                 for src_id, factor_ts in e.contribution_from_per_hour.items():
                     if src_id not in effect_set:
                         raise ValueError(f'Unknown effect {src_id!r} in Effect.contribution_from_per_hour on {e.id!r}')
                     j = effect_ids.index(src_id)
-                    ph_mat[i, j, :] = as_dataarray(factor_ts, {'time': time}).values
-            cf_invest = xr.DataArray(
-                invest_mat,
+                    temporal_mat[i, j, :] = as_dataarray(factor_ts, {'time': time}).values
+            cf_periodic = xr.DataArray(
+                periodic_mat,
                 dims=['effect', 'source_effect'],
                 coords={'effect': effect_ids, 'source_effect': effect_ids},
             )
-            cf_per_hour = xr.DataArray(
-                ph_mat,
+            cf_temporal = xr.DataArray(
+                temporal_mat,
                 dims=['effect', 'source_effect', 'time'],
                 coords={'effect': effect_ids, 'source_effect': effect_ids, 'time': time},
             )
@@ -711,8 +711,8 @@ class EffectsData:
             max_per_hour=xr.concat(max_per_hours, dim=effect_idx),
             is_objective=xr.DataArray(is_objective, dims=['effect'], coords={'effect': effect_ids}),
             objective_effect=objective_effect,
-            cf_invest=cf_invest,
-            cf_per_hour=cf_per_hour,
+            cf_periodic=cf_periodic,
+            cf_temporal=cf_temporal,
         )
 
 

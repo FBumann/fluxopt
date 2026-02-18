@@ -19,7 +19,8 @@ Each symbol maps to a specific field or variable in the code.
 |---|---|---|---|---|
 | \(P_{f,t}\) | `flow_rate[flow, time]` | \(\geq 0\) | MW | Flow rate |
 | \(E_{s,t}\) | `storage--level[storage, time]` | \(\geq 0\) | MWh | Stored energy |
-| \(\Phi_{k,t}\) | `effect_per_timestep[effect, time]` | \(\mathbb{R}\) | varies | Per-timestep effect |
+| \(\Phi_{k,t}^{\text{temporal}}\) | `effect_temporal[effect, time]` | \(\mathbb{R}\) | varies | Temporal (per-timestep) effect |
+| \(\Phi_k^{\text{periodic}}\) | `effect_periodic[effect]` | \(\mathbb{R}\) | varies | Periodic (investment) effect |
 | \(\Phi_k\) | `effect_total[effect]` | \(\mathbb{R}\) | varies | Total effect over horizon |
 | \(S_f\) | `flow_size[flow]` | \(\geq 0\) | MW | Invested flow capacity |
 | \(y_f\) | `flow_size_indicator[flow]` | \(\{0, 1\}\) | — | Binary invest indicator (flow) |

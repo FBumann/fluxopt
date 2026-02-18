@@ -48,9 +48,14 @@ class Result:
         return self.solution['effect--total']
 
     @property
-    def effects_per_timestep(self) -> xr.DataArray:
+    def effects_temporal(self) -> xr.DataArray:
         """Per-timestep effect values as (effect, time) DataArray."""
-        return self.solution['effect--per_timestep']
+        return self.solution['effect--temporal']
+
+    @property
+    def effects_periodic(self) -> xr.DataArray:
+        """Per-period (investment) effect values as (effect,) DataArray."""
+        return self.solution['effect--periodic']
 
     def flow_rate(self, id: str) -> xr.DataArray:
         """Get flow rate time series for a single flow.
@@ -125,7 +130,8 @@ class Result:
         sol_vars: dict[str, xr.DataArray] = {
             'flow--rate': model.flow_rate.solution,
             'effect--total': model.effect_total.solution,
-            'effect--per_timestep': model.effect_per_timestep.solution,
+            'effect--temporal': model.effect_temporal.solution,
+            'effect--periodic': model.effect_periodic.solution,
         }
 
         if model.storage_level is not None:

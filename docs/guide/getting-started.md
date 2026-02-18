@@ -105,7 +105,7 @@ print(result.flow_rates)
 print(result.effect_totals)
 
 # Per-timestep effects
-print(result.effects_per_timestep)
+print(result.effects_temporal)
 ```
 
 Flow ids are qualified as `{component}({bus_or_id})` — e.g., `boiler(gas)`,

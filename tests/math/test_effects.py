@@ -265,3 +265,45 @@ class TestContributionFrom:
 
         assert float(result.effect_totals.sel(effect='co2').values) == pytest.approx(co2_total, abs=1e-6)
         assert result.objective == pytest.approx(cost_total, abs=1e-6)
+
+    def test_contribution_from_investment_transitive(self, timesteps_3):
+        """PE → CO2 → cost: 3-level chain with investment costs propagates correctly."""
+        demand = [50.0, 50.0, 50.0]
+        source = Flow(
+            bus='elec',
+            size=Sizing(min_size=50, max_size=200, mandatory=True, effects_per_size={'pe': 5}),
+            effects_per_flow_hour={'pe': 2.0},
+        )
+        sink = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.5, 0.5])
+
+        result = optimize(
+            timesteps=timesteps_3,
+            buses=[Bus('elec')],
+            effects=[
+                Effect('cost', is_objective=True, contribution_from={'co2': 50}),
+                Effect('co2', unit='kg', contribution_from={'pe': 0.3}),
+                Effect('pe', unit='kWh'),
+            ],
+            ports=[Port('grid', imports=[source]), Port('demand', exports=[sink])],
+        )
+
+        total_energy = sum(demand)  # 150 MWh
+        invest_size = 50.0
+
+        # Temporal chain: pe_op=300, co2_op=90, cost_op=4500
+        pe_op = total_energy * 2.0  # 300
+        co2_op = pe_op * 0.3  # 90
+        cost_op = co2_op * 50  # 4500
+
+        # Periodic chain: pe_inv=250, co2_inv=75, cost_inv=3750
+        pe_inv = invest_size * 5  # 250
+        co2_inv = pe_inv * 0.3  # 75
+        cost_inv = co2_inv * 50  # 3750
+
+        pe_total = pe_op + pe_inv  # 550
+        co2_total = co2_op + co2_inv  # 165
+        cost_total = cost_op + cost_inv  # 8250
+
+        assert float(result.effect_totals.sel(effect='pe').values) == pytest.approx(pe_total, abs=1e-4)
+        assert float(result.effect_totals.sel(effect='co2').values) == pytest.approx(co2_total, abs=1e-4)
+        assert result.objective == pytest.approx(cost_total, abs=1e-4)

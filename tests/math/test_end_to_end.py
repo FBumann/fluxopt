@@ -124,9 +124,9 @@ class TestEndToEnd:
         # effect_totals DataArray
         assert 'effect' in result.effect_totals.dims
 
-        # effects_per_timestep
-        assert 'effect' in result.effects_per_timestep.dims
-        assert 'time' in result.effects_per_timestep.dims
+        # effects_temporal
+        assert 'effect' in result.effects_temporal.dims
+        assert 'time' in result.effects_temporal.dims
 
     def test_int_timesteps(self):
         """Smoke test: int timesteps work end-to-end."""

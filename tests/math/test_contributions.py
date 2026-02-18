@@ -47,8 +47,8 @@ class TestSumToTotal:
         total_from_solver = float(result.effect_totals.sel(effect='cost').values)
         assert total_from_contrib == pytest.approx(total_from_solver, abs=1e-6)
 
-    def test_per_timestep_sum_to_effect_per_timestep(self, timesteps_3):
-        """Operational contributions summed over flows match effect_per_timestep."""
+    def test_per_timestep_sum_to_effect_temporal(self, timesteps_3):
+        """Operational contributions summed over flows match effect_temporal."""
         source = Flow(bus='elec', size=200, effects_per_flow_hour={'cost': 0.04})
         sink = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.8, 0.6])
 
@@ -61,7 +61,7 @@ class TestSumToTotal:
 
         contrib = result.effect_contributions()
         op_sum = contrib['operational'].sel(effect='cost').sum('flow')
-        ept = result.effects_per_timestep.sel(effect='cost')
+        ept = result.effects_temporal.sel(effect='cost')
         xr.testing.assert_allclose(op_sum, ept)
 
 
