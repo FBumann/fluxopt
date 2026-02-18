@@ -492,21 +492,24 @@ class FlowSystem:
             return
 
         ds = d.converters
-        coeff = ds.flow_coeff  # (converter, eq_idx, flow, time) — NaN for absent
-        eq_mask = ds.eq_mask  # (converter, eq_idx)
 
-        # Replace NaN with 0 for summation
-        coeff_filled = coeff.fillna(0)
+        # Select flow rates for each (converter, flow) pair
+        selected = self.flow_rate.sel(flow=ds.pair_flow)  # (pair, time)
+        weighted = selected * ds.pair_coeff  # (pair, eq_idx, time)
 
-        # Select only the flows that appear in the converter dataset
-        conv_flow_ids = ds.flow_coeff.coords['flow'].values
-        flow_rate_sel = self.flow_rate.sel(flow=conv_flow_ids)
+        # Group by converter and sum over pairs
+        mapping = xr.DataArray(ds.pair_converter.values, dims=['pair'], name='converter')
+        lhs = weighted.groupby(mapping).sum()  # (converter, eq_idx, time)
 
-        # Sparse sum: each converter references only 2-3 flows out of hundreds
-        lhs = sparse_weighted_sum(flow_rate_sel, coeff_filled, sum_dim='flow', group_dim='converter')
+        # Restore original converter order (groupby sorts alphabetically)
+        conv_ids = list(ds.eq_mask.coords['converter'].values)
+        lhs = lhs.sel(converter=conv_ids)
+
+        # Drop flow coord left by vectorized sel
+        lhs = lhs.drop_vars('flow', errors='ignore')
 
         # Broadcast eq_mask (converter, eq_idx) to (converter, eq_idx, time)
-        mask_3d = eq_mask.expand_dims(time=ds.flow_coeff.coords['time'])
+        mask_3d = ds.eq_mask.expand_dims(time=ds.pair_coeff.coords['time'])
         self.m.add_constraints(lhs == 0, name='conversion', mask=mask_3d)
 
     def _create_effects(self) -> None:

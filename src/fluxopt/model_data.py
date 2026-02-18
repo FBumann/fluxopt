@@ -452,8 +452,29 @@ class BusesData:
 
 @dataclass
 class ConvertersData:
-    flow_coeff: xr.DataArray  # (converter, eq_idx, flow, time)
+    pair_coeff: xr.DataArray  # (pair, eq_idx, time) — non-zero coefficients only
+    pair_converter: xr.DataArray  # (pair,) — converter id per pair
+    pair_flow: xr.DataArray  # (pair,) — flow id per pair
     eq_mask: xr.DataArray  # (converter, eq_idx)
+
+    @property
+    def flow_coeff(self) -> xr.DataArray:
+        """Dense (converter, eq_idx, flow, time) view for inspection."""
+        conv_ids = list(dict.fromkeys(self.pair_converter.values))
+        flow_ids = list(dict.fromkeys(self.pair_flow.values))
+        eq_idx = list(self.pair_coeff.coords['eq_idx'].values)
+        time = self.pair_coeff.coords['time']
+
+        dense = xr.DataArray(
+            np.full((len(conv_ids), len(eq_idx), len(flow_ids), len(time)), np.nan),
+            dims=['converter', 'eq_idx', 'flow', 'time'],
+            coords={'converter': conv_ids, 'eq_idx': eq_idx, 'flow': flow_ids, 'time': time},
+        )
+        for i in range(len(self.pair_converter)):
+            conv_id = str(self.pair_converter.values[i])
+            flow_id = str(self.pair_flow.values[i])
+            dense.loc[conv_id, :, flow_id, :] = self.pair_coeff.isel(pair=i)
+        return dense
 
     def to_dataset(self) -> xr.Dataset:
         """Serialize to xr.Dataset."""
@@ -464,13 +485,18 @@ class ConvertersData:
         """Deserialize from xr.Dataset.
 
         Args:
-            ds: Dataset with ``flow_coeff`` and ``eq_mask`` variables.
+            ds: Dataset with pair-based converter coefficient variables.
         """
-        return cls(flow_coeff=ds['flow_coeff'], eq_mask=ds['eq_mask'])
+        return cls(
+            pair_coeff=ds['pair_coeff'],
+            pair_converter=ds['pair_converter'],
+            pair_flow=ds['pair_flow'],
+            eq_mask=ds['eq_mask'],
+        )
 
     @classmethod
     def build(cls, converters: list[Converter], time: pd.Index) -> Self | None:
-        """Build ConvertersData with conversion coefficients.
+        """Build ConvertersData with sparse pair-based conversion coefficients.
 
         Args:
             converters: Converter definitions.
@@ -480,41 +506,38 @@ class ConvertersData:
             return None
 
         conv_ids = [c.id for c in converters]
-        # Collect all flow ids across all converters
-        all_flow_ids: list[str] = []
-        for c in converters:
-            for f in c.inputs:
-                if f.id not in all_flow_ids:
-                    all_flow_ids.append(f.id)
-            for f in c.outputs:
-                if f.id not in all_flow_ids:
-                    all_flow_ids.append(f.id)
-
         max_eq = max(len(c.conversion_factors) for c in converters)
         n_time = len(time)
         eq_idx_list = list(range(max_eq))
 
         eq_mask_rows: list[np.ndarray] = []
-        coeff_slices: list[xr.DataArray] = []
+        pairs_conv: list[str] = []
+        pairs_flow: list[str] = []
+        coeff_arrays: list[np.ndarray] = []
 
         for conv in converters:
             mask_row = np.zeros(max_eq, dtype=bool)
-            conv_coeff = xr.DataArray(
-                np.full((max_eq, len(all_flow_ids), n_time), np.nan),
-                dims=['eq_idx', 'flow', 'time'],
-                coords={'eq_idx': eq_idx_list, 'flow': all_flow_ids, 'time': time},
-            )
-            for eq_i, equation in enumerate(conv.conversion_factors):
+            for eq_i in range(len(conv.conversion_factors)):
                 mask_row[eq_i] = True
-                for flow_obj, factor in equation.items():
-                    conv_coeff.loc[eq_i, flow_obj.id] = as_dataarray(factor, {'time': time})
             eq_mask_rows.append(mask_row)
-            coeff_slices.append(conv_coeff)
 
-        conv_idx = pd.Index(conv_ids, name='converter')
+            for flow in (*conv.inputs, *conv.outputs):
+                eq_coeffs = np.zeros((max_eq, n_time))
+                for eq_i, equation in enumerate(conv.conversion_factors):
+                    if flow in equation:
+                        eq_coeffs[eq_i] = as_dataarray(equation[flow], {'time': time}).values
+                pairs_conv.append(conv.id)
+                pairs_flow.append(flow.id)
+                coeff_arrays.append(eq_coeffs)
 
         return cls(
-            flow_coeff=xr.concat(coeff_slices, dim=conv_idx),
+            pair_coeff=xr.DataArray(
+                np.array(coeff_arrays),
+                dims=['pair', 'eq_idx', 'time'],
+                coords={'eq_idx': eq_idx_list, 'time': time},
+            ),
+            pair_converter=xr.DataArray(pairs_conv, dims=['pair']),
+            pair_flow=xr.DataArray(pairs_flow, dims=['pair']),
             eq_mask=xr.DataArray(
                 np.array(eq_mask_rows),
                 dims=['converter', 'eq_idx'],
