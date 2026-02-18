@@ -122,6 +122,11 @@ class SolvedModel:
         if model.flow_shutdown is not None:
             sol_vars['flow--shutdown'] = model.flow_shutdown.solution
 
+        # Include custom variables added after build()
+        for var_name in model.m.variables:
+            if var_name not in model._builtin_var_names and var_name not in sol_vars:
+                sol_vars[var_name] = model.m.variables[var_name].solution
+
         obj_effect = model.data.effects.objective_effect
         obj_val = float(sol_vars['effect--total'].sel(effect=obj_effect).values)
 

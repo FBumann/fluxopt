@@ -1,3 +1,5 @@
+from collections.abc import Callable
+
 from fluxopt.components import Converter, Port
 from fluxopt.elements import Bus, Effect, Flow, Sizing, Status, Storage
 from fluxopt.model import FlowSystemModel
@@ -23,6 +25,7 @@ def solve(
     dt: float | list[float] | None = None,
     solver: str = 'highs',
     silent: bool = True,
+    customize: Callable[[FlowSystemModel], None] | None = None,
 ) -> SolvedModel:
     """Build data, build model, solve, return results.
 
@@ -36,10 +39,14 @@ def solve(
         dt: Timestep duration in hours. Auto-derived if None.
         solver: Solver backend name.
         silent: Suppress solver output.
+        customize: Optional callback to modify the linopy model between build and solve.
+            Receives the built FlowSystemModel; use ``model.m`` to add variables/constraints.
     """
     data = ModelData.build(timesteps, buses, effects, ports, converters, storages, dt)
     model = FlowSystemModel(data, solver=solver)
     model.build()
+    if customize is not None:
+        customize(model)
     return model.solve(silent=silent)
 
 

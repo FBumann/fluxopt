@@ -90,6 +90,7 @@ class FlowSystemModel:
         self._create_storage()
         self._create_effects()
         self._set_objective()
+        self._builtin_var_names: frozenset[str] = frozenset(self.m.variables)
 
     def solve(self, silent: bool = True) -> SolvedModel:
         """Solve the model and return a SolvedModel.
