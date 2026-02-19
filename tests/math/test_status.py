@@ -308,7 +308,7 @@ class TestPrior:
         Source: size=100, Status(effects_per_running_hour={'costs': 10}), 1€/MWh.
         Demand: [50, 50].
 
-        Operational: 50*1*2 = 100. Running: 10*1*2 = 20. Startup: 10*1 = 10 (1 event).
+        Operational: 50*1*2 = 100. Running: 10*1*2 = 20.
         Total: 100 + 20 = 120.
         """
         result = optimize(

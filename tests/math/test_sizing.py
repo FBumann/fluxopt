@@ -18,11 +18,6 @@ def _ts(n: int) -> list[datetime]:
     return [datetime(2020, 1, 1, h) for h in range(n)]
 
 
-def _waste(bus: str) -> Port:
-    """Free-disposal port: absorbs excess on *bus* at zero cost."""
-    return Port('waste', exports=[Flow(bus=bus)])
-
-
 class TestFlowSizing:
     def test_mandatory_continuous_sizing(self):
         """Source with Sizing(10, 200, mandatory=True), demand=50.

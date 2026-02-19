@@ -45,7 +45,7 @@ class TestCustomize:
         for rate in rates:
             assert rate == pytest.approx(50.0, abs=1e-6)
 
-        # Verify the constraint name exists in the model
+        # With cap at 60, demand of 50 is still feasible → same objective
         assert result.objective == pytest.approx(result_base.objective, abs=1e-6)
 
     def test_custom_variable_in_results(self, simple_system):
