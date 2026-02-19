@@ -7,11 +7,12 @@ tests miss.
 
 import numpy as np
 import pytest
+from conftest import assert_off_blocks, assert_on_blocks
 from numpy.testing import assert_allclose
 
 from fluxopt import Bus, Converter, Effect, Flow, Port, Sizing, Status
 
-from .conftest import _waste, ts
+from .conftest import ts, waste
 
 
 class TestPiecewiseWithInvestment:
@@ -95,7 +96,7 @@ class TestStatusWithEffects:
                         Flow(bus='Gas', effects_per_flow_hour={'cost': 1}),
                     ],
                 ),
-                _waste('Heat'),
+                waste('Heat'),
             ],
             converters=[
                 Converter.boiler(
@@ -385,32 +386,13 @@ class TestStatusWithMultipleConstraints:
         on = result.solution['flow--on'].sel(flow='CheapBoiler(Heat)').values
 
         # Verify min_uptime: each on-block is ≥2 hours
-        on_block_len = 0
-        for i, s in enumerate(on):
-            if s > 0.5:
-                on_block_len += 1
-            else:
-                if on_block_len > 0:
-                    assert on_block_len >= 2, f'min_uptime violated: on-block of {on_block_len} at t<{i}: on={on}'
-                on_block_len = 0
-        if on_block_len > 0:
-            assert on_block_len >= 2, f'min_uptime violated: trailing on-block of {on_block_len}: on={on}'
+        assert_on_blocks(on, min_length=2)
 
         # Verify min_downtime: each off-block is ≥2 hours (within horizon)
-        off_block_len = 0
-        for i, s in enumerate(on):
-            if s < 0.5:
-                off_block_len += 1
-            else:
-                if 0 < off_block_len < 2 and i - off_block_len > 0:
-                    assert off_block_len >= 2, f'min_downtime violated: off-block of {off_block_len} at t<{i}: on={on}'
-                off_block_len = 0
-        if off_block_len > 0 and len(on) - off_block_len > 0:
-            assert off_block_len >= 2, f'min_downtime violated: trailing off-block of {off_block_len}: on={on}'
+        assert_off_blocks(on, min_length=2)
 
-        # Total cost between all-cheap and all-backup
-        assert result.effect_totals.sel(effect='cost').item() > 120 - 1e-5
-        assert result.effect_totals.sel(effect='cost').item() < 240 + 1e-5
+        # Pattern [off,on,on,on,on,on]: CheapBoiler 5h=100, Backup 1h*20/0.5=40. Total=140.
+        assert_allclose(result.effect_totals.sel(effect='cost').item(), 140.0, rtol=1e-5)
 
 
 class TestEffectsWithConversion:
@@ -450,7 +432,7 @@ class TestEffectsWithConversion:
                         Flow(bus='Gas', effects_per_flow_hour={'cost': 1, 'CO2': 0.1}),
                     ],
                 ),
-                _waste('Heat'),
+                waste('Heat'),
             ],
             converters=[
                 Converter.boiler(

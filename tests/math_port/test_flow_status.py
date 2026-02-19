@@ -2,11 +2,12 @@
 
 import numpy as np
 import pytest
+from conftest import assert_off_blocks, assert_on_blocks
 from numpy.testing import assert_allclose
 
 from fluxopt import Bus, Converter, Effect, Flow, Port, Status
 
-from .conftest import _waste, ts
+from .conftest import ts, waste
 
 
 class TestFlowStatus:
@@ -276,9 +277,9 @@ class TestFlowStatus:
         )
         # Verify max_downtime: no two consecutive off-hours
         status = result.solution['flow--on'].sel(flow='ExpBoiler(Heat)').values
-        for i in range(len(status) - 1):
-            assert not (status[i] < 0.5 and status[i + 1] < 0.5), f'Consecutive off at t={i},{i + 1}: status={status}'
-        assert result.effect_totals.sel(effect='cost').item() > 40.0 + 1e-5
+        assert_off_blocks(status, max_length=1, skip_leading=False)
+        # ExpBoiler on 2h @20/0.5=40 fuel/h, CheapBoiler off hours @20/1.0=20 fuel/h. Total=60.
+        assert_allclose(result.effect_totals.sel(effect='cost').item(), 60.0, rtol=1e-5)
 
     @pytest.mark.skip(reason='startup_limit not supported in fluxopt')
     def test_startup_limit(self, optimize):
@@ -339,15 +340,7 @@ class TestFlowStatus:
         )
         # Verify no more than 2 consecutive on-hours
         status = result.solution['flow--on'].sel(flow='CheapBoiler(Heat)').values
-        max_consecutive = 0
-        current = 0
-        for s in status:
-            if s > 0.5:
-                current += 1
-                max_consecutive = max(max_consecutive, current)
-            else:
-                current = 0
-        assert max_consecutive <= 2, f'max_uptime violated: {status}'
+        assert_on_blocks(status, max_length=2)
         # Cheap: 4*10 = 40 fuel. Backup @1h: 10/0.5 = 20 fuel. Total = 60.
         assert_allclose(result.effect_totals.sel(effect='cost').item(), 60.0, rtol=1e-5)
 
@@ -380,7 +373,7 @@ class TestPreviousFlowRate:
                         Flow(bus='Gas', effects_per_flow_hour={'cost': 1}),
                     ],
                 ),
-                _waste('Heat'),
+                waste('Heat'),
             ],
             converters=[
                 Converter.boiler(
@@ -422,7 +415,7 @@ class TestPreviousFlowRate:
                         Flow(bus='Gas', effects_per_flow_hour={'cost': 1}),
                     ],
                 ),
-                _waste('Heat'),
+                waste('Heat'),
             ],
             converters=[
                 Converter.boiler(
@@ -464,7 +457,7 @@ class TestPreviousFlowRate:
                         Flow(bus='Gas', effects_per_flow_hour={'cost': 1}),
                     ],
                 ),
-                _waste('Heat'),
+                waste('Heat'),
             ],
             converters=[
                 Converter.boiler(
@@ -509,7 +502,7 @@ class TestPreviousFlowRate:
                         Flow(bus='Gas', effects_per_flow_hour={'cost': 1}),
                     ],
                 ),
-                _waste('Heat'),
+                waste('Heat'),
             ],
             converters=[
                 Converter.boiler(
@@ -610,7 +603,7 @@ class TestPreviousFlowRate:
                         Flow(bus='Gas', effects_per_flow_hour={'cost': 1}),
                     ],
                 ),
-                _waste('Heat'),
+                waste('Heat'),
             ],
             converters=[
                 Converter.boiler(

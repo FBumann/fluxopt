@@ -9,19 +9,10 @@ from __future__ import annotations
 from datetime import datetime
 
 import numpy as np
+from conftest import assert_off_blocks, assert_on_blocks, ts, waste
 from numpy.testing import assert_allclose
 
 from fluxopt import Bus, Effect, Flow, Port, Sizing, Status, optimize
-
-
-def _ts(n: int) -> list[datetime]:
-    """Create n hourly timesteps starting 2020-01-01."""
-    return [datetime(2020, 1, 1, h) for h in range(n)]
-
-
-def _waste(bus: str) -> Port:
-    """Free-disposal port: absorbs excess on *bus* at zero cost."""
-    return Port('waste', exports=[Flow(bus=bus)])
 
 
 class TestSemiContinuous:
@@ -39,7 +30,7 @@ class TestSemiContinuous:
         Total: 50 + 60 = 110.
         """
         result = optimize(
-            _ts(3),
+            ts(3),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
             ports=[
@@ -57,7 +48,7 @@ class TestSemiContinuous:
                     ],
                 ),
                 Port('Backup', imports=[Flow(bus='Heat', effects_per_flow_hour={'costs': 10})]),
-                _waste('Heat'),
+                waste('Heat'),
             ],
         )
         rates = result.flow_rate('Src(Heat)').values
@@ -86,7 +77,7 @@ class TestSemiContinuous:
         Total with all-backup: 10*0.5 + 80*0.5 = 45.
         """
         result = optimize(
-            _ts(2),
+            ts(2),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
             ports=[
@@ -122,7 +113,7 @@ class TestStartupCosts:
         Operational: 60*1*2 = 120. Startup: 50. Total: 170.
         """
         result = optimize(
-            _ts(2),
+            ts(2),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
             ports=[
@@ -157,7 +148,7 @@ class TestStartupCosts:
         Stays on to avoid 2nd startup.
         """
         result = optimize(
-            _ts(3),
+            ts(3),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
             ports=[
@@ -176,7 +167,7 @@ class TestStartupCosts:
                     ],
                 ),
                 Port('Backup', imports=[Flow(bus='Heat', effects_per_flow_hour={'costs': 5})]),
-                _waste('Heat'),
+                waste('Heat'),
             ],
         )
         on = result.solution['flow--on'].sel(flow='Src(Heat)').values
@@ -200,7 +191,7 @@ class TestPrior:
         Expected cost: 0 (no startup) + 0 (no flow cost) = 0.
         """
         result = optimize(
-            _ts(2),
+            ts(2),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
             ports=[
@@ -235,7 +226,7 @@ class TestPrior:
         t=2: off.
         """
         result = optimize(
-            _ts(3),
+            ts(3),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
             ports=[
@@ -254,7 +245,7 @@ class TestPrior:
                     ],
                 ),
                 Port('Backup', imports=[Flow(bus='Heat', effects_per_flow_hour={'costs': 0.5})]),
-                _waste('Heat'),
+                waste('Heat'),
             ],
         )
         on = result.solution['flow--on'].sel(flow='Src(Heat)').values
@@ -274,7 +265,7 @@ class TestPrior:
         t=2: on.
         """
         result = optimize(
-            _ts(3),
+            ts(3),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
             ports=[
@@ -312,7 +303,7 @@ class TestPrior:
         Total: 100 + 20 = 120.
         """
         result = optimize(
-            _ts(2),
+            ts(2),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
             ports=[
@@ -350,7 +341,7 @@ class TestStatusSizing:
         Optimal size=80 (just enough for peak). Total operational: 40+80=120.
         """
         result = optimize(
-            _ts(3),
+            ts(3),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
             ports=[
@@ -368,7 +359,7 @@ class TestStatusSizing:
                     ],
                 ),
                 Port('Backup', imports=[Flow(bus='Heat', effects_per_flow_hour={'costs': 10})]),
-                _waste('Heat'),
+                waste('Heat'),
             ],
         )
         rates = result.flow_rate('Src(Heat)').values
@@ -405,7 +396,7 @@ class TestStatusSizing:
         requiring waste absorption. With status, cleaner: just turn off.
         """
         result = optimize(
-            _ts(2),
+            ts(2),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
             ports=[
@@ -449,7 +440,7 @@ class TestStatusSizing:
         The on<=indicator constraint prevents spurious running/startup costs.
         """
         result = optimize(
-            _ts(3),
+            ts(3),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
             ports=[
@@ -492,7 +483,7 @@ class TestStatusSizing:
         All backup: 50*5*3 = 750. Src is cheaper despite startup cost.
         """
         result = optimize(
-            _ts(3),
+            ts(3),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
             ports=[
@@ -536,7 +527,7 @@ class TestStatusSizing:
         least 0.3*S each hour. Waste absorbs excess at t=1,t=2.
         """
         result = optimize(
-            _ts(4),
+            ts(4),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
             ports=[
@@ -555,7 +546,7 @@ class TestStatusSizing:
                     ],
                 ),
                 Port('Backup', imports=[Flow(bus='Heat', effects_per_flow_hour={'costs': 0.5})]),
-                _waste('Heat'),
+                waste('Heat'),
             ],
         )
         on = result.solution['flow--on'].sel(flow='Src(Heat)').values
@@ -563,14 +554,7 @@ class TestStatusSizing:
         size = float(result.sizes.sel(flow='Src(Heat)').values)
 
         # Check on-blocks are ≥3h
-        block_len = 0
-        for i, s in enumerate(on):
-            if s > 0.5:
-                block_len += 1
-            else:
-                if block_len > 0:
-                    assert block_len >= 3, f'min_uptime violated: on-block of {block_len} at t<{i}'
-                block_len = 0
+        assert_on_blocks(on, min_length=3)
 
         # When on, flow rate >= rel_min * size
         for t in range(len(on)):
@@ -595,7 +579,7 @@ class TestMaxUptime:
         Without: 5*10*1 = 50. So cost > 50 proves the constraint works.
         """
         result = optimize(
-            _ts(5),
+            ts(5),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
             ports=[
@@ -619,18 +603,10 @@ class TestMaxUptime:
         on = result.solution['flow--on'].sel(flow='Src(Heat)').values
 
         # Verify no more than 2 consecutive on-hours
-        max_consecutive = 0
-        current = 0
-        for s in on:
-            if s > 0.5:
-                current += 1
-                max_consecutive = max(max_consecutive, current)
-            else:
-                current = 0
-        assert max_consecutive <= 2, f'max_uptime violated: {on}'
+        assert_on_blocks(on, max_length=2)
 
-        # Cost must exceed the unconstrained optimum of 50
-        assert result.objective > 50.0 - 1e-5
+        # Src 4h: 4*10*1=40. Backup 1h: 1*10*10=100. Total=140.
+        assert_allclose(result.objective, 140.0, rtol=1e-5)
 
 
 class TestMaxDowntime:
@@ -648,7 +624,7 @@ class TestMaxDowntime:
         This forces Src on for ≥2 of 4 hours → cost > 40.
         """
         result = optimize(
-            _ts(4),
+            ts(4),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
             ports=[
@@ -667,17 +643,16 @@ class TestMaxDowntime:
                     ],
                 ),
                 Port('Backup', imports=[Flow(bus='Heat', effects_per_flow_hour={'costs': 1})]),
-                _waste('Heat'),
+                waste('Heat'),
             ],
         )
         on = result.solution['flow--on'].sel(flow='Src(Heat)').values
 
         # Verify no two consecutive off-hours
-        for i in range(len(on) - 1):
-            assert not (on[i] < 0.5 and on[i + 1] < 0.5), f'Consecutive off at t={i},{i + 1}: {on}'
+        assert_off_blocks(on, max_length=1, skip_leading=False)
 
-        # Without max_downtime, all from Backup → cost=40. Must be higher now.
-        assert result.objective > 40.0 + 1e-5
+        # Pattern [on,off,on,off]: Src min=50 when on, 2*50*10=1000, Backup 2*10*1=20. Total=1020.
+        assert_allclose(result.objective, 1020.0, rtol=1e-5)
 
 
 class TestDurationCombinations:
@@ -693,7 +668,7 @@ class TestDurationCombinations:
         Src cost: (5+10+18+12)*1 = 45. Backup cost: 20*5 = 100. Total = 145.
         """
         result = optimize(
-            _ts(5),
+            ts(5),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
             ports=[
@@ -731,7 +706,7 @@ class TestDurationCombinations:
         [off,off,on,on,off,off]. Cheapest: maximize Src hours.
         """
         result = optimize(
-            _ts(6),
+            ts(6),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
             ports=[
@@ -750,39 +725,19 @@ class TestDurationCombinations:
                     ],
                 ),
                 Port('Backup', imports=[Flow(bus='Heat', effects_per_flow_hour={'costs': 5})]),
-                _waste('Heat'),
+                waste('Heat'),
             ],
         )
         on = result.solution['flow--on'].sel(flow='Src(Heat)').values
 
         # Verify on-blocks are ≥2h
-        block_len = 0
-        for i, s in enumerate(on):
-            if s > 0.5:
-                block_len += 1
-            else:
-                if block_len > 0:
-                    assert block_len >= 2, f'min_uptime violated: on-block of {block_len} at t<{i}'
-                block_len = 0
-        if block_len > 0:
-            assert block_len >= 2, f'min_uptime violated: trailing on-block of {block_len}'
+        assert_on_blocks(on, min_length=2)
 
         # Verify off-blocks within horizon are ≥2h (first block may be carry-over)
-        block_len = 0
-        block_start = 0
-        for i, s in enumerate(on):
-            if s < 0.5:
-                if block_len == 0:
-                    block_start = i
-                block_len += 1
-            else:
-                if block_len > 0 and block_start > 0:
-                    assert block_len >= 2, f'min_downtime violated: off-block of {block_len} at t={block_start}'
-                block_len = 0
+        assert_off_blocks(on, min_length=2)
 
-        # Src covers some hours cheaply, backup covers the rest
-        assert result.objective > 120 - 1e-5  # All cheap would be 120
-        assert result.objective < 600 + 1e-5  # All backup would be 600
+        # Pattern [off,on,on,on,on,on]: Src 5h*20=100, Backup 1h*20*5=100. Total=200.
+        assert_allclose(result.objective, 200.0, rtol=1e-5)
 
     def test_max_uptime_with_prior_carry_over(self):
         """Prior uptime reduces remaining allowed on-time at start of horizon.
@@ -796,7 +751,7 @@ class TestDurationCombinations:
         hour before forced shutdown. Then can restart for up to 3h.
         """
         result = optimize(
-            _ts(5),
+            ts(5),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
             ports=[
@@ -822,20 +777,11 @@ class TestDurationCombinations:
         # t=0 should be on (continuing from prior), then forced off by max_uptime=3
         assert_allclose(on[0], 1.0, atol=1e-5)
 
-        # Verify no run of >3 consecutive on-hours (including the 2h carry-over,
-        # which means at most 1h on at start before forced off)
-        max_consecutive = 0
-        current = 0
-        for s in on:
-            if s > 0.5:
-                current += 1
-                max_consecutive = max(max_consecutive, current)
-            else:
-                current = 0
-        # Can't assert max_consecutive <= 1 for the first block because
-        # duration tracking applies to the full horizon. But cost must exceed
-        # unconstrained optimum.
-        assert result.objective > 50.0 - 1e-5
+        # Verify no run of >3 consecutive on-hours within horizon
+        assert_on_blocks(on, max_length=3)
+
+        # Pattern [on,off,on,on,on]: Src 4h*10=40, Backup 1h*10*10=100. Total=140.
+        assert_allclose(result.objective, 140.0, rtol=1e-5)
 
     def test_max_uptime_with_startup_costs(self):
         """max_uptime forces shutdowns which incur startup costs on restart.
@@ -851,7 +797,7 @@ class TestDurationCombinations:
         Without max_uptime: 1 startup = 50 + 50 operational = 100€.
         """
         result = optimize(
-            _ts(5),
+            ts(5),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
             ports=[
@@ -876,21 +822,13 @@ class TestDurationCombinations:
         startup = result.solution['flow--startup'].sel(flow='Src(Heat)').values
 
         # Verify max_uptime constraint
-        max_consecutive = 0
-        current = 0
-        for s in on:
-            if s > 0.5:
-                current += 1
-                max_consecutive = max(max_consecutive, current)
-            else:
-                current = 0
-        assert max_consecutive <= 2, f'max_uptime violated: {on}'
+        assert_on_blocks(on, max_length=2)
 
-        # At least 2 startups (initial + restart after forced shutdown)
-        assert np.sum(startup) >= 2.0 - 1e-5
+        # Exactly 2 startups (initial + restart after forced shutdown)
+        assert_allclose(np.sum(startup), 2.0, atol=1e-5)
 
-        # Cost must be higher than unconstrained (1 startup + 5h operational = 100)
-        assert result.objective > 100.0 + 1e-5
+        # 2*50 startups + 4h*10 Src + 1h*10*10 Backup = 240
+        assert_allclose(result.objective, 240.0, rtol=1e-5)
 
     def test_max_downtime_with_prior_carry_over(self):
         """Prior downtime reduces remaining allowed off-time at start of horizon.
@@ -904,7 +842,7 @@ class TestDurationCombinations:
         immediately at t=0 (can't stay off any longer).
         """
         result = optimize(
-            _ts(4),
+            ts(4),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
             ports=[
@@ -923,7 +861,7 @@ class TestDurationCombinations:
                     ],
                 ),
                 Port('Backup', imports=[Flow(bus='Heat', effects_per_flow_hour={'costs': 1})]),
-                _waste('Heat'),
+                waste('Heat'),
             ],
         )
         on = result.solution['flow--on'].sel(flow='Src(Heat)').values
@@ -983,18 +921,7 @@ class TestDurationCombinations:
         on = result.solution['flow--on'].sel(flow='Src(Heat)').values
 
         # Verify all on-blocks are ≥4 timesteps (= 2h at dt=0.5h)
-        block_len = 0
-        for i, s in enumerate(on):
-            if s > 0.5:
-                block_len += 1
-            else:
-                if block_len > 0:
-                    assert block_len >= 4, (
-                        f'min_uptime violated with dt=0.5h: on-block of {block_len} slots (<4 = 2h) at t<{i}: {on}'
-                    )
-                block_len = 0
-        if block_len > 0:
-            assert block_len >= 4, f'min_uptime violated with dt=0.5h: trailing on-block of {block_len} slots'
+        assert_on_blocks(on, min_length=4)
 
     def test_max_uptime_with_half_hour_timesteps(self):
         """max_uptime enforced correctly with 30-minute timesteps.
@@ -1034,17 +961,7 @@ class TestDurationCombinations:
         on = result.solution['flow--on'].sel(flow='Src(Heat)').values
 
         # Verify no on-block exceeds 2 timesteps (= 1h at dt=0.5h)
-        max_consecutive = 0
-        current = 0
-        for s in on:
-            if s > 0.5:
-                current += 1
-                max_consecutive = max(max_consecutive, current)
-            else:
-                current = 0
-        assert max_consecutive <= 2, (
-            f'max_uptime violated with dt=0.5h: {max_consecutive} consecutive slots (>2 = 1h): {on}'
-        )
+        assert_on_blocks(on, max_length=2)
 
-        # Cost must exceed unconstrained optimum (all Src: 10*0.5*6*1 = 30)
-        assert result.objective > 30.0 - 1e-5
+        # Pattern [on,on,off,on,on,off]: Src 4*10*0.5=20, Backup 2*10*10*0.5=100. Total=120.
+        assert_allclose(result.objective, 120.0, rtol=1e-5)

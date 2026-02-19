@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-from datetime import datetime
-
 import pytest
+from conftest import ts
 
 from fluxopt import Bus, Effect, Flow, Port, Storage, optimize
 
 
 class TestStorage:
-    def test_charge_in_cheap_discharge_in_expensive(self, timesteps_4):
+    def test_charge_in_cheap_discharge_in_expensive(self):
         """Battery charges in cheap hours, discharges in expensive hours."""
         prices = [0.02, 0.08, 0.02, 0.08]
 
@@ -20,7 +19,7 @@ class TestStorage:
         battery = Storage('battery', charging=charge_flow, discharging=discharge_flow, capacity=100.0)
 
         result = optimize(
-            timesteps=timesteps_4,
+            timesteps=ts(4),
             buses=[Bus('elec')],
             effects=[Effect('cost', is_objective=True)],
             ports=[Port('grid', imports=[source_flow]), Port('demand', exports=[demand_flow])],
@@ -41,7 +40,7 @@ class TestStorage:
         assert discharge[2] == pytest.approx(0.0, abs=1e-6)  # t2: cheap
         assert discharge[3] > 0  # t3: expensive
 
-    def test_level_starts_at_prior(self, timesteps_4):
+    def test_level_starts_at_prior(self):
         """Prior level feeds into the balance at t=0."""
         source_flow = Flow(bus='elec', size=200, effects_per_flow_hour={'cost': 0.04})
         demand_flow = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.5, 0.5, 0.5])
@@ -58,7 +57,7 @@ class TestStorage:
         )
 
         result = optimize(
-            timesteps=timesteps_4,
+            timesteps=ts(4),
             buses=[Bus('elec')],
             effects=[Effect('cost', is_objective=True)],
             ports=[Port('grid', imports=[source_flow]), Port('demand', exports=[demand_flow])],
@@ -75,7 +74,6 @@ class TestStorage:
 
     def test_cyclic_storage(self):
         """Cyclic constraint: initial for period 0 equals level at end of last period."""
-        timesteps = [datetime(2024, 1, 1, h) for h in range(2)]
         source_flow = Flow(bus='elec', size=200, effects_per_flow_hour={'cost': [0.02, 0.08]})
         demand_flow = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.5])
 
@@ -89,7 +87,7 @@ class TestStorage:
         )
 
         result = optimize(
-            timesteps=timesteps,
+            timesteps=ts(2),
             buses=[Bus('elec')],
             effects=[Effect('cost', is_objective=True)],
             ports=[Port('grid', imports=[source_flow]), Port('demand', exports=[demand_flow])],
@@ -108,7 +106,7 @@ class TestStorage:
         expected = level_last + float(charge[0]) - float(discharge[0])
         assert level_0 == pytest.approx(expected, abs=1e-6)
 
-    def test_storage_with_efficiency(self, timesteps_3):
+    def test_storage_with_efficiency(self):
         """With eta_charge < 1, more energy is drawn from bus than stored."""
         eta_c = 0.8
         source_flow = Flow(bus='elec', size=200, effects_per_flow_hour={'cost': [0.02, 0.08, 0.02]})
@@ -125,7 +123,7 @@ class TestStorage:
         )
 
         result = optimize(
-            timesteps=timesteps_3,
+            timesteps=ts(3),
             buses=[Bus('elec')],
             effects=[Effect('cost', is_objective=True)],
             ports=[Port('grid', imports=[source_flow]), Port('demand', exports=[demand_flow])],

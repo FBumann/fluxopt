@@ -6,13 +6,14 @@ import numpy as np
 import pandas as pd
 import pytest
 import xarray as xr
+from conftest import ts as _ts
 
 from fluxopt.types import as_dataarray, compute_dt, normalize_timesteps
 
 
 @pytest.fixture
 def ts():
-    return pd.DatetimeIndex([datetime(2024, 1, 1, h) for h in range(3)])
+    return pd.DatetimeIndex(_ts(3))
 
 
 class TestNormalizeTimesteps:

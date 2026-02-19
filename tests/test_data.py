@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+from conftest import ts
+
 from fluxopt import Bus, Converter, Effect, Flow, ModelData, Port
 
 
 class TestFlowsTable:
-    def test_bounds_with_size(self, timesteps_3):
+    def test_bounds_with_size(self):
         flow = Flow(bus='b', size=100, relative_minimum=0.2, relative_maximum=0.8)
         data = ModelData.build(
-            timesteps_3, [Bus('b')], [Effect('cost', is_objective=True)], ports=[Port('src', imports=[flow])]
+            ts(3), [Bus('b')], [Effect('cost', is_objective=True)], ports=[Port('src', imports=[flow])]
         )
         ds = data.flows
         lb = ds.rel_lb.sel(flow='src(b)').values
@@ -17,10 +19,10 @@ class TestFlowsTable:
         assert float(ds.size.sel(flow='src(b)').values) == 100.0
         assert str(ds.bound_type.sel(flow='src(b)').values) == 'bounded'
 
-    def test_fixed_profile(self, timesteps_3):
+    def test_fixed_profile(self):
         flow = Flow(bus='b', size=100, fixed_relative_profile=[0.5, 0.8, 0.6])
         data = ModelData.build(
-            timesteps_3,
+            ts(3),
             [Bus('b')],
             [Effect('cost', is_objective=True)],
             ports=[Port('sink', exports=[flow])],
@@ -29,10 +31,10 @@ class TestFlowsTable:
         assert list(fixed) == [0.5, 0.8, 0.6]
         assert str(data.flows.bound_type.sel(flow='sink(b)').values) == 'profile'
 
-    def test_unsized_flow(self, timesteps_3):
+    def test_unsized_flow(self):
         flow = Flow(bus='b')
         data = ModelData.build(
-            timesteps_3,
+            ts(3),
             [Bus('b')],
             [Effect('cost', is_objective=True)],
             ports=[Port('src', imports=[flow])],
@@ -41,11 +43,11 @@ class TestFlowsTable:
 
 
 class TestBusesTable:
-    def test_coefficients(self, timesteps_3):
+    def test_coefficients(self):
         out_flow = Flow(bus='b', size=100)
         in_flow = Flow(bus='b', size=100)
         data = ModelData.build(
-            timesteps_3,
+            ts(3),
             [Bus('b')],
             [Effect('cost', is_objective=True)],
             ports=[Port('src', imports=[out_flow]), Port('sink', exports=[in_flow])],
@@ -58,12 +60,12 @@ class TestBusesTable:
 
 
 class TestConvertersTable:
-    def test_scalar_factors(self, timesteps_3):
+    def test_scalar_factors(self):
         fuel = Flow(bus='gas', size=200)
         heat = Flow(bus='heat', size=100)
         boiler = Converter.boiler('boiler', 0.9, fuel, heat)
         data = ModelData.build(
-            timesteps_3,
+            ts(3),
             [Bus('gas'), Bus('heat')],
             [Effect('cost', is_objective=True)],
             ports=[Port('src', imports=[Flow(bus='gas', size=200)])],
@@ -82,10 +84,10 @@ class TestConvertersTable:
 
 
 class TestEffectsTable:
-    def test_flow_coefficients(self, timesteps_3):
+    def test_flow_coefficients(self):
         flow = Flow(bus='b', size=100, effects_per_flow_hour={'cost': 0.04})
         data = ModelData.build(
-            timesteps_3,
+            ts(3),
             [Bus('b')],
             [Effect('cost', is_objective=True)],
             ports=[Port('src', imports=[flow])],
@@ -93,9 +95,9 @@ class TestEffectsTable:
         coeff = data.flows.effect_coeff.sel(flow='src(b)', effect='cost')
         assert all(v == 0.04 for v in coeff.values)
 
-    def test_objective_effect(self, timesteps_3):
+    def test_objective_effect(self):
         data = ModelData.build(
-            timesteps_3,
+            ts(3),
             [Bus('b')],
             [Effect('cost', is_objective=True), Effect('co2')],
             ports=[Port('src', imports=[Flow(bus='b', size=100)])],

@@ -11,7 +11,7 @@ from numpy.testing import assert_allclose
 
 from fluxopt import Bus, Converter, Effect, Flow, Port, Sizing
 
-from .conftest import _waste, ts
+from .conftest import ts, waste
 
 
 class TestEffects:
@@ -161,7 +161,7 @@ class TestEffects:
                         Flow(bus='Heat', effects_per_flow_hour={'cost': 1, 'CO2': 0}),
                     ],
                 ),
-                _waste('Heat'),
+                waste('Heat'),
             ],
         )
         # Must produce ≥25 CO2. Only Dirty emits CO2 at 1kg/kWh → Dirty ≥ 25 kWh.
@@ -242,7 +242,7 @@ class TestEffects:
                         Flow(bus='Heat', effects_per_flow_hour={'cost': 1, 'CO2': 1}),
                     ],
                 ),
-                _waste('Heat'),
+                waste('Heat'),
             ],
         )
         # Must emit ≥10 CO2 each ts → Dirty ≥ 10 each ts → cost = 20
