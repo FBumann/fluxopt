@@ -393,6 +393,8 @@ class TestStatusWithMultipleConstraints:
                 if on_block_len > 0:
                     assert on_block_len >= 2, f'min_uptime violated: on-block of {on_block_len} at t<{i}: on={on}'
                 on_block_len = 0
+        if on_block_len > 0:
+            assert on_block_len >= 2, f'min_uptime violated: trailing on-block of {on_block_len}: on={on}'
 
         # Verify min_downtime: each off-block is ≥2 hours (within horizon)
         off_block_len = 0
@@ -403,6 +405,8 @@ class TestStatusWithMultipleConstraints:
                 if 0 < off_block_len < 2 and i - off_block_len > 0:
                     assert off_block_len >= 2, f'min_downtime violated: off-block of {off_block_len} at t<{i}: on={on}'
                 off_block_len = 0
+        if off_block_len > 0 and len(on) - off_block_len > 0:
+            assert off_block_len >= 2, f'min_downtime violated: trailing off-block of {off_block_len}: on={on}'
 
         # Total cost between all-cheap and all-backup
         assert result.effect_totals.sel(effect='cost').item() > 120 - 1e-5

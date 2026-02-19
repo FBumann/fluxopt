@@ -81,8 +81,10 @@ def fast_concat(arrays: list[xr.DataArray], dim: pd.Index) -> xr.DataArray:
         dim: Index for the new leading dimension.
 
     Raises:
-        ValueError: If any slice has a different shape or dims than the first.
+        ValueError: If *arrays* is empty or any slice has a different shape or dims than the first.
     """
+    if not arrays:
+        raise ValueError("fast_concat: 'arrays' must not be empty")
     first = arrays[0]
     expected_shape = first.shape
     expected_dims = first.dims
