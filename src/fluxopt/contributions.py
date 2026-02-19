@@ -119,7 +119,7 @@ def compute_effect_contributions(solution: xr.Dataset, data: ModelData) -> xr.Da
 
     Returns:
         Dataset with:
-        - ``temporal`` (contributor, effect, time) — per-timestep contributions (flows only)
+        - ``temporal`` (contributor, effect, time) — per-timestep contributions
         - ``periodic`` (contributor, effect) — periodic contributions (flows + storages)
         - ``total`` (contributor, effect) — temporal summed over time + periodic
     """
