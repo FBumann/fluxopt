@@ -45,7 +45,7 @@ class TestFlowStatus:
                         bus='Heat',
                         size=100,
                         relative_minimum=0.1,
-                        prior=[0],
+                        prior_rates=[0],
                         status=Status(effects_per_startup={'cost': 100}),
                     ),
                 ),
@@ -129,7 +129,7 @@ class TestFlowStatus:
                         bus='Heat',
                         size=100,
                         relative_minimum=0.01,
-                        prior=[0],
+                        prior_rates=[0],
                         status=Status(min_uptime=2, max_uptime=2),
                     ),
                 ),
@@ -187,7 +187,7 @@ class TestFlowStatus:
                         bus='Heat',
                         size=100,
                         relative_minimum=0.1,
-                        prior=[20],
+                        prior_rates=[20],
                         status=Status(min_downtime=3),
                     ),
                 ),
@@ -323,7 +323,7 @@ class TestFlowStatus:
                         bus='Heat',
                         size=20,
                         relative_minimum=0.5,
-                        prior=[10],
+                        prior_rates=[10],
                         status=Status(max_downtime=1),
                     ),
                 ),
@@ -421,7 +421,7 @@ class TestFlowStatus:
                         bus='Heat',
                         size=100,
                         relative_minimum=0.1,
-                        prior=[0],
+                        prior_rates=[0],
                         status=Status(max_uptime=2),
                     ),
                 ),
@@ -450,14 +450,14 @@ class TestFlowStatus:
 
 class TestPreviousFlowRate:
     def test_previous_flow_rate_scalar_on_forces_min_uptime(self, optimize):
-        """Proves: prior=[X] with X>0 means unit was ON before t=0,
+        """Proves: prior_rates=[X] with X>0 means unit was ON before t=0,
         and min_uptime carry-over forces it to stay on.
 
-        Boiler with min_uptime=2, prior=[10] (was on for 1 hour before t=0).
+        Boiler with min_uptime=2, prior_rates=[10] (was on for 1 hour before t=0).
         Must stay on at t=0 to complete 2-hour minimum uptime block.
 
-        Sensitivity: With prior=[0] (was off), cost=0.
-        With prior=[10] (was on), cost=10.
+        Sensitivity: With prior_rates=[0] (was off), cost=0.
+        With prior_rates=[10] (was on), cost=10.
         """
         result = optimize(
             timesteps=ts(2),
@@ -487,7 +487,7 @@ class TestPreviousFlowRate:
                         bus='Heat',
                         size=100,
                         relative_minimum=0.1,
-                        prior=[10],
+                        prior_rates=[10],
                         status=Status(min_uptime=2),
                     ),
                 ),
@@ -497,9 +497,9 @@ class TestPreviousFlowRate:
         assert_allclose(result.effect_totals.sel(effect='cost').item(), 10.0, rtol=1e-5)
 
     def test_previous_flow_rate_scalar_off_no_carry_over(self, optimize):
-        """Proves: prior=[0] means unit was OFF before t=0, so no min_uptime carry-over.
+        """Proves: prior_rates=[0] means unit was OFF before t=0, so no min_uptime carry-over.
 
-        Same setup but prior=[0]. Cost=0 here vs cost=10 with prior=[10].
+        Same setup but prior_rates=[0]. Cost=0 here vs cost=10 with prior_rates=[10].
         """
         result = optimize(
             timesteps=ts(2),
@@ -529,7 +529,7 @@ class TestPreviousFlowRate:
                         bus='Heat',
                         size=100,
                         relative_minimum=0.1,
-                        prior=[0],
+                        prior_rates=[0],
                         status=Status(min_uptime=2),
                     ),
                 ),
@@ -540,7 +540,7 @@ class TestPreviousFlowRate:
     def test_previous_flow_rate_array_uptime_satisfied_vs_partial(self, optimize):
         """Proves: prior array length affects uptime carry-over calculation.
 
-        prior=[10, 20] (2 hours ON), min_uptime=2 → satisfied, can turn off.
+        prior_rates=[10, 20] (2 hours ON), min_uptime=2 → satisfied, can turn off.
         Demand=[0, 0]. With satisfied uptime, can be off entirely (cost=0).
         """
         result = optimize(
@@ -571,7 +571,7 @@ class TestPreviousFlowRate:
                         bus='Heat',
                         size=100,
                         relative_minimum=0.1,
-                        prior=[10, 20],
+                        prior_rates=[10, 20],
                         status=Status(min_uptime=2),
                     ),
                 ),
@@ -583,10 +583,10 @@ class TestPreviousFlowRate:
     def test_previous_flow_rate_array_partial_uptime_forces_continuation(self, optimize):
         """Proves: prior array with partial uptime forces continuation.
 
-        Boiler with min_uptime=3, prior=[0, 10] (off then on for 1 hour).
+        Boiler with min_uptime=3, prior_rates=[0, 10] (off then on for 1 hour).
         Only 1 hour of uptime accumulated → needs 2 more hours at t=0,t=1.
 
-        Sensitivity: With prior=[0] (was off), cost=0. With prior=[0, 10], cost=20.
+        Sensitivity: With prior_rates=[0] (was off), cost=0. With prior_rates=[0, 10], cost=20.
         """
         result = optimize(
             timesteps=ts(3),
@@ -616,13 +616,13 @@ class TestPreviousFlowRate:
                         bus='Heat',
                         size=100,
                         relative_minimum=0.1,
-                        prior=[0, 10],
+                        prior_rates=[0, 10],
                         status=Status(min_uptime=3),
                     ),
                 ),
             ],
         )
-        # prior=[0, 10]: consecutive uptime = 1 hour
+        # prior_rates=[0, 10]: consecutive uptime = 1 hour
         # min_uptime=3: needs 2 more hours → forced on at t=0, t=1 with relative_min=10
         # cost = 2 * 10 = 20
         assert_allclose(result.effect_totals.sel(effect='cost').item(), 20.0, rtol=1e-5)
@@ -630,7 +630,7 @@ class TestPreviousFlowRate:
     def test_previous_flow_rate_array_min_downtime_carry_over(self, optimize):
         """Proves: prior array affects min_downtime carry-over.
 
-        CheapBoiler with min_downtime=3, prior=[10, 0] (was on, then off for 1 hour).
+        CheapBoiler with min_downtime=3, prior_rates=[10, 0] (was on, then off for 1 hour).
         Only 1 hour of downtime accumulated → needs 2 more hours off at t=0,t=1.
 
         Sensitivity: Without carry-over, cost=60. With carry-over, cost=100.
@@ -662,7 +662,7 @@ class TestPreviousFlowRate:
                         bus='Heat',
                         size=100,
                         relative_minimum=0.1,
-                        prior=[10, 0],
+                        prior_rates=[10, 0],
                         status=Status(min_downtime=3),
                     ),
                 ),
@@ -674,7 +674,7 @@ class TestPreviousFlowRate:
                 ),
             ],
         )
-        # prior=[10, 0]: last is OFF, consecutive downtime = 1 hour
+        # prior_rates=[10, 0]: last is OFF, consecutive downtime = 1 hour
         # min_downtime=3: needs 2 more off hours → CheapBoiler off t=0,t=1
         # ExpensiveBoiler covers t=0,t=1: 2*20/0.5 = 80. CheapBoiler covers t=2: 20.
         # Total = 100
@@ -683,11 +683,11 @@ class TestPreviousFlowRate:
     def test_previous_flow_rate_array_longer_history(self, optimize):
         """Proves: longer prior arrays correctly track consecutive hours.
 
-        Boiler with min_uptime=4, prior=[0, 10, 20, 30] (off, then on for 3 hours).
+        Boiler with min_uptime=4, prior_rates=[0, 10, 20, 30] (off, then on for 3 hours).
         3 hours uptime accumulated → needs 1 more hour at t=0.
 
-        Sensitivity: With prior=[10, 20, 30, 40] (4 hours on), cost=0.
-        With prior=[0, 10, 20, 30] (3 hours on), cost=10.
+        Sensitivity: With prior_rates=[10, 20, 30, 40] (4 hours on), cost=0.
+        With prior_rates=[0, 10, 20, 30] (3 hours on), cost=10.
         """
         result = optimize(
             timesteps=ts(2),
@@ -717,13 +717,13 @@ class TestPreviousFlowRate:
                         bus='Heat',
                         size=100,
                         relative_minimum=0.1,
-                        prior=[0, 10, 20, 30],
+                        prior_rates=[0, 10, 20, 30],
                         status=Status(min_uptime=4),
                     ),
                 ),
             ],
         )
-        # prior=[0, 10, 20, 30]: consecutive uptime from end = 3 hours
+        # prior_rates=[0, 10, 20, 30]: consecutive uptime from end = 3 hours
         # min_uptime=4: needs 1 more → forced on at t=0 with relative_min=10
         # cost = 10
         assert_allclose(result.effect_totals.sel(effect='cost').item(), 10.0, rtol=1e-5)

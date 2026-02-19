@@ -106,7 +106,7 @@ class TestStatusWithEffects:
                         bus='Heat',
                         size=100,
                         relative_minimum=0.1,
-                        prior=[0],
+                        prior_rates=[0],
                         status=Status(effects_per_startup={'CO2': 50}),
                     ),
                 ),
@@ -337,7 +337,7 @@ class TestStatusWithMultipleConstraints:
     def test_min_uptime_with_min_downtime(self, optimize):
         """Proves: min_uptime and min_downtime together force a regular on/off pattern.
 
-        Boiler: min_uptime=2, min_downtime=2, prior=[0].
+        Boiler: min_uptime=2, min_downtime=2, prior_rates=[0].
         Demand=[20]*6. Backup at eta=0.5.
 
         Sensitivity: Without these constraints, boiler could run all 6 hours.
@@ -370,7 +370,7 @@ class TestStatusWithMultipleConstraints:
                         bus='Heat',
                         size=100,
                         relative_minimum=0.1,
-                        prior=[0],
+                        prior_rates=[0],
                         status=Status(min_uptime=2, min_downtime=2),
                     ),
                 ),
@@ -457,7 +457,7 @@ class TestEffectsWithConversion:
                         bus='Heat',
                         size=100,
                         relative_minimum=0.1,
-                        prior=[0],
+                        prior_rates=[0],
                         status=Status(effects_per_startup={'CO2': 15}),
                     ),
                 ),

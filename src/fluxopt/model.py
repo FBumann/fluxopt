@@ -27,7 +27,7 @@ class FlowSystem:
 
     # Storage variables — None when no storages
     storage_level: Variable | None = None
-    storage_prior: Variable | None = None
+    prior_storage_level: Variable | None = None
 
     # Status variables — None when no status is configured
     flow_on: Variable | None = None
@@ -753,7 +753,7 @@ class FlowSystem:
         # --- Prior variable + single balance for ALL storages ---
         # prior[storage] is a free variable representing the state before period 0.
         # Cyclic and fixed-prior constraints pin it; otherwise it's free.
-        self.storage_prior = self.m.add_variables(lower=0, coords=[stor_ids], name='storage--prior')
+        self.prior_storage_level = self.m.add_variables(lower=0, coords=[stor_ids], name='storage--prior')
 
         add_accumulation_constraints(
             self.m,
@@ -761,7 +761,7 @@ class FlowSystem:
             inflow=inflow,
             outflow=outflow,
             decay=loss_factor,
-            initial=self.storage_prior,
+            initial=self.prior_storage_level,
             name='storage_balance',
         )
 
@@ -770,7 +770,7 @@ class FlowSystem:
         if np.any(cyclic_mask):
             cyc_ids = [str(s) for s, c in zip(stor_ids.values, cyclic_mask, strict=True) if c]
             self.m.add_constraints(
-                self.storage_prior.sel(storage=cyc_ids) == self.storage_level.sel(storage=cyc_ids).isel(time=-1),
+                self.prior_storage_level.sel(storage=cyc_ids) == self.storage_level.sel(storage=cyc_ids).isel(time=-1),
                 name='storage_prior_cyc',
             )
 
@@ -779,7 +779,7 @@ class FlowSystem:
         if np.any(has_prior):
             prior_ids = [str(s) for s, p in zip(stor_ids.values, has_prior, strict=True) if p]
             self.m.add_constraints(
-                self.storage_prior.sel(storage=prior_ids) == ds.prior_level.sel(storage=prior_ids),
+                self.prior_storage_level.sel(storage=prior_ids) == ds.prior_level.sel(storage=prior_ids),
                 name='storage_prior_fix',
             )
 

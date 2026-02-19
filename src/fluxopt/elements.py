@@ -63,7 +63,7 @@ class Flow:
     fixed_relative_profile: TimeSeries | None = None  # π_f  [-]
     effects_per_flow_hour: dict[str, TimeSeries] = field(default_factory=dict)  # c_{f,k}  [varies]
     status: Status | None = None
-    prior: list[float] | None = None  # flow rates before horizon [MW]
+    prior_rates: list[float] | None = None  # flow rates before horizon [MW]
 
     def __post_init__(self) -> None:
         """Default id to bus name if not set."""
@@ -108,7 +108,7 @@ class Storage:
 
     Level balance::
 
-        E_{s,t+1} = E_{s,t} (1 - δ Δt) + P^c η^c Δt - P^d / η^d Δt
+        E_{s,t+1} = E_{s,t} (1 - δ)^Δt + P^c η^c Δt - P^d / η^d Δt
     """
 
     id: str

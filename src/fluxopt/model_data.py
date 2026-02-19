@@ -169,7 +169,7 @@ class _StatusArrays:
         effect_ids: list[str],
         time: pd.Index,
         dim: str,
-        prior_map: dict[str, list[float]] | None = None,
+        prior_rates_map: dict[str, list[float]] | None = None,
         dt: float = 1.0,
     ) -> Self:
         """Validate Status objects and collect into DataArrays.
@@ -179,7 +179,7 @@ class _StatusArrays:
             effect_ids: Known effect ids for validation.
             time: Time index for effect arrays.
             dim: Dimension name for the resulting arrays.
-            prior_map: Flow id to prior flow rates (MW) before horizon.
+            prior_rates_map: Flow id to prior flow rates (MW) before horizon.
             dt: Scalar timestep duration in hours for prior duration computation.
         """
         from fluxopt.constraints.status import compute_previous_duration
@@ -187,7 +187,7 @@ class _StatusArrays:
         if not items:
             return cls()
 
-        prior_map = prior_map or {}
+        prior_rates_map = prior_rates_map or {}
         effect_set = set(effect_ids)
         n_effects = len(effect_ids)
         n_time = len(time)
@@ -210,7 +210,7 @@ class _StatusArrays:
             min_downs.append(s.min_downtime if s.min_downtime is not None else np.nan)
             max_downs.append(s.max_downtime if s.max_downtime is not None else np.nan)
 
-            prior = prior_map.get(item_id)
+            prior = prior_rates_map.get(item_id)
             if prior is not None:
                 initials.append(1.0 if prior[-1] > 0 else 0.0)
                 prior_da = xr.DataArray(prior, dims=['_prior_t'])
@@ -342,7 +342,7 @@ class FlowsData:
         effect_coeffs: list[xr.DataArray] = []
         sizing_items: list[tuple[str, Sizing]] = []
         status_items: list[tuple[str, Status]] = []
-        prior_map: dict[str, list[float]] = {}
+        prior_rates_map: dict[str, list[float]] = {}
 
         nan_time = xr.DataArray(np.full(n_time, np.nan), dims=['time'], coords={'time': time})
 
@@ -380,12 +380,14 @@ class FlowsData:
             if f.status is not None:
                 status_items.append((f.id, f.status))
 
-            if f.prior is not None:
-                prior_map[f.id] = f.prior
+            if f.prior_rates is not None:
+                prior_rates_map[f.id] = f.prior_rates
 
         flow_idx = pd.Index(flow_ids, name='flow')
         sz = _SizingArrays.build(sizing_items, effect_ids, dim='sizing_flow')
-        st = _StatusArrays.build(status_items, effect_ids, time, dim='status_flow', prior_map=prior_map, dt=dt)
+        st = _StatusArrays.build(
+            status_items, effect_ids, time, dim='status_flow', prior_rates_map=prior_rates_map, dt=dt
+        )
 
         return cls(
             bound_type=xr.DataArray(bound_type, dims=['flow'], coords={'flow': flow_ids}),

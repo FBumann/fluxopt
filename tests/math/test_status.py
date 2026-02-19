@@ -115,7 +115,7 @@ class TestStartupCosts:
     def test_startup_cost_added_to_objective(self):
         """Startup cost is charged per event.
 
-        Source: size=100, prior=[0] (was off), effects_per_startup={'costs': 50}, 1€/MWh.
+        Source: size=100, prior_rates=[0] (was off), effects_per_startup={'costs': 50}, 1€/MWh.
         Demand: [60, 60] (constant). No backup.
 
         Source runs both hours: 1 startup event at t=0 (was off).
@@ -136,7 +136,7 @@ class TestStartupCosts:
                             relative_minimum=0.1,
                             effects_per_flow_hour={'costs': 1},
                             status=Status(effects_per_startup={'costs': 50}),
-                            prior=[0],
+                            prior_rates=[0],
                         )
                     ],
                 ),
@@ -147,7 +147,7 @@ class TestStartupCosts:
     def test_startup_cost_discourages_cycling(self):
         """High startup cost keeps unit running rather than cycling.
 
-        Source: size=100, rel_min=0.3, prior=[0] (was off),
+        Source: size=100, rel_min=0.3, prior_rates=[0] (was off),
                 Status(effects_per_startup={'costs': 200}), 0.1€/MWh.
         Backup: 5€/MWh.
         Demand: [80, 0, 80].
@@ -171,7 +171,7 @@ class TestStartupCosts:
                             relative_minimum=0.3,
                             effects_per_flow_hour={'costs': 0.1},
                             status=Status(effects_per_startup={'costs': 200}),
-                            prior=[0],
+                            prior_rates=[0],
                         )
                     ],
                 ),
@@ -225,7 +225,7 @@ class TestPrior:
     def test_prior_on_carries_uptime(self):
         """Prior with consecutive on-hours carries uptime into the horizon.
 
-        Source: size=100, min_uptime=3h, prior=[50, 60] (2h on already).
+        Source: size=100, min_uptime=3h, prior_rates=[50, 60] (2h on already).
         Demand: [80, 0, 0].
 
         With 2h of prior uptime and min_uptime=3h, source must stay on for
@@ -249,7 +249,7 @@ class TestPrior:
                             relative_minimum=0.1,
                             effects_per_flow_hour={'costs': 1},
                             status=Status(min_uptime=3),
-                            prior=[50, 60],
+                            prior_rates=[50, 60],
                         )
                     ],
                 ),
@@ -264,7 +264,7 @@ class TestPrior:
     def test_prior_off_carries_downtime(self):
         """Prior with consecutive off-hours carries downtime into the horizon.
 
-        Source: size=100, min_downtime=3h, prior=[0, 0] (2h off already).
+        Source: size=100, min_downtime=3h, prior_rates=[0, 0] (2h off already).
         Demand: [80, 80, 80].
 
         With 2h of prior downtime and min_downtime=3h, source must stay off
@@ -288,7 +288,7 @@ class TestPrior:
                             relative_minimum=0.1,
                             effects_per_flow_hour={'costs': 1},
                             status=Status(min_downtime=3),
-                            prior=[0, 0],
+                            prior_rates=[0, 0],
                         )
                     ],
                 ),
@@ -484,7 +484,7 @@ class TestStatusSizing:
         """Sizing + Status + startup cost: invest decision includes startup penalty.
 
         Src: Sizing(0, 200, mandatory=True), Status(effects_per_startup={'costs': 100}),
-             prior=[0], 1€/MWh.
+             prior_rates=[0], 1€/MWh.
         Backup: 5€/MWh.
         Demand: [50, 50, 50].
 
@@ -506,7 +506,7 @@ class TestStatusSizing:
                             relative_minimum=0.1,
                             effects_per_flow_hour={'costs': 1},
                             status=Status(effects_per_startup={'costs': 100}),
-                            prior=[0],
+                            prior_rates=[0],
                         )
                     ],
                 ),
@@ -526,7 +526,7 @@ class TestStatusSizing:
         """Sizing + Status + min_uptime: duration constraint with variable capacity.
 
         Src: Sizing(0, 200, mandatory=True), rel_min=0.3,
-             Status(min_uptime=3), prior=[0], 1€/MWh.
+             Status(min_uptime=3), prior_rates=[0], 1€/MWh.
         Backup: 0.5€/MWh (cheaper).
         Demand: [80, 0, 0, 80].
 
@@ -550,7 +550,7 @@ class TestStatusSizing:
                             relative_minimum=0.3,
                             effects_per_flow_hour={'costs': 1},
                             status=Status(min_uptime=3),
-                            prior=[0],
+                            prior_rates=[0],
                         )
                     ],
                 ),
@@ -582,7 +582,7 @@ class TestMaxUptime:
     def test_max_uptime_forces_shutdown(self):
         """max_uptime=2 limits continuous operation to 2 consecutive hours.
 
-        Src: size=100, Status(max_uptime=2), prior=[0] (was off), 1€/MWh.
+        Src: size=100, Status(max_uptime=2), prior_rates=[0] (was off), 1€/MWh.
         Backup: 10€/MWh.
         Demand: [10, 10, 10, 10, 10].
 
@@ -609,7 +609,7 @@ class TestMaxUptime:
                             relative_minimum=0.1,
                             effects_per_flow_hour={'costs': 1},
                             status=Status(max_uptime=2),
-                            prior=[0],
+                            prior_rates=[0],
                         )
                     ],
                 ),
@@ -637,7 +637,7 @@ class TestMaxDowntime:
     def test_max_downtime_forces_restart(self):
         """max_downtime=1 prevents staying off for more than 1 consecutive hour.
 
-        Src: size=100, rel_min=0.5, Status(max_downtime=1), prior=[10] (was on),
+        Src: size=100, rel_min=0.5, Status(max_downtime=1), prior_rates=[10] (was on),
              10€/MWh (expensive).
         Backup: 1€/MWh (cheap).
         Demand: [10, 10, 10, 10].
@@ -662,7 +662,7 @@ class TestMaxDowntime:
                             relative_minimum=0.5,
                             effects_per_flow_hour={'costs': 10},
                             status=Status(max_downtime=1),
-                            prior=[10],
+                            prior_rates=[10],
                         )
                     ],
                 ),
@@ -684,7 +684,7 @@ class TestDurationCombinations:
     def test_min_and_max_uptime_forces_exact_blocks(self):
         """min_uptime=2 + max_uptime=2 forces operation in exact 2-hour blocks.
 
-        Src: size=100, Status(min_uptime=2, max_uptime=2), prior=[0], 1€/MWh.
+        Src: size=100, Status(min_uptime=2, max_uptime=2), prior_rates=[0], 1€/MWh.
         Backup: 5€/MWh.
         Demand: [5, 10, 20, 18, 12].
 
@@ -707,7 +707,7 @@ class TestDurationCombinations:
                             relative_minimum=0.01,
                             effects_per_flow_hour={'costs': 1},
                             status=Status(min_uptime=2, max_uptime=2),
-                            prior=[0],
+                            prior_rates=[0],
                         )
                     ],
                 ),
@@ -722,7 +722,7 @@ class TestDurationCombinations:
         """min_uptime=2 + min_downtime=2 forces on/off blocks of ≥2 hours each.
 
         Src: size=100, rel_min=0.1, Status(min_uptime=2, min_downtime=2),
-             prior=[0], 1€/MWh.
+             prior_rates=[0], 1€/MWh.
         Backup: 5€/MWh.
         Demand: [20]*6.
 
@@ -745,7 +745,7 @@ class TestDurationCombinations:
                             relative_minimum=0.1,
                             effects_per_flow_hour={'costs': 1},
                             status=Status(min_uptime=2, min_downtime=2),
-                            prior=[0],
+                            prior_rates=[0],
                         )
                     ],
                 ),
@@ -787,7 +787,7 @@ class TestDurationCombinations:
     def test_max_uptime_with_prior_carry_over(self):
         """Prior uptime reduces remaining allowed on-time at start of horizon.
 
-        Src: size=100, Status(max_uptime=3), prior=[50, 50] (2h on already),
+        Src: size=100, Status(max_uptime=3), prior_rates=[50, 50] (2h on already),
              1€/MWh.
         Backup: 10€/MWh.
         Demand: [10]*5.
@@ -810,7 +810,7 @@ class TestDurationCombinations:
                             relative_minimum=0.1,
                             effects_per_flow_hour={'costs': 1},
                             status=Status(max_uptime=3),
-                            prior=[50, 50],
+                            prior_rates=[50, 50],
                         )
                     ],
                 ),
@@ -841,7 +841,7 @@ class TestDurationCombinations:
         """max_uptime forces shutdowns which incur startup costs on restart.
 
         Src: size=100, Status(max_uptime=2, effects_per_startup={'costs': 50}),
-             prior=[0], 1€/MWh.
+             prior_rates=[0], 1€/MWh.
         Backup: 10€/MWh.
         Demand: [10]*5.
 
@@ -865,7 +865,7 @@ class TestDurationCombinations:
                             relative_minimum=0.1,
                             effects_per_flow_hour={'costs': 1},
                             status=Status(max_uptime=2, effects_per_startup={'costs': 50}),
-                            prior=[0],
+                            prior_rates=[0],
                         )
                     ],
                 ),
@@ -896,7 +896,7 @@ class TestDurationCombinations:
         """Prior downtime reduces remaining allowed off-time at start of horizon.
 
         Src: size=100, rel_min=0.5, Status(max_downtime=2),
-             prior=[0, 0] (2h off already), 10€/MWh (expensive).
+             prior_rates=[0, 0] (2h off already), 10€/MWh (expensive).
         Backup: 1€/MWh (cheap).
         Demand: [10]*4.
 
@@ -918,7 +918,7 @@ class TestDurationCombinations:
                             relative_minimum=0.5,
                             effects_per_flow_hour={'costs': 10},
                             status=Status(max_downtime=2),
-                            prior=[0, 0],
+                            prior_rates=[0, 0],
                         )
                     ],
                 ),
@@ -934,7 +934,7 @@ class TestDurationCombinations:
     def test_min_uptime_with_half_hour_timesteps(self):
         """Duration constraints work correctly with sub-hourly timesteps.
 
-        Src: size=100, Status(min_uptime=2), prior=[0], 1€/MWh.
+        Src: size=100, Status(min_uptime=2), prior_rates=[0], 1€/MWh.
         Backup: 0.5€/MWh (cheaper).
         8 timesteps of 30min each (4 hours total).
         Demand: [0,0,0,0, 80,80, 0,0] (demand only at t=4,5 → hours 2-3).
@@ -973,7 +973,7 @@ class TestDurationCombinations:
                             relative_minimum=0.1,
                             effects_per_flow_hour={'costs': 1},
                             status=Status(min_uptime=2),
-                            prior=[0],
+                            prior_rates=[0],
                         )
                     ],
                 ),
@@ -999,7 +999,7 @@ class TestDurationCombinations:
     def test_max_uptime_with_half_hour_timesteps(self):
         """max_uptime enforced correctly with 30-minute timesteps.
 
-        Src: size=100, Status(max_uptime=1), prior=[0], 1€/MWh.
+        Src: size=100, Status(max_uptime=1), prior_rates=[0], 1€/MWh.
         Backup: 10€/MWh.
         6 timesteps of 30min (3 hours total).
         Demand: [10]*6.
@@ -1024,7 +1024,7 @@ class TestDurationCombinations:
                             relative_minimum=0.1,
                             effects_per_flow_hour={'costs': 1},
                             status=Status(max_uptime=1),
-                            prior=[0],
+                            prior_rates=[0],
                         )
                     ],
                 ),
