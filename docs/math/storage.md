@@ -38,10 +38,10 @@ The charge state is bounded by relative SOC limits scaled by the storage capacit
 E_{s,t_0} = E_0
 \]
 
-where \(E_0\) is `Storage.initial_charge_state`. If \(E_0 \leq 1\), it is interpreted as
-a fraction of capacity: \(E_0 \cdot \bar{E}_s\).
+where \(E_0\) is `Storage.prior_level` (absolute MWh). If `prior_level` is `None`,
+the initial level is unconstrained (the optimizer chooses).
 
-**Cyclic condition** (when `initial_charge_state = "cyclic"`):
+**Cyclic condition** (when `Storage.cyclic = True`):
 
 \[
 E_{s,t_{\text{end}}} = E_{s,t_0}
@@ -53,15 +53,15 @@ This ensures the storage ends at the same level it started.
 
 | Symbol | Description | Reference |
 |---|---|---|
-| \(E_{s,t}\) | Stored energy variable | `charge_state[storage, time]` |
+| \(E_{s,t}\) | Stored energy variable | `storage--level[storage, time]` |
 | \(P^{\text{c}}_{s,t}\) | Charging flow rate | `flow_rate[charge_flow, time]` |
 | \(P^{\text{d}}_{s,t}\) | Discharging flow rate | `flow_rate[discharge_flow, time]` |
 | \(\bar{E}_s\) | Storage capacity | `Storage.capacity` |
 | \(\eta^{\text{c}}_s\) | Charging efficiency | `Storage.eta_charge` |
 | \(\eta^{\text{d}}_s\) | Discharging efficiency | `Storage.eta_discharge` |
 | \(\delta_s\) | Self-discharge rate | `Storage.relative_loss_per_hour` |
-| \(\underline{e}_s\) | Relative min SOC | `Storage.relative_minimum_charge_state` |
-| \(\bar{e}_s\) | Relative max SOC | `Storage.relative_maximum_charge_state` |
+| \(\underline{e}_s\) | Relative min SOC | `Storage.relative_minimum_level` |
+| \(\bar{e}_s\) | Relative max SOC | `Storage.relative_maximum_level` |
 | \(\Delta t_t\) | Timestep duration | dt |
 
 See [Notation](notation.md) for the full symbol table.

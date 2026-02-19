@@ -10,7 +10,7 @@ from datetime import datetime
 
 from numpy.testing import assert_allclose
 
-from fluxopt import Bus, Effect, Flow, Port, Sizing, Storage, solve
+from fluxopt import Bus, Effect, Flow, Port, Sizing, Storage, optimize
 
 
 def _ts(n: int) -> list[datetime]:
@@ -30,7 +30,7 @@ class TestFlowSizing:
         The solver must invest at least 50 MW to meet demand.
         Operational cost = 50 * 1€/MWh * 2h = 100.
         """
-        result = solve(
+        result = optimize(
             _ts(2),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
@@ -62,7 +62,7 @@ class TestFlowSizing:
         Without invest: backup cost = 50 * 5 * 2 = 500.
         With invest: fixed=200 + operational=50*1*2=100 → total=300. Cheaper → invest.
         """
-        result = solve(
+        result = optimize(
             _ts(2),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
@@ -73,7 +73,7 @@ class TestFlowSizing:
                     imports=[
                         Flow(
                             bus='Heat',
-                            size=Sizing(10, 100, effects_fixed={'costs': 200}),
+                            size=Sizing(10, 100, mandatory=False, effects_fixed={'costs': 200}),
                             effects_per_flow_hour={'costs': 1},
                         )
                     ],
@@ -93,7 +93,7 @@ class TestFlowSizing:
         Without invest: 50*2*2 = 200.
         Should invest → size=80, cost=110.
         """
-        result = solve(
+        result = optimize(
             _ts(2),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
@@ -104,7 +104,7 @@ class TestFlowSizing:
                     imports=[
                         Flow(
                             bus='Heat',
-                            size=Sizing(80, 80, effects_fixed={'costs': 10}),
+                            size=Sizing(80, 80, mandatory=False, effects_fixed={'costs': 10}),
                             effects_per_flow_hour={'costs': 1},
                         )
                     ],
@@ -124,7 +124,7 @@ class TestFlowSizing:
         Total = 5*size + 50*1*2. Solver minimizes → size=50.
         Total = 5*50 + 100 = 350.
         """
-        result = solve(
+        result = optimize(
             _ts(2),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
@@ -152,7 +152,7 @@ class TestFlowSizing:
         Profile=[0.5, 1.0], demand=[25, 50]. Operational=1€/MWh.
         Need size=50 (from t1: 50/1.0). t0: 0.5*50=25. Total cost=75.
         """
-        result = solve(
+        result = optimize(
             _ts(2),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
@@ -183,7 +183,7 @@ class TestFlowSizing:
         Demand=60. Cheap covers all → size=60, operational=120, invest=0.6 → total=120.6.
         Per-size cost incentivizes minimal size.
         """
-        result = solve(
+        result = optimize(
             _ts(2),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
@@ -226,7 +226,7 @@ class TestStorageSizing:
         Optimal: charge 50 at t=0 @1€, discharge at t=1. Cost=50.
         Capacity ≥ 50.
         """
-        result = solve(
+        result = optimize(
             _ts(3),
             buses=[Bus('Elec')],
             effects=[Effect('costs', is_objective=True)],
@@ -240,7 +240,8 @@ class TestStorageSizing:
                     charging=Flow(bus='Elec', size=100),
                     discharging=Flow(bus='Elec', size=100),
                     capacity=Sizing(0, 500, mandatory=True),
-                    initial_charge_state=0.0,
+                    prior_level=0.0,
+                    cyclic=False,
                     eta_charge=1,
                     eta_discharge=1,
                     relative_loss_per_hour=0,

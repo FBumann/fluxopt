@@ -69,6 +69,37 @@ class IdList[T: Identified]:
         return f'IdList({list(self._items)!r})'
 
 
+def fast_concat(arrays: list[xr.DataArray], dim: pd.Index) -> xr.DataArray:
+    """Stack DataArrays along a new leading dimension.
+
+    Drop-in replacement for ``xr.concat`` when all slices already share the
+    same dims, shape, and coords. Skips alignment, deepcopy, and reindex —
+    just stacks the underlying numpy arrays.
+
+    Args:
+        arrays: DataArrays with identical dims, shape, and coords.
+        dim: Index for the new leading dimension.
+
+    Raises:
+        AssertionError: If any slice has a different shape or dims than the first.
+    """
+    first = arrays[0]
+    expected_shape = first.shape
+    expected_dims = first.dims
+    for i, a in enumerate(arrays[1:], 1):
+        assert a.shape == expected_shape, f'fast_concat: slice {i} shape {a.shape} != expected {expected_shape}'
+        assert a.dims == expected_dims, f'fast_concat: slice {i} dims {a.dims} != expected {expected_dims}'
+    data = np.array([a.values for a in arrays])
+    name = str(dim.name)
+    dims = [name, *expected_dims]
+    coords: dict[str, object] = {name: dim}
+    for d in expected_dims:
+        key = str(d)
+        if key in first.coords:
+            coords[key] = first.coords[key]
+    return xr.DataArray(data, dims=dims, coords=coords)
+
+
 def as_dataarray(
     value: TimeSeries,
     coords: Mapping[str, Any],

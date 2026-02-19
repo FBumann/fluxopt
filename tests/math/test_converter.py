@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from fluxopt import Bus, Converter, Effect, Flow, Port, solve
+from fluxopt import Bus, Converter, Effect, Flow, Port, optimize
 
 
 class TestBoiler:
@@ -16,7 +16,7 @@ class TestBoiler:
         fuel = Flow(bus='gas', size=200)
         heat = Flow(bus='heat', size=100)
 
-        result = solve(
+        result = optimize(
             timesteps=timesteps_3,
             buses=[Bus('gas'), Bus('heat')],
             effects=[Effect('cost', is_objective=True)],
@@ -40,7 +40,7 @@ class TestBoiler:
         fuel = Flow(bus='gas', size=200)
         heat = Flow(bus='heat', size=100)
 
-        result = solve(
+        result = optimize(
             timesteps=timesteps_3,
             buses=[Bus('gas'), Bus('heat')],
             effects=[Effect('cost', is_objective=True)],
@@ -68,7 +68,7 @@ class TestCHP:
         elec_demand = Flow(bus='elec', size=100, fixed_relative_profile=[0.3, 0.3, 0.3])
         heat_demand = Flow(bus='heat', size=100, fixed_relative_profile=[0.5, 0.5, 0.5])
 
-        result = solve(
+        result = optimize(
             timesteps=timesteps_3,
             buses=[Bus('gas'), Bus('elec'), Bus('heat')],
             effects=[Effect('cost', is_objective=True)],

@@ -12,9 +12,9 @@ from fluxopt import (
     ModelData,
     Port,
     Storage,
-    solve,
+    optimize,
 )
-from fluxopt.model import FlowSystemModel
+from fluxopt.model import FlowSystem
 
 
 class TestEndToEnd:
@@ -29,7 +29,7 @@ class TestEndToEnd:
         fuel = Flow(bus='gas', size=300)
         heat = Flow(bus='heat', size=200)
 
-        result = solve(
+        result = optimize(
             timesteps=timesteps,
             buses=[Bus('gas'), Bus('heat')],
             effects=[Effect('cost', is_objective=True)],
@@ -65,7 +65,7 @@ class TestEndToEnd:
         discharge_flow = Flow(bus='heat', size=100)
         storage = Storage('heat_store', charging=charge_flow, discharging=discharge_flow, capacity=200.0)
 
-        result = solve(
+        result = optimize(
             timesteps=timesteps,
             buses=[Bus('gas'), Bus('heat')],
             effects=[Effect('cost', is_objective=True)],
@@ -96,7 +96,7 @@ class TestEndToEnd:
         # Change demand from 0.5 to 0.7 (relative); absolute = 0.7 * 100 = 70
         data.flows.fixed_profile.loc[{'flow': 'demand(elec)'}] = 0.7
 
-        model = FlowSystemModel(data)
+        model = FlowSystem(data)
         model.build()
         result = model.solve()
 
@@ -105,11 +105,11 @@ class TestEndToEnd:
             assert rate == pytest.approx(70.0, abs=1e-6)
 
     def test_result_accessors(self, timesteps_3):
-        """Test SolvedModel accessor methods."""
+        """Test Result accessor methods."""
         sink_flow = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.8, 0.6])
         source_flow = Flow(bus='elec', size=200, effects_per_flow_hour={'cost': 0.04})
 
-        result = solve(
+        result = optimize(
             timesteps=timesteps_3,
             buses=[Bus('elec')],
             effects=[Effect('cost', is_objective=True)],
@@ -124,9 +124,12 @@ class TestEndToEnd:
         # effect_totals DataArray
         assert 'effect' in result.effect_totals.dims
 
-        # effects_per_timestep
-        assert 'effect' in result.effects_per_timestep.dims
-        assert 'time' in result.effects_per_timestep.dims
+        # effects_temporal
+        assert 'effect' in result.effects_temporal.dims
+        assert 'time' in result.effects_temporal.dims
+
+        # effects_periodic
+        assert 'effect' in result.effects_periodic.dims
 
     def test_int_timesteps(self):
         """Smoke test: int timesteps work end-to-end."""
@@ -137,7 +140,7 @@ class TestEndToEnd:
         fuel = Flow(bus='gas', size=300)
         heat = Flow(bus='heat', size=200)
 
-        result = solve(
+        result = optimize(
             timesteps=timesteps,
             buses=[Bus('gas'), Bus('heat')],
             effects=[Effect('cost', is_objective=True)],

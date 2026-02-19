@@ -1,8 +1,11 @@
+from collections.abc import Callable
+from typing import Any
+
 from fluxopt.components import Converter, Port
 from fluxopt.elements import Bus, Effect, Flow, Sizing, Status, Storage
-from fluxopt.model import FlowSystemModel
+from fluxopt.model import FlowSystem
 from fluxopt.model_data import ModelData
-from fluxopt.results import SolvedModel
+from fluxopt.results import Result
 from fluxopt.types import (
     IdList,
     TimeSeries,
@@ -14,7 +17,7 @@ from fluxopt.types import (
 from fluxopt.yaml_loader import load_yaml, solve_yaml
 
 
-def solve(
+def optimize(
     timesteps: Timesteps,
     buses: list[Bus],
     effects: list[Effect],
@@ -23,9 +26,10 @@ def solve(
     storages: list[Storage] | None = None,
     dt: float | list[float] | None = None,
     solver: str = 'highs',
-    silent: bool = True,
-) -> SolvedModel:
-    """Build data, build model, solve, return results.
+    customize: Callable[[FlowSystem], None] | None = None,
+    **kwargs: Any,
+) -> Result:
+    """Build data, build model, optimize, return results.
 
     Args:
         timesteps: Time index for the optimization horizon.
@@ -36,12 +40,13 @@ def solve(
         storages: Energy storages.
         dt: Timestep duration in hours. Auto-derived if None.
         solver: Solver backend name.
-        silent: Suppress solver output.
+        customize: Optional callback to modify the linopy model between build and solve.
+            Receives the built FlowSystem; use ``model.m`` to add variables/constraints.
+        **kwargs: Passed through to ``linopy.Model.solve()``.
     """
     data = ModelData.build(timesteps, buses, effects, ports, converters, storages, dt)
-    model = FlowSystemModel(data, solver=solver)
-    model.build()
-    return model.solve(silent=silent)
+    model = FlowSystem(data)
+    return model.optimize(customize=customize, solver=solver, **kwargs)
 
 
 __all__ = [
@@ -49,12 +54,12 @@ __all__ = [
     'Converter',
     'Effect',
     'Flow',
-    'FlowSystemModel',
+    'FlowSystem',
     'IdList',
     'ModelData',
     'Port',
+    'Result',
     'Sizing',
-    'SolvedModel',
     'Status',
     'Storage',
     'TimeSeries',
@@ -63,6 +68,6 @@ __all__ = [
     'compute_dt',
     'load_yaml',
     'normalize_timesteps',
-    'solve',
+    'optimize',
     'solve_yaml',
 ]

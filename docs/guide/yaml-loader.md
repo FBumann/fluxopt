@@ -4,7 +4,7 @@ Define fluxopt models as YAML files with optional CSV time series.
 Useful for parameter studies, config-driven workflows, and non-programmer
 users.
 
-`load_yaml` returns the same kwargs you'd pass to `solve()`, so you can
+`load_yaml` returns the same kwargs you'd pass to `optimize()`, so you can
 always drop into Python for anything the YAML format doesn't cover.
 
 ## Quick Example
@@ -307,7 +307,7 @@ storages:
     capacity: 100
     eta_charge: 0.95
     eta_discharge: 0.95
-    initial_charge_state: 0.0
+    prior_level: 0.0
     relative_loss_per_hour: 0.001
 ```
 
@@ -315,21 +315,21 @@ storages:
 
 ## Hybrid Workflow
 
-`load_yaml` returns plain `solve()` kwargs. Use this to load topology from
+`load_yaml` returns plain `optimize()` kwargs. Use this to load topology from
 YAML and tweak in Python:
 
 ```python
-from fluxopt import load_yaml, solve
+from fluxopt import load_yaml, optimize
 
 kwargs = load_yaml('system.yaml')
 
 # Override a parameter
-kwargs['storages'][0].initial_charge_state = 'cyclic'
+kwargs['storages'][0].cyclic = True
 
 # Add custom dt
 kwargs['dt'] = 0.25
 
-result = solve(**kwargs)
+result = optimize(**kwargs)
 ```
 
 This is the recommended approach for anything beyond what YAML supports —

@@ -1,15 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, fields
-from datetime import timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, Self
+from typing import TYPE_CHECKING, Any, Literal, Self
 
 import numpy as np
 import pandas as pd
 import xarray as xr
 
-from fluxopt.types import as_dataarray, normalize_timesteps
+from fluxopt.types import as_dataarray, fast_concat, normalize_timesteps
 
 if TYPE_CHECKING:
     from fluxopt.components import Converter, Port
@@ -258,8 +257,8 @@ class _StatusArrays:
             min_downtime=xr.DataArray(np.array(min_downs), dims=[dim], coords=coords),
             max_downtime=xr.DataArray(np.array(max_downs), dims=[dim], coords=coords),
             initial=xr.DataArray(np.array(initials), dims=[dim], coords=coords),
-            effects_running=xr.concat(er_slices, dim=status_idx),
-            effects_startup=xr.concat(es_slices, dim=status_idx),
+            effects_running=fast_concat(er_slices, status_idx),
+            effects_startup=fast_concat(es_slices, status_idx),
             previous_uptime=xr.DataArray(prev_up_arr, dims=[dim], coords=coords)
             if not np.all(np.isnan(prev_up_arr))
             else None,
@@ -314,7 +313,7 @@ class FlowsData:
         Args:
             ds: Dataset with matching variable names.
         """
-        kwargs: dict[str, xr.DataArray | None] = {f.name: ds.get(f.name) for f in fields(cls)}
+        kwargs: dict[str, Any] = {f.name: ds.get(f.name) for f in fields(cls)}
         return cls(**kwargs)
 
     @classmethod
@@ -388,11 +387,11 @@ class FlowsData:
 
         return cls(
             bound_type=xr.DataArray(bound_type, dims=['flow'], coords={'flow': flow_ids}),
-            rel_lb=xr.concat(rel_lbs, dim=flow_idx),
-            rel_ub=xr.concat(rel_ubs, dim=flow_idx),
-            fixed_profile=xr.concat(profiles, dim=flow_idx),
+            rel_lb=fast_concat(rel_lbs, flow_idx),
+            rel_ub=fast_concat(rel_ubs, flow_idx),
+            fixed_profile=fast_concat(profiles, flow_idx),
             size=xr.DataArray(size_vals, dims=['flow'], coords={'flow': flow_ids}),
-            effect_coeff=xr.concat(effect_coeffs, dim=flow_idx),
+            effect_coeff=fast_concat(effect_coeffs, flow_idx),
             sizing_min=sz.min,
             sizing_max=sz.max,
             sizing_mandatory=sz.mandatory,
@@ -453,8 +452,29 @@ class BusesData:
 
 @dataclass
 class ConvertersData:
-    flow_coeff: xr.DataArray  # (converter, eq_idx, flow, time)
+    pair_coeff: xr.DataArray  # (pair, eq_idx, time) — non-zero coefficients only
+    pair_converter: xr.DataArray  # (pair,) — converter id per pair
+    pair_flow: xr.DataArray  # (pair,) — flow id per pair
     eq_mask: xr.DataArray  # (converter, eq_idx)
+
+    @property
+    def flow_coeff(self) -> xr.DataArray:
+        """Dense (converter, eq_idx, flow, time) view for inspection."""
+        conv_ids = list(dict.fromkeys(self.pair_converter.values))
+        flow_ids = list(dict.fromkeys(self.pair_flow.values))
+        eq_idx = list(self.pair_coeff.coords['eq_idx'].values)
+        time = self.pair_coeff.coords['time']
+
+        dense = xr.DataArray(
+            np.full((len(conv_ids), len(eq_idx), len(flow_ids), len(time)), np.nan),
+            dims=['converter', 'eq_idx', 'flow', 'time'],
+            coords={'converter': conv_ids, 'eq_idx': eq_idx, 'flow': flow_ids, 'time': time},
+        )
+        for i in range(len(self.pair_converter)):
+            conv_id = str(self.pair_converter.values[i])
+            flow_id = str(self.pair_flow.values[i])
+            dense.loc[conv_id, :, flow_id, :] = self.pair_coeff.isel(pair=i)
+        return dense
 
     def to_dataset(self) -> xr.Dataset:
         """Serialize to xr.Dataset."""
@@ -465,13 +485,18 @@ class ConvertersData:
         """Deserialize from xr.Dataset.
 
         Args:
-            ds: Dataset with ``flow_coeff`` and ``eq_mask`` variables.
+            ds: Dataset with pair-based converter coefficient variables.
         """
-        return cls(flow_coeff=ds['flow_coeff'], eq_mask=ds['eq_mask'])
+        return cls(
+            pair_coeff=ds['pair_coeff'],
+            pair_converter=ds['pair_converter'],
+            pair_flow=ds['pair_flow'],
+            eq_mask=ds['eq_mask'],
+        )
 
     @classmethod
     def build(cls, converters: list[Converter], time: pd.Index) -> Self | None:
-        """Build ConvertersData with conversion coefficients.
+        """Build ConvertersData with sparse pair-based conversion coefficients.
 
         Args:
             converters: Converter definitions.
@@ -481,47 +506,77 @@ class ConvertersData:
             return None
 
         conv_ids = [c.id for c in converters]
-        # Collect all flow ids across all converters
-        all_flow_ids: list[str] = []
-        for c in converters:
-            for f in c.inputs:
-                if f.id not in all_flow_ids:
-                    all_flow_ids.append(f.id)
-            for f in c.outputs:
-                if f.id not in all_flow_ids:
-                    all_flow_ids.append(f.id)
-
         max_eq = max(len(c.conversion_factors) for c in converters)
         n_time = len(time)
         eq_idx_list = list(range(max_eq))
 
         eq_mask_rows: list[np.ndarray] = []
-        coeff_slices: list[xr.DataArray] = []
+        pairs_conv: list[str] = []
+        pairs_flow: list[str] = []
+        coeff_arrays: list[np.ndarray] = []
 
         for conv in converters:
             mask_row = np.zeros(max_eq, dtype=bool)
-            conv_coeff = xr.DataArray(
-                np.full((max_eq, len(all_flow_ids), n_time), np.nan),
-                dims=['eq_idx', 'flow', 'time'],
-                coords={'eq_idx': eq_idx_list, 'flow': all_flow_ids, 'time': time},
-            )
-            for eq_i, equation in enumerate(conv.conversion_factors):
+            for eq_i in range(len(conv.conversion_factors)):
                 mask_row[eq_i] = True
-                for flow_obj, factor in equation.items():
-                    conv_coeff.loc[eq_i, flow_obj.id] = as_dataarray(factor, {'time': time})
             eq_mask_rows.append(mask_row)
-            coeff_slices.append(conv_coeff)
 
-        conv_idx = pd.Index(conv_ids, name='converter')
+            for flow in (*conv.inputs, *conv.outputs):
+                eq_coeffs = np.zeros((max_eq, n_time))
+                for eq_i, equation in enumerate(conv.conversion_factors):
+                    if flow in equation:
+                        eq_coeffs[eq_i] = as_dataarray(equation[flow], {'time': time}).values
+                pairs_conv.append(conv.id)
+                pairs_flow.append(flow.id)
+                coeff_arrays.append(eq_coeffs)
 
         return cls(
-            flow_coeff=xr.concat(coeff_slices, dim=conv_idx),
+            pair_coeff=xr.DataArray(
+                np.array(coeff_arrays),
+                dims=['pair', 'eq_idx', 'time'],
+                coords={'eq_idx': eq_idx_list, 'time': time},
+            ),
+            pair_converter=xr.DataArray(pairs_conv, dims=['pair']),
+            pair_flow=xr.DataArray(pairs_flow, dims=['pair']),
             eq_mask=xr.DataArray(
                 np.array(eq_mask_rows),
                 dims=['converter', 'eq_idx'],
                 coords={'converter': conv_ids, 'eq_idx': eq_idx_list},
             ),
         )
+
+
+def _detect_contribution_cycle(adjacency: dict[str, list[str]]) -> list[str] | None:
+    """Return first cycle found in directed graph, or None.
+
+    Args:
+        adjacency: Mapping of node to list of neighbors (outgoing edges).
+    """
+    unvisited, in_stack, done = 0, 1, 2
+    state: dict[str, int] = dict.fromkeys(adjacency, unvisited)
+    path: list[str] = []
+
+    def dfs(node: str) -> list[str] | None:
+        state[node] = in_stack
+        path.append(node)
+        for neighbor in adjacency.get(node, []):
+            if state[neighbor] == in_stack:
+                i = path.index(neighbor)
+                return [*path[i:], neighbor]
+            if state[neighbor] == unvisited:
+                result = dfs(neighbor)
+                if result is not None:
+                    return result
+        path.pop()
+        state[node] = done
+        return None
+
+    for node in adjacency:
+        if state[node] == unvisited:
+            cycle = dfs(node)
+            if cycle is not None:
+                return cycle
+    return None
 
 
 @dataclass
@@ -532,8 +587,8 @@ class EffectsData:
     max_per_hour: xr.DataArray  # (effect, time)
     is_objective: xr.DataArray  # (effect,)
     objective_effect: str
-    cf_invest: xr.DataArray | None = None  # (effect, source_effect)
-    cf_per_hour: xr.DataArray | None = None  # (effect, source_effect, time)
+    cf_periodic: xr.DataArray | None = None  # (effect, source_effect)
+    cf_temporal: xr.DataArray | None = None  # (effect, source_effect, time)
 
     def __post_init__(self) -> None:
         """Validate exactly one objective effect exists."""
@@ -604,30 +659,45 @@ class EffectsData:
                 has_contributions = True
 
         # Build cross-effect contribution arrays
-        cf_invest: xr.DataArray | None = None
-        cf_per_hour: xr.DataArray | None = None
+        cf_periodic: xr.DataArray | None = None
+        cf_temporal: xr.DataArray | None = None
         if has_contributions:
-            invest_mat = np.zeros((n, n))
-            ph_mat = np.zeros((n, n, n_time))
+            # Self-reference check
+            for e in effects:
+                for src_id in (*e.contribution_from, *e.contribution_from_per_hour):
+                    if src_id == e.id:
+                        raise ValueError(f'Effect {e.id!r} cannot reference itself in contribution_from')
+
+            # Cycle check
+            adjacency: dict[str, list[str]] = {eid: [] for eid in effect_ids}
+            for e in effects:
+                for src_id in {*e.contribution_from, *e.contribution_from_per_hour}:
+                    adjacency[e.id].append(src_id)
+            cycle = _detect_contribution_cycle(adjacency)
+            if cycle is not None:
+                raise ValueError(f'Circular contribution_from dependency: {" -> ".join(cycle)}')
+
+            periodic_mat = np.zeros((n, n))
+            temporal_mat = np.zeros((n, n, n_time))
             for i, e in enumerate(effects):
                 for src_id, factor in e.contribution_from.items():
                     if src_id not in effect_set:
                         raise ValueError(f'Unknown effect {src_id!r} in Effect.contribution_from on {e.id!r}')
                     j = effect_ids.index(src_id)
-                    invest_mat[i, j] = factor
-                    ph_mat[i, j, :] = factor  # default per_hour = scalar
+                    periodic_mat[i, j] = factor
+                    temporal_mat[i, j, :] = factor  # default temporal = scalar
                 for src_id, factor_ts in e.contribution_from_per_hour.items():
                     if src_id not in effect_set:
                         raise ValueError(f'Unknown effect {src_id!r} in Effect.contribution_from_per_hour on {e.id!r}')
                     j = effect_ids.index(src_id)
-                    ph_mat[i, j, :] = as_dataarray(factor_ts, {'time': time}).values
-            cf_invest = xr.DataArray(
-                invest_mat,
+                    temporal_mat[i, j, :] = as_dataarray(factor_ts, {'time': time}).values
+            cf_periodic = xr.DataArray(
+                periodic_mat,
                 dims=['effect', 'source_effect'],
                 coords={'effect': effect_ids, 'source_effect': effect_ids},
             )
-            cf_per_hour = xr.DataArray(
-                ph_mat,
+            cf_temporal = xr.DataArray(
+                temporal_mat,
                 dims=['effect', 'source_effect', 'time'],
                 coords={'effect': effect_ids, 'source_effect': effect_ids, 'time': time},
             )
@@ -641,8 +711,8 @@ class EffectsData:
             max_per_hour=xr.concat(max_per_hours, dim=effect_idx),
             is_objective=xr.DataArray(is_objective, dims=['effect'], coords={'effect': effect_ids}),
             objective_effect=objective_effect,
-            cf_invest=cf_invest,
-            cf_per_hour=cf_per_hour,
+            cf_periodic=cf_periodic,
+            cf_temporal=cf_temporal,
         )
 
 
@@ -652,9 +722,9 @@ class StoragesData:
     eta_c: xr.DataArray  # (storage, time)
     eta_d: xr.DataArray  # (storage, time)
     loss: xr.DataArray  # (storage, time)
-    rel_cs_lb: xr.DataArray  # (storage, time_extra)
-    rel_cs_ub: xr.DataArray  # (storage, time_extra)
-    initial_charge: xr.DataArray  # (storage,)
+    rel_level_lb: xr.DataArray  # (storage, time)
+    rel_level_ub: xr.DataArray  # (storage, time)
+    prior_level: xr.DataArray  # (storage,) — NaN if not set
     cyclic: xr.DataArray  # (storage,)
     charge_flow: xr.DataArray  # (storage,) — str
     discharge_flow: xr.DataArray  # (storage,) — str
@@ -692,7 +762,7 @@ class StoragesData:
         Args:
             ds: Dataset with matching variable names.
         """
-        kwargs: dict[str, xr.DataArray | None] = {f.name: ds.get(f.name) for f in fields(cls)}
+        kwargs: dict[str, Any] = {f.name: ds.get(f.name) for f in fields(cls)}
         return cls(**kwargs)
 
     @classmethod
@@ -700,7 +770,6 @@ class StoragesData:
         cls,
         storages: list[Storage],
         time: pd.Index,
-        time_extra: pd.Index,
         dt: xr.DataArray,
         effects: list[Effect] | None = None,
     ) -> Self | None:
@@ -709,7 +778,6 @@ class StoragesData:
         Args:
             storages: Storage definitions.
             time: Time index.
-            time_extra: N+1 time index for charge state.
             dt: Timestep durations.
             effects: Effect definitions for sizing cost validation.
         """
@@ -726,9 +794,9 @@ class StoragesData:
         eta_cs: list[xr.DataArray] = []
         eta_ds: list[xr.DataArray] = []
         losses: list[xr.DataArray] = []
-        cs_lbs: list[xr.DataArray] = []
-        cs_ubs: list[xr.DataArray] = []
-        initial_charge_vals = np.zeros(n)
+        level_lbs: list[xr.DataArray] = []
+        level_ubs: list[xr.DataArray] = []
+        prior_level_vals = np.full(n, np.nan)
         cyclic_vals = np.zeros(n, dtype=bool)
         charge_flow: list[str] = []
         discharge_flow: list[str] = []
@@ -744,16 +812,12 @@ class StoragesData:
             eta_ds.append(as_dataarray(s.eta_discharge, {'time': time}))
             losses.append(as_dataarray(s.relative_loss_per_hour, {'time': time}))
 
-            # Charge state bounds — extend to time_extra (replicate last for extra point)
-            cs_lb_da = as_dataarray(s.relative_minimum_charge_state, {'time': time})
-            cs_ub_da = as_dataarray(s.relative_maximum_charge_state, {'time': time})
-            cs_lbs.append(_extend_time_extra(cs_lb_da, time_extra))
-            cs_ubs.append(_extend_time_extra(cs_ub_da, time_extra))
+            level_lbs.append(as_dataarray(s.relative_minimum_level, {'time': time}))
+            level_ubs.append(as_dataarray(s.relative_maximum_level, {'time': time}))
 
-            is_cyclic = s.initial_charge_state == 'cyclic'
-            cyclic_vals[i] = is_cyclic
-            if not is_cyclic:
-                initial_charge_vals[i] = float(s.initial_charge_state) if s.initial_charge_state is not None else 0.0
+            cyclic_vals[i] = s.cyclic
+            if s.prior_level is not None:
+                prior_level_vals[i] = s.prior_level
 
             charge_flow.append(s.charging.id)
             discharge_flow.append(s.discharging.id)
@@ -766,9 +830,9 @@ class StoragesData:
             eta_c=xr.concat(eta_cs, dim=stor_idx),
             eta_d=xr.concat(eta_ds, dim=stor_idx),
             loss=xr.concat(losses, dim=stor_idx),
-            rel_cs_lb=xr.concat(cs_lbs, dim=stor_idx),
-            rel_cs_ub=xr.concat(cs_ubs, dim=stor_idx),
-            initial_charge=xr.DataArray(initial_charge_vals, dims=['storage'], coords={'storage': stor_ids}),
+            rel_level_lb=xr.concat(level_lbs, dim=stor_idx),
+            rel_level_ub=xr.concat(level_ubs, dim=stor_idx),
+            prior_level=xr.DataArray(prior_level_vals, dims=['storage'], coords={'storage': stor_ids}),
             cyclic=xr.DataArray(cyclic_vals, dims=['storage'], coords={'storage': stor_ids}),
             charge_flow=xr.DataArray(charge_flow, dims=['storage'], coords={'storage': stor_ids}),
             discharge_flow=xr.DataArray(discharge_flow, dims=['storage'], coords={'storage': stor_ids}),
@@ -790,7 +854,6 @@ class ModelData:
     dt: xr.DataArray  # (time,)
     weights: xr.DataArray  # (time,)
     time: pd.Index = field(repr=False)
-    time_extra: pd.Index = field(repr=False)
 
     def to_netcdf(self, path: str | Path, *, mode: Literal['w', 'a'] = 'a') -> None:
         """Write model data as NetCDF groups under ``/model/``.
@@ -807,11 +870,13 @@ class ModelData:
             'effects': self.effects,
             'storages': self.storages,
         }
+        current_mode = mode
         for name, obj in dataset_fields.items():
             if obj is not None:
-                obj.to_dataset().to_netcdf(p, mode=mode, group=_NC_GROUPS[name], engine='netcdf4')
+                obj.to_dataset().to_netcdf(p, mode=current_mode, group=_NC_GROUPS[name], engine='netcdf4')
+                current_mode = 'a'
         meta = xr.Dataset({'dt': self.dt, 'weights': self.weights})
-        meta.to_netcdf(p, mode='a', group='model/meta', engine='netcdf4')
+        meta.to_netcdf(p, mode=current_mode, group='model/meta', engine='netcdf4')
 
     @classmethod
     def from_netcdf(cls, path: str | Path) -> ModelData | None:
@@ -845,12 +910,6 @@ class ModelData:
         effects = EffectsData.from_dataset(datasets['effects'])
         storages = StoragesData.from_dataset(datasets['storages']) if datasets['storages'].data_vars else None
 
-        if storages is not None and 'time_extra' in storages.rel_cs_lb.coords:
-            time_extra = pd.Index(storages.rel_cs_lb.coords['time_extra'].values)
-            time_extra.name = 'time_extra'
-        else:
-            time_extra = _compute_time_extra(time, dt)
-
         return cls(
             flows=flows,
             buses=buses,
@@ -860,7 +919,6 @@ class ModelData:
             dt=dt,
             weights=meta['weights'],
             time=time,
-            time_extra=time_extra,
         )
 
     @classmethod
@@ -895,7 +953,6 @@ class ModelData:
         flows, bus_coeff = _collect_flows(ports, converters, stor_list)
         _validate_system(buses, effects, ports, converters, stor_list, flows)
 
-        time_extra = _compute_time_extra(time, dt_da)
         weights = xr.DataArray(np.ones(len(time)), dims=['time'], coords={'time': time}, name='weight')
 
         # Scalar dt for prior duration computation (use first timestep)
@@ -904,7 +961,7 @@ class ModelData:
         buses_data = BusesData.build(buses, flows, bus_coeff)
         converters_data = ConvertersData.build(converters, time)
         effects_data = EffectsData.build(effects, time)
-        storages_data = StoragesData.build(stor_list, time, time_extra, dt_da, effects)
+        storages_data = StoragesData.build(stor_list, time, dt_da, effects)
 
         return cls(
             flows=flows_data,
@@ -915,7 +972,6 @@ class ModelData:
             dt=dt_da,
             weights=weights,
             time=time,
-            time_extra=time_extra,
         )
 
 
@@ -1001,33 +1057,3 @@ def _validate_system(
         if flow.id in flow_seen:
             raise ValueError(f'Duplicate flow id: {flow.id!r}')
         flow_seen.add(flow.id)
-
-
-def _extend_time_extra(da: xr.DataArray, time_extra: pd.Index) -> xr.DataArray:
-    """Extend a time-dimensioned DataArray to time_extra (N+1 points).
-
-    Args:
-        da: DataArray with 'time' dimension.
-        time_extra: N+1 time index.
-    """
-    vals = np.append(da.values, da.isel(time=-1).item())
-    return xr.DataArray(vals, dims=['time_extra'], coords={'time_extra': time_extra})
-
-
-def _compute_time_extra(time: pd.Index, dt: xr.DataArray) -> pd.Index:
-    """Compute N+1 time index for storage charge state.
-
-    Args:
-        time: Original time index.
-        dt: Timestep durations (last value determines extra point offset).
-    """
-    if isinstance(time, pd.DatetimeIndex):
-        last_dt_hours: float = float(dt.values[-1])
-        end_time = time[-1] + timedelta(hours=last_dt_hours)
-        result = time.append(pd.DatetimeIndex([end_time]))
-    else:
-        # Integer index
-        last_val: int = int(time[-1])
-        result = time.append(pd.Index([last_val + 1]))
-    result.name = 'time_extra'
-    return result

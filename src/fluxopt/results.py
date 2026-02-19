@@ -7,14 +7,15 @@ from typing import TYPE_CHECKING
 import xarray as xr
 
 if TYPE_CHECKING:
-    from fluxopt.model import FlowSystemModel
+    from fluxopt.model import FlowSystem
     from fluxopt.model_data import ModelData
 
 
 @dataclass
-class SolvedModel:
+class Result:
     solution: xr.Dataset
     data: ModelData | None = field(default=None, repr=False)
+    _contributions_cache: xr.Dataset | None = field(default=None, repr=False, init=False)
 
     @property
     def objective(self) -> float:
@@ -28,7 +29,7 @@ class SolvedModel:
 
     @property
     def storage_levels(self) -> xr.DataArray:
-        """All storage levels as (storage, time_extra) DataArray."""
+        """All storage levels as (storage, time) DataArray."""
         return self.solution['storage--level'] if 'storage--level' in self.solution else xr.DataArray()
 
     @property
@@ -47,9 +48,14 @@ class SolvedModel:
         return self.solution['effect--total']
 
     @property
-    def effects_per_timestep(self) -> xr.DataArray:
+    def effects_temporal(self) -> xr.DataArray:
         """Per-timestep effect values as (effect, time) DataArray."""
-        return self.solution['effect--per_timestep']
+        return self.solution['effect--temporal']
+
+    @property
+    def effects_periodic(self) -> xr.DataArray:
+        """Per-period (investment) effect values as (effect,) DataArray."""
+        return self.solution['effect--periodic']
 
     def flow_rate(self, id: str) -> xr.DataArray:
         """Get flow rate time series for a single flow.
@@ -67,6 +73,29 @@ class SolvedModel:
         """
         return self.storage_levels.sel(storage=id)
 
+    def effect_contributions(self) -> xr.Dataset:
+        """Per-contributor breakdown of effect contributions.
+
+        Returns:
+            Dataset with ``temporal`` (contributor, effect, time),
+            ``periodic`` (contributor, effect), and ``total``
+            (contributor, effect). The contributor dim contains flow
+            IDs and (if present) storage IDs.
+
+        Raises:
+            ValueError: If ``data`` is not available on this Result.
+        """
+        if self._contributions_cache is not None:
+            return self._contributions_cache
+
+        if self.data is None:
+            raise ValueError('ModelData is required for effect_contributions (not available on this Result)')
+
+        from fluxopt.contributions import compute_effect_contributions
+
+        self._contributions_cache = compute_effect_contributions(self.solution, self.data)
+        return self._contributions_cache
+
     def to_netcdf(self, path: str | Path) -> None:
         """Write solution and model data to NetCDF.
 
@@ -79,8 +108,8 @@ class SolvedModel:
             self.data.to_netcdf(p)
 
     @classmethod
-    def from_netcdf(cls, path: str | Path) -> SolvedModel:
-        """Read a SolvedModel from a NetCDF file.
+    def from_netcdf(cls, path: str | Path) -> Result:
+        """Read a Result from a NetCDF file.
 
         Args:
             path: Input file path.
@@ -93,34 +122,40 @@ class SolvedModel:
         return cls(solution=solution, data=data)
 
     @classmethod
-    def from_model(cls, model: FlowSystemModel) -> SolvedModel:
+    def from_model(cls, model: FlowSystem) -> Result:
         """Extract solution from a solved linopy model.
 
         Args:
-            model: Solved FlowSystemModel instance.
+            model: Solved FlowSystem instance.
         """
         sol_vars: dict[str, xr.DataArray] = {
             'flow--rate': model.flow_rate.solution,
             'effect--total': model.effect_total.solution,
-            'effect--per_timestep': model.effect_per_timestep.solution,
+            'effect--temporal': model.effect_temporal.solution,
+            'effect--periodic': model.effect_periodic.solution,
         }
 
-        if hasattr(model, 'storage_level'):
+        if model.storage_level is not None:
             sol_vars['storage--level'] = model.storage_level.solution
-        if hasattr(model, 'flow_size'):
+        if model.flow_size is not None:
             sol_vars['flow--size'] = model.flow_size.solution
-        if hasattr(model, 'flow_size_indicator'):
+        if model.flow_size_indicator is not None:
             sol_vars['flow--size_indicator'] = model.flow_size_indicator.solution
-        if hasattr(model, 'storage_capacity'):
+        if model.storage_capacity is not None:
             sol_vars['storage--capacity'] = model.storage_capacity.solution
-        if hasattr(model, 'storage_size_indicator'):
-            sol_vars['storage--size_indicator'] = model.storage_size_indicator.solution
-        if hasattr(model, 'flow_on'):
+        if model.storage_capacity_indicator is not None:
+            sol_vars['storage--size_indicator'] = model.storage_capacity_indicator.solution
+        if model.flow_on is not None:
             sol_vars['flow--on'] = model.flow_on.solution
-        if hasattr(model, 'flow_startup'):
+        if model.flow_startup is not None:
             sol_vars['flow--startup'] = model.flow_startup.solution
-        if hasattr(model, 'flow_shutdown'):
+        if model.flow_shutdown is not None:
             sol_vars['flow--shutdown'] = model.flow_shutdown.solution
+
+        # Include custom variables added after build()
+        for var_name in model.m.variables:
+            if var_name not in model._builtin_var_names and var_name not in sol_vars:
+                sol_vars[var_name] = model.m.variables[var_name].solution
 
         obj_effect = model.data.effects.objective_effect
         obj_val = float(sol_vars['effect--total'].sel(effect=obj_effect).values)

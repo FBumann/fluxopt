@@ -1,7 +1,7 @@
 """YAML + CSV loader for fluxopt models.
 
 Loads a declarative YAML topology (with optional CSV time series) and
-constructs all fluxopt elements ready for ``solve()``.
+constructs all fluxopt elements ready for ``optimize()``.
 
 Supports inline arithmetic expressions referencing CSV columns::
 
@@ -9,8 +9,8 @@ Supports inline arithmetic expressions referencing CSV columns::
       cost: "gas_price * 1.19"
 
 Public API:
-    - ``load_yaml(path)`` — returns kwargs for ``solve()``
-    - ``solve_yaml(path)`` — load + solve in one call
+    - ``load_yaml(path)`` — returns kwargs for ``optimize()``
+    - ``solve_yaml(path)`` — load + optimize in one call
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ from fluxopt.components import Converter, Port
 from fluxopt.elements import Bus, Effect, Flow, Sizing, Status, Storage
 
 if TYPE_CHECKING:
-    from fluxopt.results import SolvedModel
+    from fluxopt.results import Result
     from fluxopt.types import TimeSeries
 
 
@@ -434,10 +434,12 @@ def _build_storages(raw: list[dict[str, Any]], namespace: dict[str, Any]) -> lis
         for key in ('eta_charge', 'eta_discharge', 'relative_loss_per_hour'):
             if key in item:
                 kwargs[key] = _resolve_timeseries(item[key], namespace)
-        if 'initial_charge_state' in item:
-            val = item['initial_charge_state']
-            kwargs['initial_charge_state'] = val if isinstance(val, str) and val == 'cyclic' else float(val)
-        for key in ('relative_minimum_charge_state', 'relative_maximum_charge_state'):
+        if 'prior_level' in item:
+            val = item['prior_level']
+            kwargs['prior_level'] = float(val) if val is not None else None
+        if 'cyclic' in item:
+            kwargs['cyclic'] = bool(item['cyclic'])
+        for key in ('relative_minimum_level', 'relative_maximum_level'):
             if key in item:
                 kwargs[key] = _resolve_timeseries(item[key], namespace)
 
@@ -614,7 +616,7 @@ def _load_raw(yaml_path: Path) -> tuple[dict[str, Any], dict[str, Any], list[Any
 
 
 def load_yaml(path: str | Path) -> dict[str, Any]:
-    """Load a YAML+CSV model definition and return ``solve()`` kwargs.
+    """Load a YAML+CSV model definition and return ``optimize()`` kwargs.
 
     Args:
         path: Path to the YAML file. CSV paths are resolved relative to it.
@@ -683,15 +685,15 @@ def load_yaml(path: str | Path) -> dict[str, Any]:
     return result
 
 
-def solve_yaml(path: str | Path, solver: str = 'highs', silent: bool = True) -> SolvedModel:
-    """Load a YAML model and solve it.
+def solve_yaml(path: str | Path, solver: str = 'highs', silent: bool = True) -> Result:
+    """Load a YAML model and optimize it.
 
     Args:
         path: Path to the YAML file.
         solver: Solver backend name.
         silent: Suppress solver output.
     """
-    from fluxopt import solve
+    from fluxopt import optimize
 
     kwargs = load_yaml(path)
-    return solve(**kwargs, solver=solver, silent=silent)
+    return optimize(**kwargs, solver=solver, silent=silent)

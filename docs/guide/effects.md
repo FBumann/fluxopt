@@ -63,38 +63,109 @@ co2 = Effect('co2', unit='kg', maximum_per_hour=50)
 co2 = Effect('co2', unit='kg', maximum_per_hour=[50, 40, 60, 50])
 ```
 
-## Accessing Results
+## Cross-Effect Contributions
 
-After solving, the `SolvedModel` provides several views into effect values:
+An effect can include a weighted contribution from another effect using
+`contribution_from`. This is useful for carbon pricing, primary energy factors,
+or any chain where one tracked quantity feeds into another.
+
+### Scalar (temporal + periodic)
+
+A scalar factor applies to **both** domains — temporal (per-timestep) and
+periodic (sizing, yearly costs):
 
 ```python
-result = solve(...)
+effects = [
+    Effect('cost', is_objective=True, contribution_from={'co2': 50}),
+    Effect('co2', unit='kg'),
+]
+```
 
-# Total effect values (one row per effect)
-print(result.effects)
+Here, every kg of CO₂ adds 50 € to cost — both for temporal emissions
+(from flow operation) and periodic emissions (e.g., from `Sizing.effects_per_size`).
 
-# Per-timestep effect values
-print(result.effects_per_timestep)
+### Time-Varying (temporal only)
+
+Use `contribution_from_per_hour` for time-varying factors that override the
+scalar in the temporal domain:
+
+```python
+effects = [
+    Effect(
+        'cost',
+        is_objective=True,
+        contribution_from={'co2': 50},  # scalar for periodic domain
+        contribution_from_per_hour={'co2': [40, 50, 60]},  # time-varying for temporal domain
+    ),
+    Effect('co2', unit='kg'),
+]
+```
+
+### Transitive Chains
+
+Contributions chain transitively. A PE → CO₂ → cost chain is modeled as:
+
+```python
+effects = [
+    Effect('cost', is_objective=True, contribution_from={'co2': 50}),
+    Effect('co2', unit='kg', contribution_from={'pe': 0.3}),
+    Effect('pe', unit='kWh'),
+]
+```
+
+### Restrictions
+
+- **No self-references**: an effect cannot reference itself
+- **No cycles**: `cost → co2 → cost` is rejected at build time
+
+See [Effects (Math)](../math/effects.md#cross-effect-contributions) for the
+formulation.
+
+## Accessing Results
+
+After solving, the `Result` provides several views into effect values:
+
+```python
+result = optimize(...)
 
 # Objective value (shortcut for the objective effect's total)
 print(result.objective)
 
-# Per-source contributions: which flows contributed what to each effect
-print(result.contributions)
+# Total effect values as (effect,) DataArray
+print(result.effect_totals)
+
+# Temporal: per-timestep effect values as (effect, time) DataArray
+print(result.effects_temporal)
+
+# Periodic: sizing and fixed-cost effect values as (effect,) DataArray
+print(result.effects_periodic)
 ```
 
-### Filtering Contributions
+### Per-Contributor Breakdown
 
-The `contributions` DataFrame has columns: `source`, `contributor`, `effect`,
-`time`, `solution`.
+`effect_contributions()` decomposes effect totals into per-contributor parts
+on a unified `contributor` dimension (flow IDs + storage IDs), matching the
+model's temporal/periodic domain structure:
 
 ```python
-# All flow contributions
-flow_contribs = result.contributions.filter(result.contributions['source'] == 'flow')
+contrib = result.effect_contributions()
 
-# CO2 contributions only
-co2_contribs = result.contributions.filter(result.contributions['effect'] == 'co2')
+# Per-timestep contributions (contributor, effect, time) — flows only
+contrib['temporal']
+
+# Periodic contributions (contributor, effect) — flows + storages
+contrib['periodic']
+
+# Total per contributor: temporal summed over time + periodic (contributor, effect)
+contrib['total']
 ```
+
+The contributions are validated against the solver totals — if they don't sum
+to `effect_totals`, a `ValueError` is raised.
+
+Cross-effects (e.g., CO₂ → cost) are attributed to the originating contributor.
+If a gas flow emits CO₂ priced at 50 €/kg, its cost contribution includes both
+the direct cost and the carbon tax portion.
 
 ## Full Example
 
@@ -102,7 +173,7 @@ Two sources with different cost/CO2 tradeoffs, subject to an emission cap:
 
 ```python
 from datetime import datetime
-from fluxopt import Bus, Effect, Flow, Port, solve
+from fluxopt import Bus, Effect, Flow, Port, optimize
 
 timesteps = [datetime(2024, 1, 1, h) for h in range(3)]
 
@@ -110,7 +181,7 @@ demand = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.8, 0.6])
 cheap_dirty = Flow(bus='elec', size=200, effects_per_flow_hour={'cost': 0.02, 'co2': 1.0})
 expensive_clean = Flow(bus='elec', size=200, effects_per_flow_hour={'cost': 0.10, 'co2': 0.0})
 
-result = solve(
+result = optimize(
     timesteps=timesteps,
     buses=[Bus('elec')],
     effects=[
@@ -125,8 +196,7 @@ result = solve(
 )
 
 print(f"Total cost: {result.objective:.2f}")
-print(result.effects)
-print(result.contributions)
+print(result.effect_totals)
 ```
 
 ## Parameters Summary
@@ -140,3 +210,5 @@ print(result.contributions)
 | `minimum_total` | `float \| None` | `None` | Lower bound on total |
 | `maximum_per_hour` | `TimeSeries \| None` | `None` | Upper bound per timestep |
 | `minimum_per_hour` | `TimeSeries \| None` | `None` | Lower bound per timestep |
+| `contribution_from` | `dict[str, float]` | `{}` | Cross-effect factor (both domains) |
+| `contribution_from_per_hour` | `dict[str, TimeSeries]` | `{}` | Cross-effect factor (temporal domain only) |
