@@ -20,7 +20,7 @@ class Sizing:
 
     min_size: float
     max_size: float
-    mandatory: bool = False
+    mandatory: bool = True
     effects_per_size: dict[str, float] = field(default_factory=dict)
     effects_fixed: dict[str, float] = field(default_factory=dict)
 

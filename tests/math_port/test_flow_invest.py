@@ -43,7 +43,13 @@ class TestFlowInvest:
                     fuel_flow=Flow(bus='Gas', id='fuel'),
                     thermal_flow=Flow(
                         bus='Heat',
-                        size=Sizing(min_size=0, max_size=200, effects_fixed={'cost': 10}, effects_per_size={'cost': 1}),
+                        size=Sizing(
+                            min_size=0,
+                            max_size=200,
+                            mandatory=False,
+                            effects_fixed={'cost': 10},
+                            effects_per_size={'cost': 1},
+                        ),
                     ),
                 ),
             ],
@@ -88,7 +94,7 @@ class TestFlowInvest:
                     fuel_flow=Flow(bus='Gas', id='fuel'),
                     thermal_flow=Flow(
                         bus='Heat',
-                        size=Sizing(min_size=0, max_size=100, effects_fixed={'cost': 99999}),
+                        size=Sizing(min_size=0, max_size=100, mandatory=False, effects_fixed={'cost': 99999}),
                     ),
                 ),
                 Converter.boiler(
@@ -181,7 +187,7 @@ class TestFlowInvest:
                     fuel_flow=Flow(bus='Gas', id='fuel'),
                     thermal_flow=Flow(
                         bus='Heat',
-                        size=Sizing(min_size=80, max_size=80, effects_fixed={'cost': 10}),
+                        size=Sizing(min_size=80, max_size=80, mandatory=False, effects_fixed={'cost': 10}),
                     ),
                 ),
                 Converter.boiler(
@@ -333,7 +339,7 @@ class TestFlowInvest:
                     fuel_flow=Flow(bus='Gas', id='fuel'),
                     thermal_flow=Flow(
                         bus='Heat',
-                        size=Sizing(min_size=10, max_size=100, effects_fixed={'cost': 1000}),
+                        size=Sizing(min_size=10, max_size=100, mandatory=False, effects_fixed={'cost': 1000}),
                     ),
                 ),
                 Converter.boiler(
@@ -481,6 +487,7 @@ class TestFlowInvestWithStatus:
                         size=Sizing(
                             min_size=0,
                             max_size=100,
+                            mandatory=False,
                             effects_fixed={'cost': 10},
                             effects_per_size={'cost': 1},
                         ),
@@ -528,7 +535,7 @@ class TestFlowInvestWithStatus:
                     thermal_flow=Flow(
                         bus='Heat',
                         relative_minimum=0.1,
-                        size=Sizing(min_size=0, max_size=100, effects_per_size={'cost': 1}),
+                        size=Sizing(min_size=0, max_size=100, mandatory=False, effects_per_size={'cost': 1}),
                         status=Status(min_uptime=2),
                     ),
                 ),

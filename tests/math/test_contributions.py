@@ -210,7 +210,7 @@ class TestSizing:
         """Optional sizing with fixed costs uses binary indicator in contributions."""
         source = Flow(
             bus='elec',
-            size=Sizing(min_size=0, max_size=200, effects_fixed={'cost': 1000}),
+            size=Sizing(min_size=0, max_size=200, mandatory=False, effects_fixed={'cost': 1000}),
             effects_per_flow_hour={'cost': 0.04},
         )
         sink = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.5, 0.5])

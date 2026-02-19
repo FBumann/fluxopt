@@ -636,7 +636,8 @@ class FlowSystem:
         periodic_rhs: Any = periodic_direct
         if ds.cf_periodic is not None:
             source_p = self.effect_periodic.rename({'effect': 'source_effect'})
-            periodic_rhs = periodic_rhs + (ds.cf_periodic * source_p).sum('source_effect')
+            cross = (ds.cf_periodic * source_p).sum('source_effect')
+            periodic_rhs = cross + periodic_direct  # linopy expr must be left operand
 
         self.m.add_constraints(self.effect_periodic == periodic_rhs, name='effect_periodic_eq')
 
