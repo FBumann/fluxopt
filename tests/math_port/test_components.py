@@ -21,30 +21,7 @@ class TestComponentStatus:
     def test_component_status_startup_cost(self, optimize):
         """Proves: StatusParameters on LinearConverter applies startup cost when
         the component transitions to active."""
-        import flixopt as fx
-
-        from .conftest import make_flow_system
-
-        fs = make_flow_system(4)
-        fs.add(
-            fx.Bus('Heat'),
-            fx.Bus('Gas'),
-            fx.Effect('costs', '€', is_standard=True, is_objective=True),
-            fx.Port(
-                'Demand',
-                exports=[fx.Flow(bus='Heat', flow_id='heat', size=1, fixed_relative_profile=np.array([0, 20, 0, 20]))],
-            ),
-            fx.Port('GasSrc', imports=[fx.Flow(bus='Gas', flow_id='gas', effects_per_flow_hour=1)]),
-            fx.Converter(
-                'Boiler',
-                inputs=[fx.Flow(bus='Gas', flow_id='fuel', size=100)],
-                outputs=[fx.Flow(bus='Heat', flow_id='heat', size=100)],
-                conversion_factors=[{'fuel': 1, 'heat': 1}],
-                status_parameters=fx.StatusParameters(effects_per_startup=100),
-            ),
-        )
-        fs = optimize(fs)
-        assert_allclose(fs.solution['costs'].item(), 240.0, rtol=1e-5)
+        raise NotImplementedError  # TODO: implement component-level StatusParameters
 
     @pytest.mark.skip(reason='component-level status not supported in fluxopt')
     def test_component_status_min_uptime(self, optimize):

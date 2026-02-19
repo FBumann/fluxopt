@@ -215,39 +215,7 @@ class TestFlowInvest:
 
         Sensitivity: If linear cost at 2€/kW throughout, invest=160 → total=240.
         """
-        import flixopt as fx
-
-        from .conftest import make_flow_system
-
-        fs = make_flow_system(2)
-        fs.add(
-            fx.Bus('Heat'),
-            fx.Bus('Gas'),
-            fx.Effect('costs', '€', is_standard=True, is_objective=True),
-            fx.Port(
-                'Demand',
-                exports=[fx.Flow(bus='Heat', flow_id='heat', size=1, fixed_relative_profile=np.array([80, 80]))],
-            ),
-            fx.Port('GasSrc', imports=[fx.Flow(bus='Gas', flow_id='gas', effects_per_flow_hour=0.5)]),
-            fx.Converter.boiler(
-                'Boiler',
-                thermal_efficiency=1.0,
-                fuel_flow=fx.Flow(bus='Gas', flow_id='fuel'),
-                thermal_flow=fx.Flow(
-                    bus='Heat',
-                    flow_id='heat',
-                    size=fx.InvestParameters(
-                        maximum_size=200,
-                        piecewise_effects_of_investment=fx.PiecewiseEffects(
-                            piecewise_origin=fx.Piecewise([fx.Piece(0, 50), fx.Piece(50, 200)]),
-                            piecewise_shares={'costs': fx.Piecewise([fx.Piece(0, 100), fx.Piece(100, 250)])},
-                        ),
-                    ),
-                ),
-            ),
-        )
-        fs = optimize(fs)
-        assert_allclose(fs.solution['costs'].item(), 210.0, rtol=1e-5)
+        raise NotImplementedError  # TODO: implement piecewise sizing
 
     def test_invest_mandatory_forces_investment(self, optimize):
         """Proves: mandatory=True forces investment even when it's not economical.
@@ -366,41 +334,7 @@ class TestFlowInvest:
         Sensitivity: Without effects_of_retirement, backup is cheaper (fuel=40 vs 120).
         With retirement=500, investing becomes cheaper. Cost=120.
         """
-        import flixopt as fx
-
-        from .conftest import make_flow_system
-
-        fs = make_flow_system(2)
-        fs.add(
-            fx.Bus('Heat'),
-            fx.Bus('Gas'),
-            fx.Effect('costs', '€', is_standard=True, is_objective=True),
-            fx.Port(
-                'Demand',
-                exports=[fx.Flow(bus='Heat', flow_id='heat', size=1, fixed_relative_profile=np.array([10, 10]))],
-            ),
-            fx.Port('GasSrc', imports=[fx.Flow(bus='Gas', flow_id='gas', effects_per_flow_hour=1)]),
-            fx.Converter.boiler(
-                'NewBoiler',
-                thermal_efficiency=1.0,
-                fuel_flow=fx.Flow(bus='Gas', flow_id='fuel'),
-                thermal_flow=fx.Flow(
-                    bus='Heat',
-                    flow_id='heat',
-                    size=fx.InvestParameters(
-                        minimum_size=10, maximum_size=100, effects_of_investment=100, effects_of_retirement=500
-                    ),
-                ),
-            ),
-            fx.Converter.boiler(
-                'Backup',
-                thermal_efficiency=0.5,
-                fuel_flow=fx.Flow(bus='Gas', flow_id='fuel'),
-                thermal_flow=fx.Flow(bus='Heat', flow_id='heat', size=100),
-            ),
-        )
-        fs = optimize(fs)
-        assert_allclose(fs.solution['costs'].item(), 120.0, rtol=1e-5)
+        raise NotImplementedError  # TODO: implement effects_of_retirement on Sizing
 
     @pytest.mark.skip(reason='retirement effects not supported in fluxopt')
     def test_invest_retirement_triggers_when_not_investing(self, optimize):
@@ -411,41 +345,7 @@ class TestFlowInvest:
 
         Sensitivity: Without effects_of_retirement, cost=40. With it, cost=90.
         """
-        import flixopt as fx
-
-        from .conftest import make_flow_system
-
-        fs = make_flow_system(2)
-        fs.add(
-            fx.Bus('Heat'),
-            fx.Bus('Gas'),
-            fx.Effect('costs', '€', is_standard=True, is_objective=True),
-            fx.Port(
-                'Demand',
-                exports=[fx.Flow(bus='Heat', flow_id='heat', size=1, fixed_relative_profile=np.array([10, 10]))],
-            ),
-            fx.Port('GasSrc', imports=[fx.Flow(bus='Gas', flow_id='gas', effects_per_flow_hour=1)]),
-            fx.Converter.boiler(
-                'ExpensiveBoiler',
-                thermal_efficiency=1.0,
-                fuel_flow=fx.Flow(bus='Gas', flow_id='fuel'),
-                thermal_flow=fx.Flow(
-                    bus='Heat',
-                    flow_id='heat',
-                    size=fx.InvestParameters(
-                        minimum_size=10, maximum_size=100, effects_of_investment=1000, effects_of_retirement=50
-                    ),
-                ),
-            ),
-            fx.Converter.boiler(
-                'Backup',
-                thermal_efficiency=0.5,
-                fuel_flow=fx.Flow(bus='Gas', flow_id='fuel'),
-                thermal_flow=fx.Flow(bus='Heat', flow_id='heat', size=100),
-            ),
-        )
-        fs = optimize(fs)
-        assert_allclose(fs.solution['costs'].item(), 90.0, rtol=1e-5)
+        raise NotImplementedError  # TODO: implement effects_of_retirement on Sizing
 
 
 class TestFlowInvestWithStatus:
@@ -568,39 +468,4 @@ class TestFlowInvestWithStatus:
         Sensitivity: Without limit, InvestBoiler runs all 4 hours → fuel=40.
         With active_hours_max=2, cost=61.
         """
-        import flixopt as fx
-
-        from .conftest import make_flow_system
-
-        fs = make_flow_system(4)
-        fs.add(
-            fx.Bus('Heat'),
-            fx.Bus('Gas'),
-            fx.Effect('costs', '€', is_standard=True, is_objective=True),
-            fx.Port(
-                'Demand',
-                exports=[
-                    fx.Flow(bus='Heat', flow_id='heat', size=1, fixed_relative_profile=np.array([10, 10, 10, 10]))
-                ],
-            ),
-            fx.Port('GasSrc', imports=[fx.Flow(bus='Gas', flow_id='gas', effects_per_flow_hour=1)]),
-            fx.Converter.boiler(
-                'InvestBoiler',
-                thermal_efficiency=1.0,
-                fuel_flow=fx.Flow(bus='Gas', flow_id='fuel'),
-                thermal_flow=fx.Flow(
-                    bus='Heat',
-                    flow_id='heat',
-                    size=fx.InvestParameters(maximum_size=100, effects_of_investment_per_size=0.1),
-                    status_parameters=fx.StatusParameters(active_hours_max=2),
-                ),
-            ),
-            fx.Converter.boiler(
-                'Backup',
-                thermal_efficiency=0.5,
-                fuel_flow=fx.Flow(bus='Gas', flow_id='fuel'),
-                thermal_flow=fx.Flow(bus='Heat', flow_id='heat', size=100),
-            ),
-        )
-        fs = optimize(fs)
-        assert_allclose(fs.solution['costs'].item(), 61.0, rtol=1e-5)
+        raise NotImplementedError  # TODO: implement active_hours_max on Status (#16)

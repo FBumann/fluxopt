@@ -30,7 +30,10 @@ def _leontief(cf: xr.DataArray) -> xr.DataArray:
     other_dims = [d for d in cf.dims if d not in ('effect', 'source_effect')]
     ordered = [*other_dims, 'effect', 'source_effect']
     vals = cf.transpose(*ordered).values  # (..., n, n)
-    inv = np.linalg.inv(np.eye(n) - vals)  # (..., n, n)
+    mat = np.eye(n) - vals
+    if np.any(np.linalg.matrix_rank(mat) < n):
+        raise ValueError('Cross-effect matrix (I - C) is singular — check for circular contribution_from chains')
+    inv = np.linalg.inv(mat)  # (..., n, n)
     return xr.DataArray(inv, dims=ordered, coords=cf.coords)
 
 

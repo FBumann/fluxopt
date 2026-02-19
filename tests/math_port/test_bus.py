@@ -66,37 +66,7 @@ class TestBusBalance:
         With penalty, objective=2040 (fuel 40 + penalty 2000). The penalty is
         tracked in a separate 'Penalty' effect, not in 'costs'.
         """
-        import flixopt as fx
-
-        from .conftest import make_flow_system
-
-        fs = make_flow_system(2)
-        fs.add(
-            fx.Bus('Heat', imbalance_penalty_per_flow_hour=100),
-            fx.Effect('costs', '€', is_standard=True, is_objective=True),
-            fx.Port(
-                'Demand',
-                exports=[
-                    fx.Flow(bus='Heat', flow_id='heat', size=1, fixed_relative_profile=np.array([10, 10])),
-                ],
-            ),
-            fx.Port(
-                'Src',
-                imports=[
-                    fx.Flow(
-                        bus='Heat',
-                        flow_id='heat',
-                        size=1,
-                        fixed_relative_profile=np.array([20, 20]),
-                        effects_per_flow_hour=1,
-                    ),
-                ],
-            ),
-        )
-        fs = optimize(fs)
-        assert_allclose(fs.solution['costs'].item(), 40.0, rtol=1e-5)
-        assert_allclose(fs.solution['Penalty'].item(), 2000.0, rtol=1e-5)
-        assert_allclose(fs.solution['objective'].item(), 2040.0, rtol=1e-5)
+        raise NotImplementedError  # TODO: rewrite for fluxopt API (see tests/math/test_bus_penalty.py)
 
     @pytest.mark.skip(reason='prevent_simultaneous not supported in fluxopt')
     def test_prevent_simultaneous_flow_rates(self, optimize):
@@ -110,33 +80,4 @@ class TestBusBalance:
 
         Sensitivity: Without prevent_simultaneous, cost=40. With it, cost=2*(10+50)=120.
         """
-        import flixopt as fx
-
-        from .conftest import make_flow_system
-
-        fs = make_flow_system(2)
-        fs.add(
-            fx.Bus('Heat1'),
-            fx.Bus('Heat2'),
-            fx.Effect('costs', '€', is_standard=True, is_objective=True),
-            fx.Port(
-                'Demand1',
-                exports=[fx.Flow(bus='Heat1', flow_id='heat', size=1, fixed_relative_profile=np.array([10, 10]))],
-            ),
-            fx.Port(
-                'Demand2',
-                exports=[fx.Flow(bus='Heat2', flow_id='heat', size=1, fixed_relative_profile=np.array([10, 10]))],
-            ),
-            fx.Port(
-                'DualSrc',
-                imports=[
-                    fx.Flow(bus='Heat1', flow_id='heat1', effects_per_flow_hour=1, size=100),
-                    fx.Flow(bus='Heat2', flow_id='heat2', effects_per_flow_hour=1, size=100),
-                ],
-                prevent_simultaneous_flow_rates=True,
-            ),
-            fx.Port('Backup1', imports=[fx.Flow(bus='Heat1', flow_id='heat', effects_per_flow_hour=5)]),
-            fx.Port('Backup2', imports=[fx.Flow(bus='Heat2', flow_id='heat', effects_per_flow_hour=5)]),
-        )
-        fs = optimize(fs)
-        assert_allclose(fs.solution['costs'].item(), 120.0, rtol=1e-5)
+        raise NotImplementedError  # TODO: implement prevent_simultaneous_flow_rates

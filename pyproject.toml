@@ -31,7 +31,6 @@ dependencies = [
     "netcdf4>=1.6.0",
     "numpy>=1.26",
     "pandas>=2.1",
-    "plotly>=6.5.2",
     "xarray>=2024.1.0",
 ]
 
@@ -48,6 +47,7 @@ packages = ["src/fluxopt"]
 include = ["src/fluxopt/", "LICENSE", "README.md"]
 
 [project.optional-dependencies]
+viz = ["plotly>=6"]
 
 [dependency-groups]
 dev = [
@@ -63,6 +63,7 @@ viz = [
     "plotly>=6",
 ]
 docs = [
+    "plotly>=6",
     "markdown-include==0.8.1",
     "mike==2.1.3",
     "mkdocs==1.6.1",
@@ -136,8 +137,6 @@ warn_unused_configs = true
 
 [[tool.mypy.overrides]]
 module = [
-    "pyoptinterface.*",
-    "highsbox.*",
     "linopy.*",
     "netCDF4.*",
     "xarray.*",

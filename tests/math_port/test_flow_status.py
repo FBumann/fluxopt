@@ -61,37 +61,7 @@ class TestFlowStatus:
         Cheap boiler limited to 1 hour; expensive backup.
         Sensitivity: Without limit, cost=40. With limit=1, cost=60.
         """
-        import flixopt as fx
-
-        from .conftest import make_flow_system
-
-        fs = make_flow_system(3)
-        fs.add(
-            fx.Bus('Heat'),
-            fx.Bus('Gas'),
-            fx.Effect('costs', '€', is_standard=True, is_objective=True),
-            fx.Port(
-                'Demand',
-                exports=[fx.Flow(bus='Heat', flow_id='heat', size=1, fixed_relative_profile=np.array([10, 20, 10]))],
-            ),
-            fx.Port('GasSrc', imports=[fx.Flow(bus='Gas', flow_id='gas', effects_per_flow_hour=1)]),
-            fx.Converter.boiler(
-                'CheapBoiler',
-                thermal_efficiency=1.0,
-                fuel_flow=fx.Flow(bus='Gas', flow_id='fuel'),
-                thermal_flow=fx.Flow(
-                    bus='Heat', flow_id='heat', size=100, status_parameters=fx.StatusParameters(active_hours_max=1)
-                ),
-            ),
-            fx.Converter.boiler(
-                'ExpensiveBoiler',
-                thermal_efficiency=0.5,
-                fuel_flow=fx.Flow(bus='Gas', flow_id='fuel'),
-                thermal_flow=fx.Flow(bus='Heat', flow_id='heat', size=100),
-            ),
-        )
-        fs = optimize(fs)
-        assert_allclose(fs.solution['costs'].item(), 60.0, rtol=1e-5)
+        raise NotImplementedError  # TODO: implement active_hours_max on Status (#16)
 
     def test_min_uptime_forces_operation(self, optimize):
         """Proves: min_uptime forces a unit to stay on for at least N consecutive hours
@@ -254,38 +224,7 @@ class TestFlowStatus:
         Demand=[10,10]. Without floor, all from backup → cost=20.
         With active_hours_min=2, expensive boiler must run both hours.
         """
-        import flixopt as fx
-
-        from .conftest import make_flow_system
-
-        fs = make_flow_system(2)
-        fs.add(
-            fx.Bus('Heat'),
-            fx.Bus('Gas'),
-            fx.Effect('costs', '€', is_standard=True, is_objective=True),
-            fx.Port(
-                'Demand',
-                exports=[fx.Flow(bus='Heat', flow_id='heat', size=1, fixed_relative_profile=np.array([10, 10]))],
-            ),
-            fx.Port('GasSrc', imports=[fx.Flow(bus='Gas', flow_id='gas', effects_per_flow_hour=1)]),
-            fx.Converter.boiler(
-                'ExpBoiler',
-                thermal_efficiency=0.5,
-                fuel_flow=fx.Flow(bus='Gas', flow_id='fuel'),
-                thermal_flow=fx.Flow(
-                    bus='Heat', flow_id='heat', size=100, status_parameters=fx.StatusParameters(active_hours_min=2)
-                ),
-            ),
-            fx.Converter.boiler(
-                'CheapBoiler',
-                thermal_efficiency=1.0,
-                fuel_flow=fx.Flow(bus='Gas', flow_id='fuel'),
-                thermal_flow=fx.Flow(bus='Heat', flow_id='heat', size=100),
-            ),
-        )
-        fs = optimize(fs)
-        status = fs.solution['ExpBoiler(heat)|status'].values[:-1]
-        assert_allclose(status, [1, 1], atol=1e-5)
+        raise NotImplementedError  # TODO: implement active_hours_min on Status (#16)
 
     def test_max_downtime(self, optimize):
         """Proves: max_downtime forces a unit to restart after being off for N consecutive hours.
@@ -347,42 +286,7 @@ class TestFlowStatus:
 
         Boiler (eta=0.8, startup_limit=1). Demand=[10,0,10]. cost=32.5.
         """
-        import flixopt as fx
-
-        from .conftest import make_flow_system
-
-        fs = make_flow_system(3)
-        fs.add(
-            fx.Bus('Heat'),
-            fx.Bus('Gas'),
-            fx.Effect('costs', '€', is_standard=True, is_objective=True),
-            fx.Port(
-                'Demand',
-                exports=[fx.Flow(bus='Heat', flow_id='heat', size=1, fixed_relative_profile=np.array([10, 0, 10]))],
-            ),
-            fx.Port('GasSrc', imports=[fx.Flow(bus='Gas', flow_id='gas', effects_per_flow_hour=1)]),
-            fx.Converter.boiler(
-                'Boiler',
-                thermal_efficiency=0.8,
-                fuel_flow=fx.Flow(bus='Gas', flow_id='fuel'),
-                thermal_flow=fx.Flow(
-                    bus='Heat',
-                    flow_id='heat',
-                    size=20,
-                    relative_minimum=0.5,
-                    previous_flow_rate=0,
-                    status_parameters=fx.StatusParameters(startup_limit=1),
-                ),
-            ),
-            fx.Converter.boiler(
-                'Backup',
-                thermal_efficiency=0.5,
-                fuel_flow=fx.Flow(bus='Gas', flow_id='fuel'),
-                thermal_flow=fx.Flow(bus='Heat', flow_id='heat', size=100),
-            ),
-        )
-        fs = optimize(fs)
-        assert_allclose(fs.solution['costs'].item(), 32.5, rtol=1e-5)
+        raise NotImplementedError  # TODO: implement startup_limit on Status (#17)
 
     def test_max_uptime_standalone(self, optimize):
         """Proves: max_uptime on a flow limits continuous operation.

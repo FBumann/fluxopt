@@ -72,5 +72,5 @@ Each symbol maps to a specific field or variable in the code.
 | Lowercase Latin | Relative/dimensionless parameters | \(\underline{p}\) (rel. min), \(\bar{p}\) (rel. max) |
 | Greek | Physical properties | \(\eta\) (efficiency), \(\delta\) (loss rate) |
 | Overbar / underbar | Bounds | \(\bar{P}\) (capacity), \(\underline{P}\) (lower bound) |
-| Subscripts | Indexing | \(f\) (flow), \(t\) (time), \(s\) (storage), \(b\) (bus), \(k\) (effect) |
+| Subscripts | Indexing | \(f\) (flow), \(t\) (time), \(s\) (storage), \(b\) (bus), \(k\) (effect), \(j\) (source effect) |
 | Superscripts | Qualification | \(\eta^{\text{c}}\) (charge), \(\eta^{\text{d}}\) (discharge) |

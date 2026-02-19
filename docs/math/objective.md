@@ -50,13 +50,13 @@ See [Notation](notation.md) for the full symbol table.
 
 Consider a gas boiler over 3 timesteps (\(\Delta t = 1\,\text{h}\), \(w = 1\)):
 
-| \(t\) | \(P_{\text{gas},t}\) (MW) | \(c_{\text{gas,cost}}\) (€/MWh) | \(\Phi_{\text{cost},t}\) (€) |
+| \(t\) | \(P_{\text{gas},t}\) (MW) | \(c_{\text{gas,cost}}\) (€/MWh) | \(\Phi_{\text{cost},t}^{\text{temporal}}\) (€) |
 |---|---|---|---|
 | 1 | 2.0 | 30 | \(30 \times 2.0 \times 1 = 60\) |
 | 2 | 3.0 | 30 | \(30 \times 3.0 \times 1 = 90\) |
 | 3 | 1.5 | 30 | \(30 \times 1.5 \times 1 = 45\) |
 
-Total cost: \(\Phi_{\text{cost}} = 60 + 90 + 45 = 195\,\text{€}\)
+Total cost: \(\Phi_{\text{cost}} = \sum_t \Phi_{\text{cost},t}^{\text{temporal}} = 60 + 90 + 45 = 195\,\text{€}\)
 
 The optimizer finds the \(P_{f,t}\) values that minimize \(\Phi_{k^*}\) subject to all
 constraints (bus balance, flow bounds, conversion, storage dynamics).
