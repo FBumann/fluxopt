@@ -330,6 +330,7 @@ class FlowsData:
 
         flow_ids = [f.id for f in flows]
         effect_ids = [e.id for e in effects]
+        effect_set = set(effect_ids)
         n_time = len(time)
         n_effects = len(effect_ids)
 
@@ -371,8 +372,9 @@ class FlowsData:
                 coords={'effect': effect_ids, 'time': time},
             )
             for effect_label, factor in f.effects_per_flow_hour.items():
-                if effect_label in effect_ids:
-                    ec.loc[effect_label] = as_dataarray(factor, {'time': time})
+                if effect_label not in effect_set:
+                    raise ValueError(f'Unknown effect {effect_label!r} in Flow.effects_per_flow_hour on {f.id!r}')
+                ec.loc[effect_label] = as_dataarray(factor, {'time': time})
             effect_coeffs.append(ec)
 
             if f.status is not None:
@@ -632,7 +634,12 @@ class EffectsData:
         effect_set = set(effect_ids)
         n = len(effects)
         n_time = len(time)
-        objective_effect = next(e.id for e in effects if e.is_objective)
+        objective_effect = next(
+            (e.id for e in effects if e.is_objective),
+            None,
+        )
+        if objective_effect is None:
+            raise ValueError('No objective effect found. Include an Effect with is_objective=True.')
 
         min_total = np.full(n, np.nan)
         max_total = np.full(n, np.nan)
@@ -747,9 +754,9 @@ class StoragesData:
         bad_eta_d = ((self.eta_d <= 0) | (self.eta_d > 1)).any('time')
         if bad_eta_d.any():
             raise ValueError(f'eta_discharge must be in (0, 1] on storages: {list(s[bad_eta_d].values)}')
-        bad_loss = (self.loss < 0).any('time')
+        bad_loss = ((self.loss < 0) | (self.loss > 1)).any('time')
         if bad_loss.any():
-            raise ValueError(f'Negative relative_loss_per_hour on storages: {list(s[bad_loss].values)}')
+            raise ValueError(f'relative_loss_per_hour must be in [0, 1] on storages: {list(s[bad_loss].values)}')
 
     def to_dataset(self) -> xr.Dataset:
         """Serialize to xr.Dataset."""
@@ -890,14 +897,14 @@ class ModelData:
         """
         p = Path(path)
         try:
-            meta = xr.open_dataset(p, group='model/meta', engine='netcdf4')
+            meta = xr.load_dataset(p, group='model/meta', engine='netcdf4')
         except OSError:
             return None
 
         datasets: dict[str, xr.Dataset] = {}
         for name, group in _NC_GROUPS.items():
             try:
-                datasets[name] = xr.open_dataset(p, group=group, engine='netcdf4')
+                datasets[name] = xr.load_dataset(p, group=group, engine='netcdf4')
             except OSError:
                 datasets[name] = xr.Dataset()
 

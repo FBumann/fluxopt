@@ -117,7 +117,7 @@ class Result:
         from fluxopt.model_data import ModelData
 
         p = Path(path)
-        solution = xr.open_dataset(p, engine='netcdf4')
+        solution = xr.load_dataset(p, engine='netcdf4')
         data = ModelData.from_netcdf(p)
         return cls(solution=solution, data=data)
 

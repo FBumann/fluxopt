@@ -743,7 +743,7 @@ class FlowSystem:
         discharge_rates = discharge_rates.assign_coords({'storage': stor_vals})
 
         # Precompute pure-xarray coefficients (no linopy overhead)
-        loss_factor = 1 - ds.loss * d.dt  # (storage, time)
+        loss_factor = (1 - ds.loss) ** d.dt  # (storage, time)
         charge_factor = ds.eta_c * d.dt  # (storage, time)
         discharge_factor = d.dt / ds.eta_d  # (storage, time)
 
