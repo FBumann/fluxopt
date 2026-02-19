@@ -171,7 +171,8 @@ class Result:
             if var_name not in model._builtin_var_names and var_name not in sol_vars:
                 sol_vars[var_name] = model.m.variables[var_name].solution
 
-        obj_val = float(model.m.objective.value)
+        raw = model.m.objective.value
+        obj_val = float(raw) if raw is not None else 0.0
 
         solution = xr.Dataset(sol_vars, attrs={'objective': obj_val})
         return cls(solution=solution, data=model.data)
