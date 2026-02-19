@@ -416,6 +416,7 @@ class FlowsData:
 @dataclass
 class BusesData:
     flow_coeff: xr.DataArray  # (bus, flow)
+    imbalance_penalty: xr.DataArray  # (bus,) — NaN = hard balance
 
     def to_dataset(self) -> xr.Dataset:
         """Serialize to xr.Dataset."""
@@ -428,7 +429,7 @@ class BusesData:
         Args:
             ds: Dataset with ``flow_coeff`` variable.
         """
-        return cls(flow_coeff=ds['flow_coeff'])
+        return cls(flow_coeff=ds['flow_coeff'], imbalance_penalty=ds['imbalance_penalty'])
 
     @classmethod
     def build(cls, buses: list[Bus], flows: list[Flow], bus_coeff: dict[str, float]) -> Self:
@@ -449,8 +450,11 @@ class BusesData:
                 fi = flow_ids.index(f.id)
                 coeff[bi, fi] = bus_coeff[f.id]
 
+        penalty_vals = np.array([b.imbalance_penalty if b.imbalance_penalty is not None else np.nan for b in buses])
+
         return cls(
             flow_coeff=xr.DataArray(coeff, dims=['bus', 'flow'], coords={'bus': bus_ids, 'flow': flow_ids}),
+            imbalance_penalty=xr.DataArray(penalty_vals, dims=['bus'], coords={'bus': bus_ids}),
         )
 
 
@@ -716,8 +720,8 @@ class EffectsData:
         return cls(
             min_total=xr.DataArray(min_total, dims=['effect'], coords={'effect': effect_ids}),
             max_total=xr.DataArray(max_total, dims=['effect'], coords={'effect': effect_ids}),
-            min_per_hour=xr.concat(min_per_hours, dim=effect_idx),
-            max_per_hour=xr.concat(max_per_hours, dim=effect_idx),
+            min_per_hour=fast_concat(min_per_hours, effect_idx),
+            max_per_hour=fast_concat(max_per_hours, effect_idx),
             is_objective=xr.DataArray(is_objective, dims=['effect'], coords={'effect': effect_ids}),
             objective_effect=objective_effect,
             cf_periodic=cf_periodic,
@@ -952,12 +956,16 @@ class ModelData:
             storages: Energy storages.
             dt: Timestep duration in hours. Auto-derived if None.
         """
+        from fluxopt.elements import PENALTY_EFFECT_ID, Effect
         from fluxopt.types import compute_dt as _compute_dt
 
         converters = converters or []
         stor_list = storages or []
         time = normalize_timesteps(timesteps)
         dt_da = _compute_dt(time, dt)
+
+        if not any(e.id == PENALTY_EFFECT_ID for e in effects):
+            effects = [*effects, Effect(PENALTY_EFFECT_ID)]
 
         flows, bus_coeff = _collect_flows(ports, converters, stor_list)
         _validate_system(buses, effects, ports, converters, stor_list, flows)

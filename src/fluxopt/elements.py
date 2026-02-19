@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from fluxopt.types import TimeSeries
 
+PENALTY_EFFECT_ID = 'penalty'
+
 
 @dataclass
 class Sizing:
@@ -81,6 +83,7 @@ class Flow:
 class Bus:
     id: str
     carrier: str | None = None
+    imbalance_penalty: float | None = None
 
 
 @dataclass
