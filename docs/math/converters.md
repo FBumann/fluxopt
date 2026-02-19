@@ -43,23 +43,38 @@ Converter.boiler("boiler", thermal_efficiency=0.9, fuel_flow=gas, thermal_flow=t
 # conversion_factors = [{gas.id: 0.9, th.id: -1}]
 ```
 
+### Power-to-Heat
+
+An electric resistance heater with efficiency \(\eta = 0.99\):
+
+\[
+\eta \cdot P_{\text{el},t} - P_{\text{th},t} = 0
+\]
+
+```python
+Converter.power2heat("p2h", efficiency=0.99, electrical_flow=el, thermal_flow=th)
+# conversion_factors = [{el.id: 0.99, th.id: -1}]
+```
+
 ### Heat Pump
 
-A heat pump with COP = 3.5:
+A heat pump with COP = 3.5 has **two** conversion equations — COP definition
+and energy balance:
 
 \[
 \text{COP} \cdot P_{\text{el},t} - P_{\text{th},t} = 0
 \]
 
 \[
-3.5 \cdot P_{\text{el},t} = P_{\text{th},t}
+P_{\text{el},t} + P_{\text{src},t} - P_{\text{th},t} = 0
 \]
 
-So 1 MW electrical input produces 3.5 MW thermal output.
+So 1 MW electrical input draws 2.5 MW from the environment and produces
+3.5 MW thermal output.
 
 ```python
-Converter.heat_pump("hp", cop=3.5, electrical_flow=el, thermal_flow=th)
-# conversion_factors = [{el.id: 3.5, th.id: -1}]
+Converter.heat_pump("hp", cop=3.5, electrical_flow=el, source_flow=src, thermal_flow=th)
+# conversion_factors = [{el.id: 3.5, th.id: -1}, {el.id: 1, src.id: 1, th.id: -1}]
 ```
 
 ### CHP (Combined Heat and Power)
@@ -93,5 +108,5 @@ weather data). Pass a list or array instead of a scalar:
 
 ```python
 cop_profile = [3.2, 3.5, 3.8, 3.1]  # one value per timestep
-Converter.heat_pump("hp", cop=cop_profile, electrical_flow=el, thermal_flow=th)
+Converter.heat_pump("hp", cop=cop_profile, electrical_flow=el, source_flow=src, thermal_flow=th)
 ```

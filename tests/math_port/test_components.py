@@ -106,17 +106,17 @@ class TestTransmission:
 
 
 class TestHeatPump:
-    """Tests for HeatPump component with COP."""
+    """Tests for HeatPump component with COP and source heat."""
 
     def test_heatpump_cop(self, optimize):
-        """Proves: HeatPump correctly applies COP to compute electrical consumption.
+        """Proves: HeatPump splits demand into electrical and source via COP.
 
-        Sensitivity: If COP were ignored (=1), elec=30 → cost=30.
-        With cop=3, elec=10 → cost=10.
+        demand=30/t, COP=3 → elec=10/t, source=20/t → cost=20.
+        Sensitivity: Without source flow (COP=1 effective), cost=60.
         """
         result = optimize(
             timesteps=ts(2),
-            buses=[Bus('Heat'), Bus('Elec')],
+            buses=[Bus('Heat'), Bus('Elec'), Bus('Env')],
             effects=[Effect('cost', is_objective=True)],
             ports=[
                 Port(
@@ -125,18 +125,15 @@ class TestHeatPump:
                         Flow(bus='Heat', size=1, fixed_relative_profile=np.array([30, 30])),
                     ],
                 ),
-                Port(
-                    'Grid',
-                    imports=[
-                        Flow(bus='Elec', effects_per_flow_hour={'cost': 1}),
-                    ],
-                ),
+                Port('Grid', imports=[Flow(bus='Elec', effects_per_flow_hour={'cost': 1})]),
+                Port('Environment', imports=[Flow(bus='Env', size=1000)]),
             ],
             converters=[
                 Converter.heat_pump(
                     'HP',
                     cop=3.0,
                     electrical_flow=Flow(bus='Elec'),
+                    source_flow=Flow(bus='Env'),
                     thermal_flow=Flow(bus='Heat'),
                 ),
             ],
@@ -146,11 +143,12 @@ class TestHeatPump:
     def test_heatpump_variable_cop(self, optimize):
         """Proves: HeatPump accepts time-varying COP array.
 
+        demand=20/t, COP=[2,4] → elec=[10,5]=15, source=[10,15] → cost=15.
         Sensitivity: If scalar cop=3 used, elec=13.33. Only time-varying gives 15.
         """
         result = optimize(
             timesteps=ts(2),
-            buses=[Bus('Heat'), Bus('Elec')],
+            buses=[Bus('Heat'), Bus('Elec'), Bus('Env')],
             effects=[Effect('cost', is_objective=True)],
             ports=[
                 Port(
@@ -159,18 +157,15 @@ class TestHeatPump:
                         Flow(bus='Heat', size=1, fixed_relative_profile=np.array([20, 20])),
                     ],
                 ),
-                Port(
-                    'Grid',
-                    imports=[
-                        Flow(bus='Elec', effects_per_flow_hour={'cost': 1}),
-                    ],
-                ),
+                Port('Grid', imports=[Flow(bus='Elec', effects_per_flow_hour={'cost': 1})]),
+                Port('Environment', imports=[Flow(bus='Env', size=1000)]),
             ],
             converters=[
                 Converter.heat_pump(
                     'HP',
                     cop=np.array([2.0, 4.0]),
                     electrical_flow=Flow(bus='Elec'),
+                    source_flow=Flow(bus='Env'),
                     thermal_flow=Flow(bus='Heat'),
                 ),
             ],
