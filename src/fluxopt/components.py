@@ -90,6 +90,23 @@ class Converter:
         )
 
     @classmethod
+    def power2heat(cls, id: str, efficiency: TimeSeries, electrical_flow: Flow, thermal_flow: Flow) -> Converter:
+        """Create an electric resistance heater: electrical * eta = thermal.
+
+        Args:
+            id: Converter id.
+            efficiency: Electrical-to-thermal efficiency.
+            electrical_flow: Input electrical flow.
+            thermal_flow: Output thermal flow.
+        """
+        return cls(
+            id,
+            inputs=[electrical_flow],
+            outputs=[thermal_flow],
+            conversion_factors=[{electrical_flow: efficiency, thermal_flow: -1}],
+        )
+
+    @classmethod
     def chp(
         cls,
         id: str,
