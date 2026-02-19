@@ -57,21 +57,21 @@ class Result:
         """Per-period (investment) effect values as (effect,) DataArray."""
         return self.solution['effect--periodic']
 
-    def flow_rate(self, id: str) -> xr.DataArray:
+    def flow_rate(self, flow_id: str) -> xr.DataArray:
         """Get flow rate time series for a single flow.
 
         Args:
-            id: Qualified flow id.
+            flow_id: Qualified flow id.
         """
-        return self.flow_rates.sel(flow=id)
+        return self.flow_rates.sel(flow=flow_id)
 
-    def storage_level(self, id: str) -> xr.DataArray:
+    def storage_level(self, storage_id: str) -> xr.DataArray:
         """Get charge state time series for a single storage.
 
         Args:
-            id: Storage id.
+            storage_id: Storage id.
         """
-        return self.storage_levels.sel(storage=id)
+        return self.storage_levels.sel(storage=storage_id)
 
     def effect_contributions(self) -> xr.Dataset:
         """Per-contributor breakdown of effect contributions.

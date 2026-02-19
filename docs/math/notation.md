@@ -12,6 +12,7 @@ Each symbol maps to a specific field or variable in the code.
 | \(b \in \mathcal{B}\) | Buses | `bus` dimension |
 | \(s \in \mathcal{S}\) | Storages | `storage` dimension |
 | \(k \in \mathcal{K}\) | Effects (cost, CO₂, …) | `effect` dimension |
+| \(j \in \mathcal{K}\) | Source effect (cross-effect) | `source_effect` dimension |
 
 ## Variables
 
@@ -44,7 +45,7 @@ Each symbol maps to a specific field or variable in the code.
 | \(\bar{E}_s\) | `Storage.capacity` | \(\geq 0\) | MWh | Storage capacity |
 | \(\eta^{\text{c}}_s\) | `Storage.eta_charge` | \((0, 1]\) | — | Charging efficiency |
 | \(\eta^{\text{d}}_s\) | `Storage.eta_discharge` | \((0, 1]\) | — | Discharging efficiency |
-| \(\delta_s\) | `Storage.relative_loss_per_hour` | \(\geq 0\) | 1/h | Self-discharge rate |
+| \(\delta_s\) | `Storage.relative_loss_per_hour` | \([0, 1]\) | 1/h | Self-discharge rate |
 | \(\underline{e}_s\) | `Storage.relative_minimum_level` | \([0, 1]\) | — | Relative min SOC |
 | \(\bar{e}_s\) | `Storage.relative_maximum_level` | \([0, 1]\) | — | Relative max SOC |
 | \(a_{f}\) | `Converter.conversion_factors` | \(\mathbb{R}\) | — | Conversion coefficient |

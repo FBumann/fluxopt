@@ -1,6 +1,6 @@
 # fluxopt
 
-Energy system optimization with [pyoframe](https://github.com/Bravos-Power/pyoframe) — progressive modeling, from simple to complex.
+Energy system optimization with [linopy](https://github.com/PyPSA/linopy) — progressive modeling, from simple to complex.
 
 ## Installation
 

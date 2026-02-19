@@ -81,14 +81,16 @@ def fast_concat(arrays: list[xr.DataArray], dim: pd.Index) -> xr.DataArray:
         dim: Index for the new leading dimension.
 
     Raises:
-        AssertionError: If any slice has a different shape or dims than the first.
+        ValueError: If any slice has a different shape or dims than the first.
     """
     first = arrays[0]
     expected_shape = first.shape
     expected_dims = first.dims
     for i, a in enumerate(arrays[1:], 1):
-        assert a.shape == expected_shape, f'fast_concat: slice {i} shape {a.shape} != expected {expected_shape}'
-        assert a.dims == expected_dims, f'fast_concat: slice {i} dims {a.dims} != expected {expected_dims}'
+        if a.shape != expected_shape:
+            raise ValueError(f'fast_concat: slice {i} shape {a.shape} != expected {expected_shape}')
+        if a.dims != expected_dims:
+            raise ValueError(f'fast_concat: slice {i} dims {a.dims} != expected {expected_dims}')
     data = np.array([a.values for a in arrays])
     name = str(dim.name)
     dims = [name, *expected_dims]
@@ -207,7 +209,7 @@ def compute_dt(timesteps: pd.Index, dt: float | list[float] | None) -> xr.DataAr
     """Compute dt (hours) for each timestep as a DataArray.
 
     When dt is None, auto-derives from timesteps:
-    - Datetime: consecutive differences in hours; last = second-to-last.
+    - Datetime: consecutive differences in hours; first = second (forward-looking).
     - Integer: 1.0 for all.
     - Single timestep: 1.0.
 
