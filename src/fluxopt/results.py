@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 class Result:
     solution: xr.Dataset
     data: ModelData | None = field(default=None, repr=False)
+    _contributions_cache: xr.Dataset | None = field(default=None, repr=False, init=False)
 
     @property
     def objective(self) -> float:
@@ -47,9 +48,14 @@ class Result:
         return self.solution['effect--total']
 
     @property
-    def effects_per_timestep(self) -> xr.DataArray:
+    def effects_temporal(self) -> xr.DataArray:
         """Per-timestep effect values as (effect, time) DataArray."""
-        return self.solution['effect--per_timestep']
+        return self.solution['effect--temporal']
+
+    @property
+    def effects_periodic(self) -> xr.DataArray:
+        """Per-period (investment) effect values as (effect,) DataArray."""
+        return self.solution['effect--periodic']
 
     def flow_rate(self, id: str) -> xr.DataArray:
         """Get flow rate time series for a single flow.
@@ -66,6 +72,29 @@ class Result:
             id: Storage id.
         """
         return self.storage_levels.sel(storage=id)
+
+    def effect_contributions(self) -> xr.Dataset:
+        """Per-contributor breakdown of effect contributions.
+
+        Returns:
+            Dataset with ``temporal`` (contributor, effect, time),
+            ``periodic`` (contributor, effect), and ``total``
+            (contributor, effect). The contributor dim contains flow
+            IDs and (if present) storage IDs.
+
+        Raises:
+            ValueError: If ``data`` is not available on this Result.
+        """
+        if self._contributions_cache is not None:
+            return self._contributions_cache
+
+        if self.data is None:
+            raise ValueError('ModelData is required for effect_contributions (not available on this Result)')
+
+        from fluxopt.contributions import compute_effect_contributions
+
+        self._contributions_cache = compute_effect_contributions(self.solution, self.data)
+        return self._contributions_cache
 
     def to_netcdf(self, path: str | Path) -> None:
         """Write solution and model data to NetCDF.
@@ -102,7 +131,8 @@ class Result:
         sol_vars: dict[str, xr.DataArray] = {
             'flow--rate': model.flow_rate.solution,
             'effect--total': model.effect_total.solution,
-            'effect--per_timestep': model.effect_per_timestep.solution,
+            'effect--temporal': model.effect_temporal.solution,
+            'effect--periodic': model.effect_periodic.solution,
         }
 
         if model.storage_level is not None:

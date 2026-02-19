@@ -10,8 +10,8 @@ each verifying a different pipeline:
     Baseline correctness check.
 ``save->reload->optimize``
     Proves the ModelData definition survives IO.
-``optimize->save->reload``
-    Proves the solution data survives IO.
+``optimize->save->reload->validate``
+    Proves the solution data survives IO and contributions sum correctly.
 """
 
 from __future__ import annotations
@@ -39,7 +39,7 @@ def _waste(bus: str) -> Port:
     params=[
         'optimize',
         'save->reload->optimize',
-        'optimize->save->reload',
+        'optimize->save->reload->validate',
     ]
 )
 def optimize(request, tmp_path):
@@ -64,10 +64,12 @@ def optimize(request, tmp_path):
             model = FlowSystem(loaded)
             model.build()
             return model.solve()
-        # optimize->save->reload
+        # optimize->save->reload->validate
         result = fluxopt_optimize(**kwargs)
         path = tmp_path / 'result.nc'
         result.to_netcdf(path)
-        return Result.from_netcdf(path)
+        loaded = Result.from_netcdf(path)
+        loaded.effect_contributions()  # validate contributions survive IO roundtrip
+        return loaded
 
     return _optimize

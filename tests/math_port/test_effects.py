@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from numpy.testing import assert_allclose
 
-from fluxopt import Bus, Effect, Flow, Port
+from fluxopt import Bus, Converter, Effect, Flow, Port, Sizing
 
 from .conftest import _waste, ts
 
@@ -46,39 +46,36 @@ class TestEffects:
         assert_allclose(result.effect_totals.sel(effect='cost').item(), 60.0, rtol=1e-5)
         assert_allclose(result.effect_totals.sel(effect='CO2').item(), 15.0, rtol=1e-5)
 
-    @pytest.mark.skip(reason='share_from_temporal not supported in fluxopt')
-    def test_share_from_temporal(self, optimize):
-        """Proves: share_from_temporal correctly adds a weighted fraction of one effect's
+    def test_contribution_from_temporal(self, optimize):
+        """Proves: contribution_from adds a weighted fraction of one effect's
         temporal sum into another effect's total.
 
-        costs has share_from_temporal={'CO2': 0.5}. Direct costs=20, CO2=200.
-        Shared portion: 0.5 * 200 = 100. Total costs = 20 + 100 = 120.
+        cost has contribution_from={'CO2': 0.5}. Source: cost=1, CO2=10 per kWh.
+        Demand=20. Direct cost=20, CO2=200. Cross: 0.5*200=100. Total cost=120.
 
-        Sensitivity: Without the share mechanism, costs=20 (6* less). The 120
-        value is impossible without share_from_temporal working.
+        Sensitivity: Without cross-effect, cost=20 (6x less). The 120
+        value is impossible without contribution_from working.
         """
-        import flixopt as fx
-
-        from .conftest import make_flow_system
-
-        fs = make_flow_system(2)
-        co2 = fx.Effect('CO2', 'kg')
-        costs = fx.Effect('costs', '€', is_standard=True, is_objective=True, share_from_temporal={'CO2': 0.5})
-        fs.add(
-            fx.Bus('Heat'),
-            costs,
-            co2,
-            fx.Port(
-                'Demand',
-                exports=[fx.Flow(bus='Heat', flow_id='heat', size=1, fixed_relative_profile=np.array([10, 10]))],
-            ),
-            fx.Port(
-                'HeatSrc', imports=[fx.Flow(bus='Heat', flow_id='heat', effects_per_flow_hour={'costs': 1, 'CO2': 10})]
-            ),
+        result = optimize(
+            timesteps=ts(2),
+            buses=[Bus('Heat')],
+            effects=[
+                Effect('cost', is_objective=True, contribution_from={'CO2': 0.5}),
+                Effect('CO2'),
+            ],
+            ports=[
+                Port(
+                    'Demand',
+                    exports=[Flow(bus='Heat', size=1, fixed_relative_profile=np.array([10, 10]))],
+                ),
+                Port(
+                    'HeatSrc',
+                    imports=[Flow(bus='Heat', effects_per_flow_hour={'cost': 1, 'CO2': 10})],
+                ),
+            ],
         )
-        fs = optimize(fs)
-        assert_allclose(fs.solution['costs'].item(), 120.0, rtol=1e-5)
-        assert_allclose(fs.solution['CO2'].item(), 200.0, rtol=1e-5)
+        assert_allclose(result.effect_totals.sel(effect='cost').item(), 120.0, rtol=1e-5)
+        assert_allclose(result.effect_totals.sel(effect='CO2').item(), 200.0, rtol=1e-5)
 
     def test_effect_maximum_total(self, optimize):
         """Proves: maximum_total on an effect constrains the optimizer to respect an
@@ -319,47 +316,43 @@ class TestEffects:
         assert_allclose(fs.solution['CO2'].item(), 25.0, rtol=1e-5)
         assert_allclose(fs.solution['costs'].item(), 25.0, rtol=1e-5)
 
-    @pytest.mark.skip(reason='share_from_periodic not supported in fluxopt')
-    def test_share_from_periodic(self, optimize):
-        """Proves: share_from_periodic adds a weighted fraction of one effect's periodic
-        (investment/fixed) sum into another effect's total.
+    def test_contribution_from_periodic(self, optimize):
+        """Proves: contribution_from adds a weighted fraction of one effect's periodic
+        (investment) sum into another effect's total.
 
-        costs has share_from_periodic={'CO2': 10}. Boiler invest emits 5 kgCO2 fixed.
-        Direct costs = invest(100) + fuel(20) = 120. CO2 periodic = 5.
-        Shared: 10 * 5 = 50. Total costs = 120 + 50 = 170.
+        cost has contribution_from={'CO2': 10}. Boiler invest: fixed cost=100, CO2=5.
+        Fuel cost=20. Direct cost = 100 + 20 = 120. CO2 periodic = 5.
+        Cross: 10 * 5 = 50. Total cost = 170.
 
-        Sensitivity: Without share_from_periodic, costs=120. With it, costs=170.
+        Sensitivity: Without contribution_from, cost=120. With it, cost=170.
         """
-        import flixopt as fx
-
-        from .conftest import make_flow_system
-
-        fs = make_flow_system(2)
-        co2 = fx.Effect('CO2', 'kg')
-        costs = fx.Effect('costs', '€', is_standard=True, is_objective=True, share_from_periodic={'CO2': 10})
-        fs.add(
-            fx.Bus('Heat'),
-            fx.Bus('Gas'),
-            costs,
-            co2,
-            fx.Port(
-                'Demand',
-                exports=[fx.Flow(bus='Heat', flow_id='heat', size=1, fixed_relative_profile=np.array([10, 10]))],
-            ),
-            fx.Port('GasSrc', imports=[fx.Flow(bus='Gas', flow_id='gas', effects_per_flow_hour=1)]),
-            fx.Converter.boiler(
-                'Boiler',
-                thermal_efficiency=1.0,
-                fuel_flow=fx.Flow(bus='Gas', flow_id='fuel'),
-                thermal_flow=fx.Flow(
-                    bus='Heat',
-                    flow_id='heat',
-                    size=fx.InvestParameters(fixed_size=50, effects_of_investment={'costs': 100, 'CO2': 5}),
+        result = optimize(
+            timesteps=ts(2),
+            buses=[Bus('Heat'), Bus('Gas')],
+            effects=[
+                Effect('cost', is_objective=True, contribution_from={'CO2': 10}),
+                Effect('CO2'),
+            ],
+            ports=[
+                Port(
+                    'Demand',
+                    exports=[Flow(bus='Heat', size=1, fixed_relative_profile=np.array([10, 10]))],
                 ),
-            ),
+                Port('GasSrc', imports=[Flow(bus='Gas', effects_per_flow_hour={'cost': 1})]),
+            ],
+            converters=[
+                Converter.boiler(
+                    'Boiler',
+                    thermal_efficiency=1.0,
+                    fuel_flow=Flow(bus='Gas'),
+                    thermal_flow=Flow(
+                        bus='Heat',
+                        size=Sizing(min_size=50, max_size=50, mandatory=False, effects_fixed={'cost': 100, 'CO2': 5}),
+                    ),
+                ),
+            ],
         )
-        fs = optimize(fs)
-        assert_allclose(fs.solution['costs'].item(), 170.0, rtol=1e-5)
+        assert_allclose(result.effect_totals.sel(effect='cost').item(), 170.0, rtol=1e-5)
 
     @pytest.mark.skip(reason='maximum_periodic not supported in fluxopt')
     def test_effect_maximum_periodic(self, optimize):

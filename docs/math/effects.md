@@ -6,16 +6,47 @@ Effects represent quantities that are tracked across the optimization horizon (e
 cost, CO₂ emissions, primary energy). One effect is designated as the objective to
 minimize.
 
-## Per-Timestep Tracking
+Effects are split into two **domains**:
+
+- **Temporal** (with time dimension): per-timestep flow contributions, status costs
+- **Periodic** (without time dimension): sizing costs, fixed yearly costs
+
+Both domains support cross-effect chains via `contribution_from`.
+
+## Temporal Domain
 
 Each effect accumulates contributions from all flows at each timestep:
 
 \[
-\Phi_{k,t} = \sum_{f \in \mathcal{F}} c_{f,k,t} \cdot P_{f,t} \cdot \Delta t_t \quad \forall \, k \in \mathcal{K}, \; t \in \mathcal{T}
+\Phi_{k,t}^{\text{temporal}} = \underbrace{\sum_{f \in \mathcal{F}} c_{f,k,t} \cdot P_{f,t} \cdot \Delta t_t}_{\text{direct flow contributions}} + \underbrace{\sum_{j \in \mathcal{K}} \alpha_{k,j,t} \cdot \Phi_{j,t}^{\text{temporal}}}_{\text{cross-effect contributions}} \quad \forall \, k, t
 \]
 
 The coefficient \(c_{f,k,t}\) specifies how much of effect \(k\) is produced per
 flow-hour of flow \(f\) (e.g., €/MWh for cost, kg/MWh for emissions).
+
+The cross-effect factor \(\alpha_{k,j,t}\) can be time-varying
+(`contribution_from_per_hour`) or constant (`contribution_from`).
+Because \(\Phi_{k,t}^{\text{temporal}}\) is a **variable**, the solver resolves
+multi-level chains (e.g., PE → CO₂ → cost) automatically.
+
+## Periodic Domain
+
+Sizing costs and fixed costs (not time-varying) are accumulated per effect:
+
+\[
+\Phi_k^{\text{periodic}} = \underbrace{\Phi_k^{\text{invest,direct}}}_{\text{direct sizing costs}} + \underbrace{\sum_{j \in \mathcal{K}} \alpha_{k,j} \cdot \Phi_j^{\text{periodic}}}_{\text{cross-effect contributions}} \quad \forall \, k
+\]
+
+where the direct investment term is:
+
+\[
+\Phi_k^{\text{invest,direct}} = \sum_{f} \gamma_{f,k} \cdot S_f + \sum_{f} \phi_{f,k} \cdot y_f + \sum_{s} \gamma_{s,k} \cdot S_s + \sum_{s} \phi_{s,k} \cdot y_s
+\]
+
+Because \(\Phi_k^{\text{periodic}}\) is a **variable** (not an expression), the
+solver resolves multi-level chains correctly: if PE has sizing costs
+and CO₂ depends on PE and cost depends on CO₂, the chain propagates through the
+periodic domain just as it does through the temporal domain.
 
 ## Cross-Effect Contributions
 
@@ -23,30 +54,9 @@ An effect can include a weighted fraction of another effect's value via
 `contribution_from`. This enables patterns like carbon pricing (CO₂ → cost)
 or transitive chains (PE → CO₂ → cost).
 
-### Per-Timestep
-
-The per-timestep tracking becomes:
-
-\[
-\Phi_{k,t} = \underbrace{\sum_{f \in \mathcal{F}} c_{f,k,t} \cdot P_{f,t} \cdot \Delta t_t}_{\text{direct flow contributions}} + \underbrace{\sum_{j \in \mathcal{K}} \alpha_{k,j,t} \cdot \Phi_{j,t}}_{\text{cross-effect contributions}} \quad \forall \, k, t
-\]
-
-where \(\alpha_{k,j,t}\) is the contribution factor from source effect \(j\) to
-target effect \(k\) at timestep \(t\). This factor can be time-varying
-(`contribution_from_per_hour`) or constant (`contribution_from`, applied to both
-invest and per-hour).
-
-### Investment
-
-Cross-effect contributions also apply to investment costs:
-
-\[
-\Phi_k^{\text{invest,cross}} = \sum_{j \in \mathcal{K}} \alpha_{k,j} \cdot \Phi_j^{\text{invest,direct}}
-\]
-
-where \(\alpha_{k,j}\) is the scalar contribution factor from `contribution_from`,
-and \(\Phi_j^{\text{invest,direct}}\) is the direct investment cost of effect \(j\)
-(from `Sizing.effects_per_size` and `Sizing.effects_fixed`).
+The scalar factor \(\alpha_{k,j}\) from `contribution_from` applies to **both**
+domains. The time-varying factor from `contribution_from_per_hour` overrides the
+temporal factor only.
 
 ### Validation
 
@@ -55,10 +65,10 @@ Self-references (\(\alpha_{k,k}\)) and circular dependencies
 
 ## Total Aggregation
 
-The total effect sums per-timestep values, weights, and investment contributions:
+The total effect combines both domains:
 
 \[
-\Phi_k = \sum_{t \in \mathcal{T}} \Phi_{k,t} \cdot w_t + \Phi_k^{\text{invest,direct}} + \Phi_k^{\text{invest,cross}} \quad \forall \, k \in \mathcal{K}
+\Phi_k = \sum_{t \in \mathcal{T}} \Phi_{k,t}^{\text{temporal}} \cdot w_t + \Phi_k^{\text{periodic}} \quad \forall \, k \in \mathcal{K}
 \]
 
 Weights \(w_t\) allow scaling timesteps (e.g., a representative week scaled to a year).
@@ -87,7 +97,8 @@ This enforces per-hour limits (e.g., maximum hourly emissions).
 
 | Symbol | Description | Reference |
 |---|---|---|
-| \(\Phi_{k,t}\) | Per-timestep effect variable | `effect_per_timestep[effect, time]` |
+| \(\Phi_{k,t}^{\text{temporal}}\) | Per-timestep effect variable | `effect_temporal[effect, time]` |
+| \(\Phi_k^{\text{periodic}}\) | Periodic effect variable (sizing, fixed costs) | `effect_periodic[effect]` |
 | \(\Phi_k\) | Total effect variable | `effect_total[effect]` |
 | \(c_{f,k,t}\) | Effect coefficient per flow-hour | `Flow.effects_per_flow_hour` |
 | \(\alpha_{k,j,t}\) | Cross-effect contribution factor (per hour) | `Effect.contribution_from_per_hour` |

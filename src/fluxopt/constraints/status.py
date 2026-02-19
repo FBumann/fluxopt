@@ -91,7 +91,7 @@ def add_duration_tracking(
         mega = mega + previous.fillna(0)
 
     # Variable upper bound: use maximum where provided, else mega
-    upper: xr.DataArray = xr.where(maximum.notnull(), maximum, mega) if maximum is not None else mega
+    upper: xr.DataArray = maximum.where(maximum.notnull(), mega) if maximum is not None else mega
 
     coords = [state.coords[element_dim], state.coords[dim]]
     duration = m.add_variables(lower=0, upper=upper, coords=coords, name=name)

@@ -19,34 +19,44 @@ source = Flow(bus='elec', size=Sizing(min_size=50, max_size=200, mandatory=True)
 
 ## Mandatory vs Optional
 
-### Mandatory (`mandatory=True`)
+### Mandatory (`mandatory=True`, default)
 
 The component **must** be built. The solver picks a continuous size in
-`[min_size, max_size]`:
+`[min_size, max_size]`. No binary variable needed — faster to solve:
 
 ```python
 # Always built, size in [50, 200] MW
-Flow(bus='elec', size=Sizing(min_size=50, max_size=200, mandatory=True))
+Flow(bus='elec', size=Sizing(min_size=50, max_size=200))
 ```
 
-### Optional (`mandatory=False`, default)
+With `min_size=0`, the solver *can* choose size=0, effectively not building
+the component — but without the overhead of a binary indicator variable:
+
+```python
+# Size in [0, 200] MW — solver may pick 0 (no binary needed)
+Flow(bus='elec', size=Sizing(min_size=0, max_size=200))
+```
+
+### Optional (`mandatory=False`)
 
 The solver decides **whether** to build the component. A binary indicator
-variable gates the size: either 0 (not built) or in `[min_size, max_size]`:
+variable gates the size: either 0 (not built) or in `[min_size, max_size]`.
+Use this when you need `effects_fixed` (one-time costs gated by the indicator)
+or when `min_size > 0` must be enforced only if built:
 
 ```python
 # Built at [50, 200] MW or not built at all
-Flow(bus='elec', size=Sizing(min_size=50, max_size=200))
+Flow(bus='elec', size=Sizing(min_size=50, max_size=200, mandatory=False))
 ```
 
 ### Binary Invest (fixed-size yes/no)
 
-When `min_size == max_size`, it becomes a binary invest decision — build at
-exactly that size or not at all:
+When `min_size == max_size` with `mandatory=False`, it becomes a binary invest
+decision — build at exactly that size or not at all:
 
 ```python
 # Either build a 100 MW unit or nothing
-Flow(bus='elec', size=Sizing(min_size=100, max_size=100))
+Flow(bus='elec', size=Sizing(min_size=100, max_size=100, mandatory=False))
 ```
 
 ## Investment Effects
@@ -75,7 +85,7 @@ sizing (`mandatory=False`) since it's gated by the binary indicator:
 Flow(
     bus='elec',
     size=Sizing(
-        min_size=50, max_size=200,
+        min_size=50, max_size=200, mandatory=False,
         effects_per_size={'cost': 500},
         effects_fixed={'cost': 10_000},
     ),
@@ -131,7 +141,7 @@ grid = Flow(bus='elec', size=200, effects_per_flow_hour={'cost': 0.10})
 # Optional cheap source with investment cost
 solar = Flow(
     bus='elec',
-    size=Sizing(min_size=50, max_size=200, effects_per_size={'cost': 20}),
+    size=Sizing(min_size=50, max_size=200, mandatory=False, effects_per_size={'cost': 20}),
     effects_per_flow_hour={'cost': 0.01},
     fixed_relative_profile=[0.0, 0.8, 0.8, 0.0],  # only available midday
 )
@@ -156,6 +166,6 @@ print(f"Objective: {result.objective:.2f}")
 |---|---|---|---|
 | `min_size` | `float` | required | Minimum size if invested |
 | `max_size` | `float` | required | Maximum size |
-| `mandatory` | `bool` | `False` | If True, must be built (no binary indicator) |
+| `mandatory` | `bool` | `True` | If True, must be built (no binary indicator) |
 | `effects_per_size` | `dict[str, float]` | `{}` | Effect cost per unit size (e.g., €/MW) |
 | `effects_fixed` | `dict[str, float]` | `{}` | Fixed effect cost if built (optional only) |

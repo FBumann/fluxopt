@@ -94,8 +94,6 @@ class TestRoundtrip:
         )
         # dt preserved
         assert loaded.data.dt.values == pytest.approx(result.data.dt.values)
-        # time_extra preserved
-        assert len(loaded.data.time_extra) == len(result.data.time_extra)
 
     def test_model_data_resolve(self, tmp_nc: Path) -> None:
         """Loaded ModelData can build and solve a new model."""
@@ -132,17 +130,17 @@ class TestRoundtripContributionFrom:
             ports=[Port('grid', imports=[source]), Port('demand', exports=[sink])],
         )
         assert result.data is not None
-        assert result.data.effects.cf_invest is not None
-        assert result.data.effects.cf_per_hour is not None
+        assert result.data.effects.cf_periodic is not None
+        assert result.data.effects.cf_temporal is not None
 
         result.to_netcdf(tmp_nc)
         loaded = Result.from_netcdf(tmp_nc)
 
         assert loaded.data is not None
-        assert loaded.data.effects.cf_invest is not None
-        assert loaded.data.effects.cf_per_hour is not None
-        xr.testing.assert_equal(loaded.data.effects.cf_invest, result.data.effects.cf_invest)
-        xr.testing.assert_equal(loaded.data.effects.cf_per_hour, result.data.effects.cf_per_hour)
+        assert loaded.data.effects.cf_periodic is not None
+        assert loaded.data.effects.cf_temporal is not None
+        xr.testing.assert_equal(loaded.data.effects.cf_periodic, result.data.effects.cf_periodic)
+        xr.testing.assert_equal(loaded.data.effects.cf_temporal, result.data.effects.cf_temporal)
 
         # Re-solve gives same objective
         from fluxopt import FlowSystem

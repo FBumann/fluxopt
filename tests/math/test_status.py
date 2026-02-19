@@ -459,7 +459,7 @@ class TestStatusSizing:
                     imports=[
                         Flow(
                             bus='Heat',
-                            size=Sizing(50, 100, effects_fixed={'costs': 1000}),
+                            size=Sizing(50, 100, mandatory=False, effects_fixed={'costs': 1000}),
                             relative_minimum=0.1,
                             effects_per_flow_hour={'costs': 1},
                             status=Status(),

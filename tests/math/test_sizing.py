@@ -73,7 +73,7 @@ class TestFlowSizing:
                     imports=[
                         Flow(
                             bus='Heat',
-                            size=Sizing(10, 100, effects_fixed={'costs': 200}),
+                            size=Sizing(10, 100, mandatory=False, effects_fixed={'costs': 200}),
                             effects_per_flow_hour={'costs': 1},
                         )
                     ],
@@ -104,7 +104,7 @@ class TestFlowSizing:
                     imports=[
                         Flow(
                             bus='Heat',
-                            size=Sizing(80, 80, effects_fixed={'costs': 10}),
+                            size=Sizing(80, 80, mandatory=False, effects_fixed={'costs': 10}),
                             effects_per_flow_hour={'costs': 1},
                         )
                     ],

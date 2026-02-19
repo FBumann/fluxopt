@@ -200,7 +200,7 @@ class TestStorage:
                     'Battery',
                     charging=Flow(bus='Elec', size=200),
                     discharging=Flow(bus='Elec', size=200),
-                    capacity=Sizing(min_size=0, max_size=200, effects_per_size={'cost': 1}),
+                    capacity=Sizing(min_size=0, max_size=200, mandatory=False, effects_per_size={'cost': 1}),
                     prior_level=0,
                     cyclic=False,
                     eta_charge=1,
