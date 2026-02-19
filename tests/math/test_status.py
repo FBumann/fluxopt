@@ -895,9 +895,9 @@ class TestDurationCombinations:
         Verify on-blocks are ≥4 timesteps (=2h).
         """
         # 30-minute timesteps: 8 slots = 4 hours
-        ts = [datetime(2020, 1, 1, h, m) for h in range(4) for m in (0, 30)]
+        half_hour_ts = [datetime(2020, 1, 1, h, m) for h in range(4) for m in (0, 30)]
         result = optimize(
-            ts,
+            half_hour_ts,
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
             ports=[
@@ -935,9 +935,9 @@ class TestDurationCombinations:
         consecutive slots before forced shutdown. Pattern like
         [on,on,off,on,on,off] → Src covers 4 slots, Backup covers 2.
         """
-        ts = [datetime(2020, 1, 1, h, m) for h in range(3) for m in (0, 30)]
+        half_hour_ts = [datetime(2020, 1, 1, h, m) for h in range(3) for m in (0, 30)]
         result = optimize(
-            ts,
+            half_hour_ts,
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
             ports=[

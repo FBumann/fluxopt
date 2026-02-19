@@ -200,7 +200,9 @@ class TestSizing:
         contrib = result.effect_contributions()
         grid_inv = float(contrib['periodic'].sel(contributor='grid(elec)', effect='cost').values)
         demand_inv = float(contrib['periodic'].sel(contributor='demand(elec)', effect='cost').values)
-        assert grid_inv == pytest.approx(5000.0, abs=1e-6)
+        # size=50 (min to meet demand) * effects_per_size=100
+        expected_inv = 50 * 100
+        assert grid_inv == pytest.approx(expected_inv, abs=1e-6)
         assert demand_inv == pytest.approx(0.0, abs=1e-6)
 
         # Sum matches solver
@@ -289,7 +291,9 @@ class TestStatus:
         # Grid has running costs, demand does not
         grid_cost = float(contrib['total'].sel(contributor='grid(elec)', effect='cost').values)
         demand_cost = float(contrib['total'].sel(contributor='demand(elec)', effect='cost').values)
-        assert grid_cost == pytest.approx(22.6, abs=1e-6)
+        # operational: (50+80+60)*0.04=7.6, running: 5.0*3h=15.0
+        expected_grid_cost = (50 + 80 + 60) * 0.04 + 5.0 * 3
+        assert grid_cost == pytest.approx(expected_grid_cost, abs=1e-6)
         assert demand_cost == pytest.approx(0.0, abs=1e-6)
 
 

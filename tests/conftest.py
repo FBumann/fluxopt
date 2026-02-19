@@ -1,21 +1,28 @@
 from __future__ import annotations
 
-from datetime import datetime
-from typing import TYPE_CHECKING
+from datetime import datetime, timedelta
+
+import numpy as np
 
 from fluxopt import Flow, Port
 
-if TYPE_CHECKING:
-    import numpy as np
-
 
 def ts(n: int) -> list[datetime]:
-    """Create n hourly timesteps starting 2024-01-01."""
-    return [datetime(2024, 1, 1, h) for h in range(n)]
+    """Create *n* hourly timesteps starting 2024-01-01.
+
+    Args:
+        n: Number of timesteps to generate.
+    """
+    start = datetime(2024, 1, 1)
+    return [start + timedelta(hours=i) for i in range(n)]
 
 
 def waste(bus: str) -> Port:
-    """Free-disposal port that absorbs excess on *bus* at zero cost."""
+    """Free-disposal port that absorbs excess on *bus* at zero cost.
+
+    Args:
+        bus: Name of the bus to attach the waste port to.
+    """
     return Port(f'_waste_{bus}', exports=[Flow(bus=bus)])
 
 
@@ -26,8 +33,6 @@ def _block_lengths(on: np.ndarray, *, active: bool) -> list[tuple[int, int]]:
         on: Binary array (values > 0.5 are "on").
         active: True to find on-blocks, False to find off-blocks.
     """
-    import numpy as np
-
     binary = np.asarray(on) > 0.5
     if not active:
         binary = ~binary
@@ -84,7 +89,7 @@ def assert_off_blocks(
     """Assert every contiguous off-block has duration in [min_length, max_length].
 
     Args:
-        on: Binary on/off array (values < 0.5 are "off").
+        on: Binary on/off array (values <= 0.5 are "off").
         min_length: Minimum allowed block length (inclusive).
         max_length: Maximum allowed block length (inclusive).
         skip_leading: If True, ignore the first off-block (may be carry-over from prior).
