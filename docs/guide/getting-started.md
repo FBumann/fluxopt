@@ -77,7 +77,7 @@ converters = [
 ]
 ```
 
-### 6. Solve
+### 6. Optimize
 
 ```python
 result = optimize(

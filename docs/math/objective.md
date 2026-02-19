@@ -15,8 +15,8 @@ The total effect combines the temporal and periodic domains:
 \Phi_k = \sum_{t \in \mathcal{T}} \Phi_{k,t}^{\text{temporal}} \cdot w_t + \Phi_k^{\text{periodic}}
 \]
 
-The **temporal** domain accumulates flow contributions, status costs, and
-cross-effect contributions per timestep:
+The **temporal** domain accumulates flow contributions, running costs,
+startup costs, and cross-effect contributions per timestep:
 
 \[
 \Phi_{k,t}^{\text{temporal}} = \underbrace{\sum_{f} c_{f,k,t} \cdot P_{f,t} \cdot \Delta t_t}_{\text{flow}} + \underbrace{\sum_{f} r_{f,k,t} \cdot \sigma_{f,t} \cdot \Delta t_t}_{\text{running}} + \underbrace{\sum_{f} u_{f,k,t} \cdot \tau^+_{f,t}}_{\text{startup}} + \underbrace{\sum_{j} \alpha_{k,j,t} \cdot \Phi_{j,t}^{\text{temporal}}}_{\text{cross-effect}}
@@ -37,12 +37,12 @@ full formulations of each term.
 |---|---|---|
 | \(k^*\) | Objective effect | `Effect.is_objective = True` |
 | \(c_{f,k,t}\) | Effect coefficient per flow-hour | `Flow.effects_per_flow_hour` |
-| \(P_{f,t}\) | Flow rate variable | `flow_rate[flow, time]` |
+| \(P_{f,t}\) | Flow rate variable | `flow--rate[flow, time]` |
 | \(\Delta t_t\) | Timestep duration | dt |
 | \(w_t\) | Timestep weight | weights |
-| \(\Phi_{k,t}^{\text{temporal}}\) | Temporal (per-timestep) effect variable | `effect_temporal[effect, time]` |
-| \(\Phi_k^{\text{periodic}}\) | Periodic effect variable (sizing, fixed costs) | `effect_periodic[effect]` |
-| \(\Phi_k\) | Total effect variable | `effect_total[effect]` |
+| \(\Phi_{k,t}^{\text{temporal}}\) | Temporal (per-timestep) effect variable | `effect--temporal[effect, time]` |
+| \(\Phi_k^{\text{periodic}}\) | Periodic effect variable (sizing, fixed costs) | `effect--periodic[effect]` |
+| \(\Phi_k\) | Total effect variable | `effect--total[effect]` |
 
 See [Notation](notation.md) for the full symbol table.
 

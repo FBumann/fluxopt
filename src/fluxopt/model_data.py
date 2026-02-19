@@ -685,6 +685,8 @@ class EffectsData:
             adjacency: dict[str, list[str]] = {eid: [] for eid in effect_ids}
             for e in effects:
                 for src_id in {*e.contribution_from, *e.contribution_from_per_hour}:
+                    if src_id not in effect_set:
+                        raise ValueError(f'Unknown effect {src_id!r} in contribution_from on {e.id!r}')
                     adjacency[e.id].append(src_id)
             cycle = _detect_contribution_cycle(adjacency)
             if cycle is not None:

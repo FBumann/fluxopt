@@ -18,18 +18,18 @@ Each symbol maps to a specific field or variable in the code.
 
 | Symbol | Code | Domain | Unit | Description |
 |---|---|---|---|---|
-| \(P_{f,t}\) | `flow_rate[flow, time]` | \(\geq 0\) | MW | Flow rate |
+| \(P_{f,t}\) | `flow--rate[flow, time]` | \(\geq 0\) | MW | Flow rate |
 | \(E_{s,t}\) | `storage--level[storage, time]` | \(\geq 0\) | MWh | Stored energy |
-| \(\Phi_{k,t}^{\text{temporal}}\) | `effect_temporal[effect, time]` | \(\mathbb{R}\) | varies | Temporal (per-timestep) effect |
-| \(\Phi_k^{\text{periodic}}\) | `effect_periodic[effect]` | \(\mathbb{R}\) | varies | Periodic (investment) effect |
-| \(\Phi_k\) | `effect_total[effect]` | \(\mathbb{R}\) | varies | Total effect over horizon |
-| \(S_f\) | `flow_size[flow]` | \(\geq 0\) | MW | Invested flow capacity |
-| \(y_f\) | `flow_size_indicator[flow]` | \(\{0, 1\}\) | — | Binary invest indicator (flow) |
-| \(S_s\) | `storage_capacity[storage]` | \(\geq 0\) | MWh | Invested storage capacity |
-| \(y_s\) | `storage_size_indicator[storage]` | \(\{0, 1\}\) | — | Binary invest indicator (storage) |
-| \(\sigma_{f,t}\) | `flow_on[flow, time]` | \(\{0, 1\}\) | — | On/off indicator |
-| \(\tau^+_{f,t}\) | `flow_startup[flow, time]` | \(\{0, 1\}\) | — | Startup event indicator |
-| \(\tau^-_{f,t}\) | `flow_shutdown[flow, time]` | \(\{0, 1\}\) | — | Shutdown event indicator |
+| \(\Phi_{k,t}^{\text{temporal}}\) | `effect--temporal[effect, time]` | \(\mathbb{R}\) | varies | Temporal (per-timestep) effect |
+| \(\Phi_k^{\text{periodic}}\) | `effect--periodic[effect]` | \(\mathbb{R}\) | varies | Periodic (investment) effect |
+| \(\Phi_k\) | `effect--total[effect]` | \(\mathbb{R}\) | varies | Total effect over horizon |
+| \(S_f\) | `flow--size[flow]` | \(\geq 0\) | MW | Invested flow capacity |
+| \(y_f\) | `flow--size_indicator[flow]` | \(\{0, 1\}\) | — | Binary invest indicator (flow) |
+| \(S_s\) | `storage--capacity[storage]` | \(\geq 0\) | MWh | Invested storage capacity |
+| \(y_s\) | `storage--size_indicator[storage]` | \(\{0, 1\}\) | — | Binary invest indicator (storage) |
+| \(\sigma_{f,t}\) | `flow--on[flow, time]` | \(\{0, 1\}\) | — | On/off indicator |
+| \(\tau^+_{f,t}\) | `flow--startup[flow, time]` | \(\{0, 1\}\) | — | Startup event indicator |
+| \(\tau^-_{f,t}\) | `flow--shutdown[flow, time]` | \(\{0, 1\}\) | — | Shutdown event indicator |
 | \(D^{\text{up}}_{f,t}\) | `uptime[flow, time]` | \(\geq 0\) | h | Consecutive uptime |
 | \(D^{\text{down}}_{f,t}\) | `downtime[flow, time]` | \(\geq 0\) | h | Consecutive downtime |
 
@@ -51,8 +51,8 @@ Each symbol maps to a specific field or variable in the code.
 | \(a_{f}\) | `Converter.conversion_factors` | \(\mathbb{R}\) | — | Conversion coefficient |
 | \(\alpha_{k,j}\) | `Effect.contribution_from` | \(\mathbb{R}\) | varies | Cross-effect factor (scalar) |
 | \(\alpha_{k,j,t}\) | `Effect.contribution_from_per_hour` | \(\mathbb{R}\) | varies | Cross-effect factor (time-varying) |
-| \(S^-\) | `Sizing.min_size` | \(\geq 0\) | MW/MWh | Minimum invested size |
-| \(S^+\) | `Sizing.max_size` | \(\geq 0\) | MW/MWh | Maximum invested size |
+| \(S^-\) | `Sizing.min_size` | \(\geq 0\) | MW or MWh | Minimum invested size (flow or storage) |
+| \(S^+\) | `Sizing.max_size` | \(\geq 0\) | MW or MWh | Maximum invested size (flow or storage) |
 | \(\gamma_{f,k}\) | `Sizing.effects_per_size` | \(\mathbb{R}\) | varies | Per-size investment cost |
 | \(\phi_{f,k}\) | `Sizing.effects_fixed` | \(\mathbb{R}\) | varies | Fixed investment cost |
 | \(D^{\text{up,min}}\) | `Status.min_uptime` | \(\geq 0\) | h | Minimum consecutive uptime |
