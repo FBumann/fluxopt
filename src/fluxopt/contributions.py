@@ -154,6 +154,27 @@ def compute_effect_contributions(solution: xr.Dataset, data: ModelData) -> xr.Da
     # Rename to contributor dim
     temporal = temporal_flow.rename({'flow': 'contributor'})
 
+    # Bus imbalance penalty contribution — one contributor per penalized bus
+    penalty_vals = data.buses.imbalance_penalty
+    has_penalty = penalty_vals.notnull()
+    if has_penalty.any() and 'bus--surplus' in solution:
+        from fluxopt.elements import PENALTY_EFFECT_ID
+
+        penalty_filled = penalty_vals.fillna(0)
+        # (bus, time) — per-bus, per-timestep penalty cost
+        penalty_cost = penalty_filled * (solution['bus--surplus'] + solution['bus--shortage']) * dt
+        bus_ids = list(penalty_cost.coords['bus'].values[has_penalty.values])
+        penalty_cost = penalty_cost.sel(bus=bus_ids)  # only penalized buses
+        n_buses = len(bus_ids)
+        bus_penalty = xr.DataArray(
+            np.zeros((n_buses, len(effect_ids), len(dt))),
+            dims=['contributor', 'effect', 'time'],
+            coords={'contributor': bus_ids, 'effect': effect_ids, 'time': dt.coords['time']},
+        )
+        bus_penalty.loc[bus_ids, PENALTY_EFFECT_ID, :] = penalty_cost.values
+        temporal = xr.concat([temporal, bus_penalty], dim='contributor')
+        all_ids = [*all_ids, *bus_ids]
+
     # --- Periodic: flow costs ---
     flow_periodic = _compute_periodic(
         data.flows.sizing_effects_per_size,
