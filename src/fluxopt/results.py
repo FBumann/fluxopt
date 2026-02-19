@@ -57,6 +57,16 @@ class Result:
         """Per-period (investment) effect values as (effect,) DataArray."""
         return self.solution['effect--periodic']
 
+    @property
+    def bus_surplus(self) -> xr.DataArray:
+        """Bus surplus slack (bus, time) — overproduction absorbed by penalty."""
+        return self.solution['bus--surplus'] if 'bus--surplus' in self.solution else xr.DataArray()
+
+    @property
+    def bus_shortage(self) -> xr.DataArray:
+        """Bus shortage slack (bus, time) — deficit covered by penalty."""
+        return self.solution['bus--shortage'] if 'bus--shortage' in self.solution else xr.DataArray()
+
     def flow_rate(self, flow_id: str) -> xr.DataArray:
         """Get flow rate time series for a single flow.
 
@@ -151,14 +161,17 @@ class Result:
             sol_vars['flow--startup'] = model.flow_startup.solution
         if model.flow_shutdown is not None:
             sol_vars['flow--shutdown'] = model.flow_shutdown.solution
+        if hasattr(model, 'bus_surplus'):
+            sol_vars['bus--surplus'] = model.bus_surplus.solution
+        if hasattr(model, 'bus_shortage'):
+            sol_vars['bus--shortage'] = model.bus_shortage.solution
 
         # Include custom variables added after build()
         for var_name in model.m.variables:
             if var_name not in model._builtin_var_names and var_name not in sol_vars:
                 sol_vars[var_name] = model.m.variables[var_name].solution
 
-        obj_effect = model.data.effects.objective_effect
-        obj_val = float(sol_vars['effect--total'].sel(effect=obj_effect).values)
+        obj_val = float(model.m.objective.value)
 
         solution = xr.Dataset(sol_vars, attrs={'objective': obj_val})
         return cls(solution=solution, data=model.data)
