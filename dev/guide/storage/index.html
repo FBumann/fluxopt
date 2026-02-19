@@ -644,10 +644,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#initial-charge-state" class="md-nav__link">
+  <a href="#prior-level-and-cyclic-constraint" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Initial Charge State
+        Prior Level and Cyclic Constraint
       
     </span>
   </a>
@@ -655,10 +655,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#charge-state-bounds" class="md-nav__link">
+  <a href="#level-bounds" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Charge State Bounds
+        Level Bounds
       
     </span>
   </a>
@@ -716,6 +716,62 @@
     
   
     Effects
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sizing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sizing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../status/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Status
   
 
     
@@ -1095,6 +1151,62 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../math/sizing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sizing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../math/status/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Status
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -1185,10 +1297,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#initial-charge-state" class="md-nav__link">
+  <a href="#prior-level-and-cyclic-constraint" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Initial Charge State
+        Prior Level and Cyclic Constraint
       
     </span>
   </a>
@@ -1196,10 +1308,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#charge-state-bounds" class="md-nav__link">
+  <a href="#level-bounds" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Charge State Bounds
+        Level Bounds
       
     </span>
   </a>
@@ -1291,32 +1403,31 @@ during charging and discharging respectively:</p>
 <a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    <span class="n">relative_loss_per_hour</span><span class="o">=</span><span class="mf">0.001</span><span class="p">,</span>  <span class="c1"># 0.1%/h</span>
 <a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="p">)</span>
 </code></pre></div>
-<h3 id="initial-charge-state">Initial Charge State<a class="headerlink" href="#initial-charge-state" title="Permanent link">&para;</a></h3>
-<p><code>initial_charge_state</code> sets the energy level at the start of the horizon:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># Fixed initial state (absolute MWh)</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="n">battery</span> <span class="o">=</span> <span class="n">Storage</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">initial_charge_state</span><span class="o">=</span><span class="mf">50.0</span><span class="p">)</span>
+<h3 id="prior-level-and-cyclic-constraint">Prior Level and Cyclic Constraint<a class="headerlink" href="#prior-level-and-cyclic-constraint" title="Permanent link">&para;</a></h3>
+<p><code>prior_level</code> sets the energy level at the start of the horizon as an absolute
+value in MWh. <code>cyclic</code> enforces that the storage ends at the same level it
+started:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># Fixed initial level (absolute MWh), no cyclic constraint</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="n">battery</span> <span class="o">=</span> <span class="n">Storage</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">prior_level</span><span class="o">=</span><span class="mf">50.0</span><span class="p">,</span> <span class="n">cyclic</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
 <a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="c1"># Fraction of capacity (values &lt;= 1 are interpreted as fractions)</span>
-<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="n">battery</span> <span class="o">=</span> <span class="n">Storage</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">initial_charge_state</span><span class="o">=</span><span class="mf">0.5</span><span class="p">)</span>  <span class="c1"># 50% of capacity</span>
-<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>
-<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="c1"># Cyclic: end state must equal start state</span>
-<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="n">battery</span> <span class="o">=</span> <span class="n">Storage</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">initial_charge_state</span><span class="o">=</span><span class="s1">&#39;cyclic&#39;</span><span class="p">)</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="c1"># Unconstrained initial level (optimizer chooses), cyclic (default)</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="n">battery</span> <span class="o">=</span> <span class="n">Storage</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">prior_level</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">cyclic</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 </code></pre></div>
-<p>The default is <code>0.0</code> (empty).</p>
-<h3 id="charge-state-bounds">Charge State Bounds<a class="headerlink" href="#charge-state-bounds" title="Permanent link">&para;</a></h3>
-<p><code>relative_minimum_charge_state</code> and <code>relative_maximum_charge_state</code> limit the
-SOC as fractions of capacity:</p>
+<p>The default is <code>prior_level=None</code> (unconstrained) and <code>cyclic=True</code>.</p>
+<h3 id="level-bounds">Level Bounds<a class="headerlink" href="#level-bounds" title="Permanent link">&para;</a></h3>
+<p><code>relative_minimum_level</code> and <code>relative_maximum_level</code> limit the SOC as
+fractions of capacity:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">battery</span> <span class="o">=</span> <span class="n">Storage</span><span class="p">(</span>
 <a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>    <span class="s1">&#39;battery&#39;</span><span class="p">,</span> <span class="n">charging</span><span class="o">=</span><span class="n">charge</span><span class="p">,</span> <span class="n">discharging</span><span class="o">=</span><span class="n">discharge</span><span class="p">,</span>
 <a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>    <span class="n">capacity</span><span class="o">=</span><span class="mf">100.0</span><span class="p">,</span>
-<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>    <span class="n">relative_minimum_charge_state</span><span class="o">=</span><span class="mf">0.2</span><span class="p">,</span>  <span class="c1"># never below 20%</span>
-<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>    <span class="n">relative_maximum_charge_state</span><span class="o">=</span><span class="mf">0.9</span><span class="p">,</span>  <span class="c1"># never above 90%</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>    <span class="n">relative_minimum_level</span><span class="o">=</span><span class="mf">0.2</span><span class="p">,</span>  <span class="c1"># never below 20%</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>    <span class="n">relative_maximum_level</span><span class="o">=</span><span class="mf">0.9</span><span class="p">,</span>  <span class="c1"># never above 90%</span>
 <a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="p">)</span>
 </code></pre></div>
 <h2 id="full-example">Full Example<a class="headerlink" href="#full-example" title="Permanent link">&para;</a></h2>
 <p>Battery arbitrage — charge in cheap hours, discharge in expensive hours:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">datetime</span>
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fluxopt</span><span class="w"> </span><span class="kn">import</span> <span class="n">Bus</span><span class="p">,</span> <span class="n">Effect</span><span class="p">,</span> <span class="n">Flow</span><span class="p">,</span> <span class="n">Port</span><span class="p">,</span> <span class="n">Storage</span><span class="p">,</span> <span class="n">solve</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fluxopt</span><span class="w"> </span><span class="kn">import</span> <span class="n">Bus</span><span class="p">,</span> <span class="n">Effect</span><span class="p">,</span> <span class="n">Flow</span><span class="p">,</span> <span class="n">Port</span><span class="p">,</span> <span class="n">Storage</span><span class="p">,</span> <span class="n">optimize</span>
 <a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>
 <a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="n">timesteps</span> <span class="o">=</span> <span class="p">[</span><span class="n">datetime</span><span class="p">(</span><span class="mi">2024</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">h</span><span class="p">)</span> <span class="k">for</span> <span class="n">h</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">4</span><span class="p">)]</span>
 <a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="n">prices</span> <span class="o">=</span> <span class="p">[</span><span class="mf">0.02</span><span class="p">,</span> <span class="mf">0.08</span><span class="p">,</span> <span class="mf">0.02</span><span class="p">,</span> <span class="mf">0.08</span><span class="p">]</span>
@@ -1328,7 +1439,7 @@ SOC as fractions of capacity:</p>
 <a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a><span class="n">discharge</span> <span class="o">=</span> <span class="n">Flow</span><span class="p">(</span><span class="n">bus</span><span class="o">=</span><span class="s1">&#39;elec&#39;</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="mi">50</span><span class="p">)</span>
 <a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a><span class="n">battery</span> <span class="o">=</span> <span class="n">Storage</span><span class="p">(</span><span class="s1">&#39;battery&#39;</span><span class="p">,</span> <span class="n">charging</span><span class="o">=</span><span class="n">charge</span><span class="p">,</span> <span class="n">discharging</span><span class="o">=</span><span class="n">discharge</span><span class="p">,</span> <span class="n">capacity</span><span class="o">=</span><span class="mf">100.0</span><span class="p">)</span>
 <a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a>
-<a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a><span class="n">result</span> <span class="o">=</span> <span class="n">solve</span><span class="p">(</span>
+<a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a><span class="n">result</span> <span class="o">=</span> <span class="n">optimize</span><span class="p">(</span>
 <a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a>    <span class="n">timesteps</span><span class="o">=</span><span class="n">timesteps</span><span class="p">,</span>
 <a id="__codelineno-6-16" name="__codelineno-6-16" href="#__codelineno-6-16"></a>    <span class="n">buses</span><span class="o">=</span><span class="p">[</span><span class="n">Bus</span><span class="p">(</span><span class="s1">&#39;elec&#39;</span><span class="p">)],</span>
 <a id="__codelineno-6-17" name="__codelineno-6-17" href="#__codelineno-6-17"></a>    <span class="n">effects</span><span class="o">=</span><span class="p">[</span><span class="n">Effect</span><span class="p">(</span><span class="s1">&#39;cost&#39;</span><span class="p">,</span> <span class="n">is_objective</span><span class="o">=</span><span class="kc">True</span><span class="p">)],</span>
@@ -1338,7 +1449,7 @@ SOC as fractions of capacity:</p>
 <a id="__codelineno-6-21" name="__codelineno-6-21" href="#__codelineno-6-21"></a>
 <a id="__codelineno-6-22" name="__codelineno-6-22" href="#__codelineno-6-22"></a><span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">flow_rate</span><span class="p">(</span><span class="s1">&#39;battery(charge)&#39;</span><span class="p">))</span>
 <a id="__codelineno-6-23" name="__codelineno-6-23" href="#__codelineno-6-23"></a><span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">flow_rate</span><span class="p">(</span><span class="s1">&#39;battery(discharge)&#39;</span><span class="p">))</span>
-<a id="__codelineno-6-24" name="__codelineno-6-24" href="#__codelineno-6-24"></a><span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">charge_state</span><span class="p">(</span><span class="s1">&#39;battery&#39;</span><span class="p">))</span>
+<a id="__codelineno-6-24" name="__codelineno-6-24" href="#__codelineno-6-24"></a><span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">storage_level</span><span class="p">(</span><span class="s1">&#39;battery&#39;</span><span class="p">))</span>
 </code></pre></div>
 <h2 id="parameters-summary">Parameters Summary<a class="headerlink" href="#parameters-summary" title="Permanent link">&para;</a></h2>
 <table>
@@ -1371,9 +1482,9 @@ SOC as fractions of capacity:</p>
 </tr>
 <tr>
 <td><code>capacity</code></td>
-<td><code>float \| None</code></td>
+<td><code>float \| Sizing \| None</code></td>
 <td><code>None</code></td>
-<td>Maximum stored energy [MWh]</td>
+<td>Maximum stored energy [MWh] or <a href="../sizing/">investment</a></td>
 </tr>
 <tr>
 <td><code>eta_charge</code></td>
@@ -1394,19 +1505,25 @@ SOC as fractions of capacity:</p>
 <td>Self-discharge rate [1/h]</td>
 </tr>
 <tr>
-<td><code>initial_charge_state</code></td>
-<td><code>float \| str \| None</code></td>
-<td><code>0.0</code></td>
-<td>Initial energy or <code>'cyclic'</code></td>
+<td><code>prior_level</code></td>
+<td><code>float \| None</code></td>
+<td><code>None</code></td>
+<td>Initial energy level [MWh], None = unconstrained</td>
 </tr>
 <tr>
-<td><code>relative_minimum_charge_state</code></td>
+<td><code>cyclic</code></td>
+<td><code>bool</code></td>
+<td><code>True</code></td>
+<td>End level must equal start level</td>
+</tr>
+<tr>
+<td><code>relative_minimum_level</code></td>
 <td><code>TimeSeries</code></td>
 <td><code>0.0</code></td>
 <td>Min SOC as fraction of capacity</td>
 </tr>
 <tr>
-<td><code>relative_maximum_charge_state</code></td>
+<td><code>relative_maximum_level</code></td>
 <td><code>TimeSeries</code></td>
 <td><code>1.0</code></td>
 <td>Max SOC as fraction of capacity</td>

@@ -572,6 +572,62 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/sizing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sizing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/status/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Status
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -970,6 +1026,28 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#sizing-investment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sizing (Investment)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#status-onoff" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Status (On/Off)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#effect-contributions" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1134,6 +1212,62 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sizing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sizing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../status/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Status
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -1233,6 +1367,28 @@
     <span class="md-ellipsis">
       
         Fixed Profile
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sizing-investment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sizing (Investment)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#status-onoff" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Status (On/Off)
       
     </span>
   </a>
@@ -1364,6 +1520,13 @@ profile scaled by the capacity:</p>
 P_{f,t} = \bar{P}_f \cdot \pi_{f,t} \quad \forall \, f, t
 \]</div>
 <p>This is implemented by setting both lower and upper bounds equal to the profile value.</p>
+<h2 id="sizing-investment">Sizing (Investment)<a class="headerlink" href="#sizing-investment" title="Permanent link">&para;</a></h2>
+<p>When <code>Flow.size</code> is a <code>Sizing</code> object, the fixed capacity is replaced by a
+decision variable. See <a href="../sizing/">Sizing</a> for the full formulation.</p>
+<h2 id="status-onoff">Status (On/Off)<a class="headerlink" href="#status-onoff" title="Permanent link">&para;</a></h2>
+<p>When <code>Flow.status</code> is set, binary on/off behavior is added. The flow becomes
+semi-continuous: <span class="arithmatex">\(\{0\} \cup [\underline{P}, \bar{P}]\)</span>. See <a href="../status/">Status</a>
+for the full formulation.</p>
 <h2 id="effect-contributions">Effect Contributions<a class="headerlink" href="#effect-contributions" title="Permanent link">&para;</a></h2>
 <p>Each flow can contribute to tracked effects (cost, emissions, ...). The
 per-timestep contribution of flow <span class="arithmatex">\(f\)</span> to effect <span class="arithmatex">\(k\)</span> is:</p>

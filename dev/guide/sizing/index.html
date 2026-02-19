@@ -11,10 +11,10 @@
       
       
       
-        <link rel="prev" href="../storage/">
+        <link rel="prev" href="../effects/">
       
       
-        <link rel="next" href="../sizing/">
+        <link rel="next" href="../status/">
       
       
         
@@ -25,7 +25,7 @@
     
     
       
-        <title>Effects - fluxopt</title>
+        <title>Sizing - fluxopt</title>
       
     
     
@@ -78,7 +78,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#effects" class="md-skip">
+        <a href="#sizing-investment-optimization" class="md-skip">
           Skip to content
         </a>
       
@@ -112,7 +112,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Effects
+              Sizing
             
           </span>
         </div>
@@ -553,6 +553,34 @@
                 
   
   
+  
+  
+    <li class="md-nav__item">
+      <a href="../effects/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Effects
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
     
   
   
@@ -572,7 +600,7 @@
   <span class="md-ellipsis">
     
   
-    Effects
+    Sizing
   
 
     
@@ -590,7 +618,7 @@
   <span class="md-ellipsis">
     
   
-    Effects
+    Sizing
   
 
     
@@ -616,10 +644,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#defining-effects" class="md-nav__link">
+  <a href="#basic-usage" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Defining Effects
+        Basic Usage
       
     </span>
   </a>
@@ -627,33 +655,22 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#linking-flows-to-effects" class="md-nav__link">
+  <a href="#mandatory-vs-optional" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Linking Flows to Effects
+        Mandatory vs Optional
       
     </span>
   </a>
   
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#bounding-effects" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Bounding Effects
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Bounding Effects">
+    <nav class="md-nav" aria-label="Mandatory vs Optional">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#total-bounds" class="md-nav__link">
+  <a href="#mandatory-mandatorytrue-default" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Total Bounds
+        Mandatory (mandatory=True, default)
       
     </span>
   </a>
@@ -661,10 +678,21 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#per-hour-bounds" class="md-nav__link">
+  <a href="#optional-mandatoryfalse" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Per-Hour Bounds
+        Optional (mandatory=False)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#binary-invest-fixed-size-yesno" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Binary Invest (fixed-size yes/no)
       
     </span>
   </a>
@@ -677,22 +705,22 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#cross-effect-contributions" class="md-nav__link">
+  <a href="#investment-effects" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Cross-Effect Contributions
+        Investment Effects
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Cross-Effect Contributions">
+    <nav class="md-nav" aria-label="Investment Effects">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#scalar-temporal-periodic" class="md-nav__link">
+  <a href="#per-size-effects" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Scalar (temporal + periodic)
+        Per-Size Effects
       
     </span>
   </a>
@@ -700,32 +728,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#time-varying-temporal-only" class="md-nav__link">
+  <a href="#fixed-effects" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Time-Varying (temporal only)
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#transitive-chains" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Transitive Chains
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#restrictions" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Restrictions
+        Fixed Effects
       
     </span>
   </a>
@@ -738,22 +744,44 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#accessing-results" class="md-nav__link">
+  <a href="#storage-sizing" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Accessing Results
+        Storage Sizing
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Accessing Results">
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#interaction-with-other-features" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Interaction with Other Features
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Interaction with Other Features">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#per-contributor-breakdown" class="md-nav__link">
+  <a href="#with-bounds" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Per-Contributor Breakdown
+        With Bounds
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#with-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        With Status
       
     </span>
   </a>
@@ -791,34 +819,6 @@
   
 </nav>
       
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../sizing/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Sizing
-  
-
-    
-  </span>
-  
-  
-
-      </a>
     </li>
   
 
@@ -1308,10 +1308,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#defining-effects" class="md-nav__link">
+  <a href="#basic-usage" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Defining Effects
+        Basic Usage
       
     </span>
   </a>
@@ -1319,33 +1319,22 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#linking-flows-to-effects" class="md-nav__link">
+  <a href="#mandatory-vs-optional" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Linking Flows to Effects
+        Mandatory vs Optional
       
     </span>
   </a>
   
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#bounding-effects" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Bounding Effects
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Bounding Effects">
+    <nav class="md-nav" aria-label="Mandatory vs Optional">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#total-bounds" class="md-nav__link">
+  <a href="#mandatory-mandatorytrue-default" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Total Bounds
+        Mandatory (mandatory=True, default)
       
     </span>
   </a>
@@ -1353,10 +1342,21 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#per-hour-bounds" class="md-nav__link">
+  <a href="#optional-mandatoryfalse" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Per-Hour Bounds
+        Optional (mandatory=False)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#binary-invest-fixed-size-yesno" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Binary Invest (fixed-size yes/no)
       
     </span>
   </a>
@@ -1369,22 +1369,22 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#cross-effect-contributions" class="md-nav__link">
+  <a href="#investment-effects" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Cross-Effect Contributions
+        Investment Effects
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Cross-Effect Contributions">
+    <nav class="md-nav" aria-label="Investment Effects">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#scalar-temporal-periodic" class="md-nav__link">
+  <a href="#per-size-effects" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Scalar (temporal + periodic)
+        Per-Size Effects
       
     </span>
   </a>
@@ -1392,32 +1392,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#time-varying-temporal-only" class="md-nav__link">
+  <a href="#fixed-effects" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Time-Varying (temporal only)
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#transitive-chains" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Transitive Chains
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#restrictions" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Restrictions
+        Fixed Effects
       
     </span>
   </a>
@@ -1430,22 +1408,44 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#accessing-results" class="md-nav__link">
+  <a href="#storage-sizing" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Accessing Results
+        Storage Sizing
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Accessing Results">
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#interaction-with-other-features" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Interaction with Other Features
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Interaction with Other Features">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#per-contributor-breakdown" class="md-nav__link">
+  <a href="#with-bounds" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Per-Contributor Breakdown
+        With Bounds
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#with-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        With Status
       
     </span>
   </a>
@@ -1499,155 +1499,121 @@
   
 
 
-<h1 id="effects">Effects<a class="headerlink" href="#effects" title="Permanent link">&para;</a></h1>
-<p>An <code>Effect</code> tracks a quantity (cost, CO2, primary energy, ...) across the
-optimization horizon. One effect is the objective to minimize; others can be
-bounded.</p>
-<p>See <a href="../../math/effects/">Effects (Math)</a> for the formulation.</p>
-<h2 id="defining-effects">Defining Effects<a class="headerlink" href="#defining-effects" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fluxopt</span><span class="w"> </span><span class="kn">import</span> <span class="n">Effect</span>
+<h1 id="sizing-investment-optimization">Sizing (Investment Optimization)<a class="headerlink" href="#sizing-investment-optimization" title="Permanent link">&para;</a></h1>
+<p><code>Sizing</code> lets the solver decide the optimal capacity of a flow or storage,
+instead of fixing it upfront. This models investment decisions: how large
+should a boiler, PV array, or battery be?</p>
+<p>See <a href="../../math/sizing/">Sizing (Math)</a> for the formulation.</p>
+<h2 id="basic-usage">Basic Usage<a class="headerlink" href="#basic-usage" title="Permanent link">&para;</a></h2>
+<p>Pass a <code>Sizing</code> object instead of a numeric <code>size</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fluxopt</span><span class="w"> </span><span class="kn">import</span> <span class="n">Flow</span><span class="p">,</span> <span class="n">Sizing</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="c1"># Objective effect (minimized)</span>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="n">cost</span> <span class="o">=</span> <span class="n">Effect</span><span class="p">(</span><span class="s1">&#39;cost&#39;</span><span class="p">,</span> <span class="n">is_objective</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="c1"># Tracked effect with a unit</span>
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="n">co2</span> <span class="o">=</span> <span class="n">Effect</span><span class="p">(</span><span class="s1">&#39;co2&#39;</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="s1">&#39;kg&#39;</span><span class="p">)</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="c1"># Solver picks optimal size between 50 and 200 MW</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="n">source</span> <span class="o">=</span> <span class="n">Flow</span><span class="p">(</span><span class="n">bus</span><span class="o">=</span><span class="s1">&#39;elec&#39;</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="n">Sizing</span><span class="p">(</span><span class="n">min_size</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span> <span class="n">max_size</span><span class="o">=</span><span class="mi">200</span><span class="p">,</span> <span class="n">mandatory</span><span class="o">=</span><span class="kc">True</span><span class="p">))</span>
 </code></pre></div>
-<p>Exactly one effect must have <code>is_objective=True</code>.</p>
-<h2 id="linking-flows-to-effects">Linking Flows to Effects<a class="headerlink" href="#linking-flows-to-effects" title="Permanent link">&para;</a></h2>
-<p>Flows contribute to effects via <code>effects_per_flow_hour</code>. The value is in
-effect-units per flow-hour (e.g., €/MWh):</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fluxopt</span><span class="w"> </span><span class="kn">import</span> <span class="n">Flow</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="c1"># Single effect</span>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="n">gas</span> <span class="o">=</span> <span class="n">Flow</span><span class="p">(</span><span class="n">bus</span><span class="o">=</span><span class="s1">&#39;gas&#39;</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="mi">500</span><span class="p">,</span> <span class="n">effects_per_flow_hour</span><span class="o">=</span><span class="p">{</span><span class="s1">&#39;cost&#39;</span><span class="p">:</span> <span class="mf">0.04</span><span class="p">})</span>
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>
-<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="c1"># Multiple effects</span>
-<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="n">gas</span> <span class="o">=</span> <span class="n">Flow</span><span class="p">(</span><span class="n">bus</span><span class="o">=</span><span class="s1">&#39;gas&#39;</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="mi">500</span><span class="p">,</span> <span class="n">effects_per_flow_hour</span><span class="o">=</span><span class="p">{</span><span class="s1">&#39;cost&#39;</span><span class="p">:</span> <span class="mf">0.04</span><span class="p">,</span> <span class="s1">&#39;co2&#39;</span><span class="p">:</span> <span class="mf">0.2</span><span class="p">})</span>
+<h2 id="mandatory-vs-optional">Mandatory vs Optional<a class="headerlink" href="#mandatory-vs-optional" title="Permanent link">&para;</a></h2>
+<h3 id="mandatory-mandatorytrue-default">Mandatory (<code>mandatory=True</code>, default)<a class="headerlink" href="#mandatory-mandatorytrue-default" title="Permanent link">&para;</a></h3>
+<p>The component <strong>must</strong> be built. The solver picks a continuous size in
+<code>[min_size, max_size]</code>. No binary variable needed — faster to solve:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># Always built, size in [50, 200] MW</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="n">Flow</span><span class="p">(</span><span class="n">bus</span><span class="o">=</span><span class="s1">&#39;elec&#39;</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="n">Sizing</span><span class="p">(</span><span class="n">min_size</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span> <span class="n">max_size</span><span class="o">=</span><span class="mi">200</span><span class="p">))</span>
 </code></pre></div>
-<p>At each timestep, the contribution is <code>coefficient * flow_rate * dt</code>.</p>
-<h2 id="bounding-effects">Bounding Effects<a class="headerlink" href="#bounding-effects" title="Permanent link">&para;</a></h2>
-<h3 id="total-bounds">Total Bounds<a class="headerlink" href="#total-bounds" title="Permanent link">&para;</a></h3>
-<p>Limit the total effect over the entire horizon:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># CO2 budget: max 1000 kg total</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="n">co2</span> <span class="o">=</span> <span class="n">Effect</span><span class="p">(</span><span class="s1">&#39;co2&#39;</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="s1">&#39;kg&#39;</span><span class="p">,</span> <span class="n">maximum_total</span><span class="o">=</span><span class="mi">1000</span><span class="p">)</span>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="c1"># Cost floor (e.g., minimum revenue)</span>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="n">revenue</span> <span class="o">=</span> <span class="n">Effect</span><span class="p">(</span><span class="s1">&#39;revenue&#39;</span><span class="p">,</span> <span class="n">minimum_total</span><span class="o">=</span><span class="mi">500</span><span class="p">)</span>
+<p>With <code>min_size=0</code>, the solver <em>can</em> choose size=0, effectively not building
+the component — but without the overhead of a binary indicator variable:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># Size in [0, 200] MW — solver may pick 0 (no binary needed)</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="n">Flow</span><span class="p">(</span><span class="n">bus</span><span class="o">=</span><span class="s1">&#39;elec&#39;</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="n">Sizing</span><span class="p">(</span><span class="n">min_size</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">max_size</span><span class="o">=</span><span class="mi">200</span><span class="p">))</span>
 </code></pre></div>
-<h3 id="per-hour-bounds">Per-Hour Bounds<a class="headerlink" href="#per-hour-bounds" title="Permanent link">&para;</a></h3>
-<p>Limit the effect value at each timestep:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Max 50 kg CO2 per hour</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">co2</span> <span class="o">=</span> <span class="n">Effect</span><span class="p">(</span><span class="s1">&#39;co2&#39;</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="s1">&#39;kg&#39;</span><span class="p">,</span> <span class="n">maximum_per_hour</span><span class="o">=</span><span class="mi">50</span><span class="p">)</span>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="c1"># Time-varying per-hour bound</span>
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="n">co2</span> <span class="o">=</span> <span class="n">Effect</span><span class="p">(</span><span class="s1">&#39;co2&#39;</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="s1">&#39;kg&#39;</span><span class="p">,</span> <span class="n">maximum_per_hour</span><span class="o">=</span><span class="p">[</span><span class="mi">50</span><span class="p">,</span> <span class="mi">40</span><span class="p">,</span> <span class="mi">60</span><span class="p">,</span> <span class="mi">50</span><span class="p">])</span>
+<h3 id="optional-mandatoryfalse">Optional (<code>mandatory=False</code>)<a class="headerlink" href="#optional-mandatoryfalse" title="Permanent link">&para;</a></h3>
+<p>The solver decides <strong>whether</strong> to build the component. A binary indicator
+variable gates the size: either 0 (not built) or in <code>[min_size, max_size]</code>.
+Use this when you need <code>effects_fixed</code> (one-time costs gated by the indicator)
+or when <code>min_size &gt; 0</code> must be enforced only if built:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Built at [50, 200] MW or not built at all</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">Flow</span><span class="p">(</span><span class="n">bus</span><span class="o">=</span><span class="s1">&#39;elec&#39;</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="n">Sizing</span><span class="p">(</span><span class="n">min_size</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span> <span class="n">max_size</span><span class="o">=</span><span class="mi">200</span><span class="p">,</span> <span class="n">mandatory</span><span class="o">=</span><span class="kc">False</span><span class="p">))</span>
 </code></pre></div>
-<h2 id="cross-effect-contributions">Cross-Effect Contributions<a class="headerlink" href="#cross-effect-contributions" title="Permanent link">&para;</a></h2>
-<p>An effect can include a weighted contribution from another effect using
-<code>contribution_from</code>. This is useful for carbon pricing, primary energy factors,
-or any chain where one tracked quantity feeds into another.</p>
-<h3 id="scalar-temporal-periodic">Scalar (temporal + periodic)<a class="headerlink" href="#scalar-temporal-periodic" title="Permanent link">&para;</a></h3>
-<p>A scalar factor applies to <strong>both</strong> domains — temporal (per-timestep) and
-periodic (sizing, yearly costs):</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">effects</span> <span class="o">=</span> <span class="p">[</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>    <span class="n">Effect</span><span class="p">(</span><span class="s1">&#39;cost&#39;</span><span class="p">,</span> <span class="n">is_objective</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">contribution_from</span><span class="o">=</span><span class="p">{</span><span class="s1">&#39;co2&#39;</span><span class="p">:</span> <span class="mi">50</span><span class="p">}),</span>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>    <span class="n">Effect</span><span class="p">(</span><span class="s1">&#39;co2&#39;</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="s1">&#39;kg&#39;</span><span class="p">),</span>
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="p">]</span>
+<h3 id="binary-invest-fixed-size-yesno">Binary Invest (fixed-size yes/no)<a class="headerlink" href="#binary-invest-fixed-size-yesno" title="Permanent link">&para;</a></h3>
+<p>When <code>min_size == max_size</code> with <code>mandatory=False</code>, it becomes a binary invest
+decision — build at exactly that size or not at all:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># Either build a 100 MW unit or nothing</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="n">Flow</span><span class="p">(</span><span class="n">bus</span><span class="o">=</span><span class="s1">&#39;elec&#39;</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="n">Sizing</span><span class="p">(</span><span class="n">min_size</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">max_size</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">mandatory</span><span class="o">=</span><span class="kc">False</span><span class="p">))</span>
 </code></pre></div>
-<p>Here, every kg of CO₂ adds 50 € to cost — both for temporal emissions
-(from flow operation) and periodic emissions (e.g., from <code>Sizing.effects_per_size</code>).</p>
-<h3 id="time-varying-temporal-only">Time-Varying (temporal only)<a class="headerlink" href="#time-varying-temporal-only" title="Permanent link">&para;</a></h3>
-<p>Use <code>contribution_from_per_hour</code> for time-varying factors that override the
-scalar in the temporal domain:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">effects</span> <span class="o">=</span> <span class="p">[</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>    <span class="n">Effect</span><span class="p">(</span>
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>        <span class="s1">&#39;cost&#39;</span><span class="p">,</span>
-<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>        <span class="n">is_objective</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>        <span class="n">contribution_from</span><span class="o">=</span><span class="p">{</span><span class="s1">&#39;co2&#39;</span><span class="p">:</span> <span class="mi">50</span><span class="p">},</span>  <span class="c1"># scalar for periodic domain</span>
-<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>        <span class="n">contribution_from_per_hour</span><span class="o">=</span><span class="p">{</span><span class="s1">&#39;co2&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mi">40</span><span class="p">,</span> <span class="mi">50</span><span class="p">,</span> <span class="mi">60</span><span class="p">]},</span>  <span class="c1"># time-varying for temporal domain</span>
-<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>    <span class="p">),</span>
-<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>    <span class="n">Effect</span><span class="p">(</span><span class="s1">&#39;co2&#39;</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="s1">&#39;kg&#39;</span><span class="p">),</span>
-<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="p">]</span>
+<h2 id="investment-effects">Investment Effects<a class="headerlink" href="#investment-effects" title="Permanent link">&para;</a></h2>
+<p>Sizing can contribute to tracked effects (cost, CO₂, etc.) via two mechanisms:</p>
+<h3 id="per-size-effects">Per-Size Effects<a class="headerlink" href="#per-size-effects" title="Permanent link">&para;</a></h3>
+<p>Cost proportional to the invested size (e.g., €/MW or kg_CO₂/MWh):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># 500 €/MW investment cost</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="n">Flow</span><span class="p">(</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>    <span class="n">bus</span><span class="o">=</span><span class="s1">&#39;elec&#39;</span><span class="p">,</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>    <span class="n">size</span><span class="o">=</span><span class="n">Sizing</span><span class="p">(</span><span class="n">min_size</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span> <span class="n">max_size</span><span class="o">=</span><span class="mi">200</span><span class="p">,</span> <span class="n">mandatory</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">effects_per_size</span><span class="o">=</span><span class="p">{</span><span class="s1">&#39;cost&#39;</span><span class="p">:</span> <span class="mi">500</span><span class="p">}),</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="p">)</span>
 </code></pre></div>
-<h3 id="transitive-chains">Transitive Chains<a class="headerlink" href="#transitive-chains" title="Permanent link">&para;</a></h3>
-<p>Contributions chain transitively. A PE → CO₂ → cost chain is modeled as:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">effects</span> <span class="o">=</span> <span class="p">[</span>
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>    <span class="n">Effect</span><span class="p">(</span><span class="s1">&#39;cost&#39;</span><span class="p">,</span> <span class="n">is_objective</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">contribution_from</span><span class="o">=</span><span class="p">{</span><span class="s1">&#39;co2&#39;</span><span class="p">:</span> <span class="mi">50</span><span class="p">}),</span>
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>    <span class="n">Effect</span><span class="p">(</span><span class="s1">&#39;co2&#39;</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="s1">&#39;kg&#39;</span><span class="p">,</span> <span class="n">contribution_from</span><span class="o">=</span><span class="p">{</span><span class="s1">&#39;pe&#39;</span><span class="p">:</span> <span class="mf">0.3</span><span class="p">}),</span>
-<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>    <span class="n">Effect</span><span class="p">(</span><span class="s1">&#39;pe&#39;</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="s1">&#39;kWh&#39;</span><span class="p">),</span>
-<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="p">]</span>
+<h3 id="fixed-effects">Fixed Effects<a class="headerlink" href="#fixed-effects" title="Permanent link">&para;</a></h3>
+<p>One-time cost charged when the component is built. Only applies to optional
+sizing (<code>mandatory=False</code>) since it's gated by the binary indicator:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1"># 10,000 € fixed cost if built, plus 500 €/MW</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="n">Flow</span><span class="p">(</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>    <span class="n">bus</span><span class="o">=</span><span class="s1">&#39;elec&#39;</span><span class="p">,</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>    <span class="n">size</span><span class="o">=</span><span class="n">Sizing</span><span class="p">(</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>        <span class="n">min_size</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span> <span class="n">max_size</span><span class="o">=</span><span class="mi">200</span><span class="p">,</span> <span class="n">mandatory</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>        <span class="n">effects_per_size</span><span class="o">=</span><span class="p">{</span><span class="s1">&#39;cost&#39;</span><span class="p">:</span> <span class="mi">500</span><span class="p">},</span>
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>        <span class="n">effects_fixed</span><span class="o">=</span><span class="p">{</span><span class="s1">&#39;cost&#39;</span><span class="p">:</span> <span class="mi">10_000</span><span class="p">},</span>
+<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>    <span class="p">),</span>
+<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="p">)</span>
 </code></pre></div>
-<h3 id="restrictions">Restrictions<a class="headerlink" href="#restrictions" title="Permanent link">&para;</a></h3>
-<ul>
-<li><strong>No self-references</strong>: an effect cannot reference itself</li>
-<li><strong>No cycles</strong>: <code>cost → co2 → cost</code> is rejected at build time</li>
-</ul>
-<p>See <a href="../../math/effects/#cross-effect-contributions">Effects (Math)</a> for the
-formulation.</p>
-<h2 id="accessing-results">Accessing Results<a class="headerlink" href="#accessing-results" title="Permanent link">&para;</a></h2>
-<p>After solving, the <code>Result</code> provides several views into effect values:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="n">result</span> <span class="o">=</span> <span class="n">optimize</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
+<h2 id="storage-sizing">Storage Sizing<a class="headerlink" href="#storage-sizing" title="Permanent link">&para;</a></h2>
+<p><code>Storage.capacity</code> also accepts <code>Sizing</code> for optimizing battery or tank size:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fluxopt</span><span class="w"> </span><span class="kn">import</span> <span class="n">Flow</span><span class="p">,</span> <span class="n">Sizing</span><span class="p">,</span> <span class="n">Storage</span>
 <a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>
-<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="c1"># Objective value (shortcut for the objective effect&#39;s total)</span>
-<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">objective</span><span class="p">)</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="n">charge</span> <span class="o">=</span> <span class="n">Flow</span><span class="p">(</span><span class="n">bus</span><span class="o">=</span><span class="s1">&#39;elec&#39;</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="mi">50</span><span class="p">)</span>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="n">discharge</span> <span class="o">=</span> <span class="n">Flow</span><span class="p">(</span><span class="n">bus</span><span class="o">=</span><span class="s1">&#39;elec&#39;</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="mi">50</span><span class="p">)</span>
 <a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>
-<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="c1"># Total effect values as (effect,) DataArray</span>
-<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">effect_totals</span><span class="p">)</span>
-<a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a>
-<a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a><span class="c1"># Temporal: per-timestep effect values as (effect, time) DataArray</span>
-<a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a><span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">effects_temporal</span><span class="p">)</span>
-<a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a>
-<a id="__codelineno-7-12" name="__codelineno-7-12" href="#__codelineno-7-12"></a><span class="c1"># Periodic: sizing and fixed-cost effect values as (effect,) DataArray</span>
-<a id="__codelineno-7-13" name="__codelineno-7-13" href="#__codelineno-7-13"></a><span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">effects_periodic</span><span class="p">)</span>
+<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="n">battery</span> <span class="o">=</span> <span class="n">Storage</span><span class="p">(</span>
+<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a>    <span class="s1">&#39;battery&#39;</span><span class="p">,</span>
+<a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a>    <span class="n">charging</span><span class="o">=</span><span class="n">charge</span><span class="p">,</span>
+<a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a>    <span class="n">discharging</span><span class="o">=</span><span class="n">discharge</span><span class="p">,</span>
+<a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a>    <span class="n">capacity</span><span class="o">=</span><span class="n">Sizing</span><span class="p">(</span><span class="n">min_size</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">max_size</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">mandatory</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">effects_per_size</span><span class="o">=</span><span class="p">{</span><span class="s1">&#39;cost&#39;</span><span class="p">:</span> <span class="mi">200</span><span class="p">}),</span>
+<a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a><span class="p">)</span>
 </code></pre></div>
-<h3 id="per-contributor-breakdown">Per-Contributor Breakdown<a class="headerlink" href="#per-contributor-breakdown" title="Permanent link">&para;</a></h3>
-<p><code>effect_contributions()</code> decomposes effect totals into per-contributor parts
-on a unified <code>contributor</code> dimension (flow IDs + storage IDs), matching the
-model's temporal/periodic domain structure:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="n">contrib</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">effect_contributions</span><span class="p">()</span>
-<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>
-<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="c1"># Per-timestep contributions (contributor, effect, time) — flows only</span>
-<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="n">contrib</span><span class="p">[</span><span class="s1">&#39;temporal&#39;</span><span class="p">]</span>
-<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>
-<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="c1"># Periodic contributions (contributor, effect) — flows + storages</span>
-<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="n">contrib</span><span class="p">[</span><span class="s1">&#39;periodic&#39;</span><span class="p">]</span>
-<a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a>
-<a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a><span class="c1"># Total per contributor: temporal summed over time + periodic (contributor, effect)</span>
-<a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a><span class="n">contrib</span><span class="p">[</span><span class="s1">&#39;total&#39;</span><span class="p">]</span>
-</code></pre></div>
-<p>The contributions are validated against the solver totals — if they don't sum
-to <code>effect_totals</code>, a <code>ValueError</code> is raised.</p>
-<p>Cross-effects (e.g., CO₂ → cost) are attributed to the originating contributor.
-If a gas flow emits CO₂ priced at 50 €/kg, its cost contribution includes both
-the direct cost and the carbon tax portion.</p>
+<h2 id="interaction-with-other-features">Interaction with Other Features<a class="headerlink" href="#interaction-with-other-features" title="Permanent link">&para;</a></h2>
+<h3 id="with-bounds">With Bounds<a class="headerlink" href="#with-bounds" title="Permanent link">&para;</a></h3>
+<p>Relative bounds (<code>relative_minimum</code>, <code>relative_maximum</code>) are fractions of the
+<strong>optimized</strong> size variable, not a fixed number. If the solver picks 80 MW and
+<code>relative_minimum=0.3</code>, the minimum flow rate is 24 MW.</p>
+<h3 id="with-status">With Status<a class="headerlink" href="#with-status" title="Permanent link">&para;</a></h3>
+<p>When a flow has both <code>Sizing</code> and <code>Status</code>, a big-M formulation decouples the
+binary on/off from the continuous size. See <a href="../status/">Status</a> for details.</p>
 <h2 id="full-example">Full Example<a class="headerlink" href="#full-example" title="Permanent link">&para;</a></h2>
-<p>Two sources with different cost/CO2 tradeoffs, subject to an emission cap:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">datetime</span>
-<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fluxopt</span><span class="w"> </span><span class="kn">import</span> <span class="n">Bus</span><span class="p">,</span> <span class="n">Effect</span><span class="p">,</span> <span class="n">Flow</span><span class="p">,</span> <span class="n">Port</span><span class="p">,</span> <span class="n">optimize</span>
-<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>
-<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="n">timesteps</span> <span class="o">=</span> <span class="p">[</span><span class="n">datetime</span><span class="p">(</span><span class="mi">2024</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">h</span><span class="p">)</span> <span class="k">for</span> <span class="n">h</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">3</span><span class="p">)]</span>
-<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>
-<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="n">demand</span> <span class="o">=</span> <span class="n">Flow</span><span class="p">(</span><span class="n">bus</span><span class="o">=</span><span class="s1">&#39;elec&#39;</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">fixed_relative_profile</span><span class="o">=</span><span class="p">[</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.8</span><span class="p">,</span> <span class="mf">0.6</span><span class="p">])</span>
-<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="n">cheap_dirty</span> <span class="o">=</span> <span class="n">Flow</span><span class="p">(</span><span class="n">bus</span><span class="o">=</span><span class="s1">&#39;elec&#39;</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="mi">200</span><span class="p">,</span> <span class="n">effects_per_flow_hour</span><span class="o">=</span><span class="p">{</span><span class="s1">&#39;cost&#39;</span><span class="p">:</span> <span class="mf">0.02</span><span class="p">,</span> <span class="s1">&#39;co2&#39;</span><span class="p">:</span> <span class="mf">1.0</span><span class="p">})</span>
-<a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a><span class="n">expensive_clean</span> <span class="o">=</span> <span class="n">Flow</span><span class="p">(</span><span class="n">bus</span><span class="o">=</span><span class="s1">&#39;elec&#39;</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="mi">200</span><span class="p">,</span> <span class="n">effects_per_flow_hour</span><span class="o">=</span><span class="p">{</span><span class="s1">&#39;cost&#39;</span><span class="p">:</span> <span class="mf">0.10</span><span class="p">,</span> <span class="s1">&#39;co2&#39;</span><span class="p">:</span> <span class="mf">0.0</span><span class="p">})</span>
-<a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a>
-<a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a><span class="n">result</span> <span class="o">=</span> <span class="n">optimize</span><span class="p">(</span>
-<a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a>    <span class="n">timesteps</span><span class="o">=</span><span class="n">timesteps</span><span class="p">,</span>
-<a id="__codelineno-9-12" name="__codelineno-9-12" href="#__codelineno-9-12"></a>    <span class="n">buses</span><span class="o">=</span><span class="p">[</span><span class="n">Bus</span><span class="p">(</span><span class="s1">&#39;elec&#39;</span><span class="p">)],</span>
-<a id="__codelineno-9-13" name="__codelineno-9-13" href="#__codelineno-9-13"></a>    <span class="n">effects</span><span class="o">=</span><span class="p">[</span>
-<a id="__codelineno-9-14" name="__codelineno-9-14" href="#__codelineno-9-14"></a>        <span class="n">Effect</span><span class="p">(</span><span class="s1">&#39;cost&#39;</span><span class="p">,</span> <span class="n">is_objective</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span>
-<a id="__codelineno-9-15" name="__codelineno-9-15" href="#__codelineno-9-15"></a>        <span class="n">Effect</span><span class="p">(</span><span class="s1">&#39;co2&#39;</span><span class="p">,</span> <span class="n">maximum_total</span><span class="o">=</span><span class="mi">100</span><span class="p">),</span>
-<a id="__codelineno-9-16" name="__codelineno-9-16" href="#__codelineno-9-16"></a>    <span class="p">],</span>
-<a id="__codelineno-9-17" name="__codelineno-9-17" href="#__codelineno-9-17"></a>    <span class="n">ports</span><span class="o">=</span><span class="p">[</span>
-<a id="__codelineno-9-18" name="__codelineno-9-18" href="#__codelineno-9-18"></a>        <span class="n">Port</span><span class="p">(</span><span class="s1">&#39;cheap&#39;</span><span class="p">,</span> <span class="n">imports</span><span class="o">=</span><span class="p">[</span><span class="n">cheap_dirty</span><span class="p">]),</span>
-<a id="__codelineno-9-19" name="__codelineno-9-19" href="#__codelineno-9-19"></a>        <span class="n">Port</span><span class="p">(</span><span class="s1">&#39;clean&#39;</span><span class="p">,</span> <span class="n">imports</span><span class="o">=</span><span class="p">[</span><span class="n">expensive_clean</span><span class="p">]),</span>
-<a id="__codelineno-9-20" name="__codelineno-9-20" href="#__codelineno-9-20"></a>        <span class="n">Port</span><span class="p">(</span><span class="s1">&#39;demand&#39;</span><span class="p">,</span> <span class="n">exports</span><span class="o">=</span><span class="p">[</span><span class="n">demand</span><span class="p">]),</span>
-<a id="__codelineno-9-21" name="__codelineno-9-21" href="#__codelineno-9-21"></a>    <span class="p">],</span>
-<a id="__codelineno-9-22" name="__codelineno-9-22" href="#__codelineno-9-22"></a><span class="p">)</span>
-<a id="__codelineno-9-23" name="__codelineno-9-23" href="#__codelineno-9-23"></a>
-<a id="__codelineno-9-24" name="__codelineno-9-24" href="#__codelineno-9-24"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Total cost: </span><span class="si">{</span><span class="n">result</span><span class="o">.</span><span class="n">objective</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<a id="__codelineno-9-25" name="__codelineno-9-25" href="#__codelineno-9-25"></a><span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">effect_totals</span><span class="p">)</span>
+<p>Two competing sources — the solver decides whether to invest in a cheaper source:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">datetime</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fluxopt</span><span class="w"> </span><span class="kn">import</span> <span class="n">Bus</span><span class="p">,</span> <span class="n">Effect</span><span class="p">,</span> <span class="n">Flow</span><span class="p">,</span> <span class="n">Port</span><span class="p">,</span> <span class="n">Sizing</span><span class="p">,</span> <span class="n">optimize</span>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="n">timesteps</span> <span class="o">=</span> <span class="p">[</span><span class="n">datetime</span><span class="p">(</span><span class="mi">2024</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">h</span><span class="p">)</span> <span class="k">for</span> <span class="n">h</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">4</span><span class="p">)]</span>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="n">demand</span> <span class="o">=</span> <span class="n">Flow</span><span class="p">(</span><span class="n">bus</span><span class="o">=</span><span class="s1">&#39;elec&#39;</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">fixed_relative_profile</span><span class="o">=</span><span class="p">[</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">])</span>
+<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>
+<a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="c1"># Always-available expensive source</span>
+<a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a><span class="n">grid</span> <span class="o">=</span> <span class="n">Flow</span><span class="p">(</span><span class="n">bus</span><span class="o">=</span><span class="s1">&#39;elec&#39;</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="mi">200</span><span class="p">,</span> <span class="n">effects_per_flow_hour</span><span class="o">=</span><span class="p">{</span><span class="s1">&#39;cost&#39;</span><span class="p">:</span> <span class="mf">0.10</span><span class="p">})</span>
+<a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a>
+<a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a><span class="c1"># Optional cheap source with investment cost</span>
+<a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a><span class="n">solar</span> <span class="o">=</span> <span class="n">Flow</span><span class="p">(</span>
+<a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a>    <span class="n">bus</span><span class="o">=</span><span class="s1">&#39;elec&#39;</span><span class="p">,</span>
+<a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a>    <span class="n">size</span><span class="o">=</span><span class="n">Sizing</span><span class="p">(</span><span class="n">min_size</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span> <span class="n">max_size</span><span class="o">=</span><span class="mi">200</span><span class="p">,</span> <span class="n">mandatory</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">effects_per_size</span><span class="o">=</span><span class="p">{</span><span class="s1">&#39;cost&#39;</span><span class="p">:</span> <span class="mi">20</span><span class="p">}),</span>
+<a id="__codelineno-8-15" name="__codelineno-8-15" href="#__codelineno-8-15"></a>    <span class="n">effects_per_flow_hour</span><span class="o">=</span><span class="p">{</span><span class="s1">&#39;cost&#39;</span><span class="p">:</span> <span class="mf">0.01</span><span class="p">},</span>
+<a id="__codelineno-8-16" name="__codelineno-8-16" href="#__codelineno-8-16"></a>    <span class="n">fixed_relative_profile</span><span class="o">=</span><span class="p">[</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.8</span><span class="p">,</span> <span class="mf">0.8</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">],</span>  <span class="c1"># only available midday</span>
+<a id="__codelineno-8-17" name="__codelineno-8-17" href="#__codelineno-8-17"></a><span class="p">)</span>
+<a id="__codelineno-8-18" name="__codelineno-8-18" href="#__codelineno-8-18"></a>
+<a id="__codelineno-8-19" name="__codelineno-8-19" href="#__codelineno-8-19"></a><span class="n">result</span> <span class="o">=</span> <span class="n">optimize</span><span class="p">(</span>
+<a id="__codelineno-8-20" name="__codelineno-8-20" href="#__codelineno-8-20"></a>    <span class="n">timesteps</span><span class="o">=</span><span class="n">timesteps</span><span class="p">,</span>
+<a id="__codelineno-8-21" name="__codelineno-8-21" href="#__codelineno-8-21"></a>    <span class="n">buses</span><span class="o">=</span><span class="p">[</span><span class="n">Bus</span><span class="p">(</span><span class="s1">&#39;elec&#39;</span><span class="p">)],</span>
+<a id="__codelineno-8-22" name="__codelineno-8-22" href="#__codelineno-8-22"></a>    <span class="n">effects</span><span class="o">=</span><span class="p">[</span><span class="n">Effect</span><span class="p">(</span><span class="s1">&#39;cost&#39;</span><span class="p">,</span> <span class="n">is_objective</span><span class="o">=</span><span class="kc">True</span><span class="p">)],</span>
+<a id="__codelineno-8-23" name="__codelineno-8-23" href="#__codelineno-8-23"></a>    <span class="n">ports</span><span class="o">=</span><span class="p">[</span>
+<a id="__codelineno-8-24" name="__codelineno-8-24" href="#__codelineno-8-24"></a>        <span class="n">Port</span><span class="p">(</span><span class="s1">&#39;grid&#39;</span><span class="p">,</span> <span class="n">imports</span><span class="o">=</span><span class="p">[</span><span class="n">grid</span><span class="p">]),</span>
+<a id="__codelineno-8-25" name="__codelineno-8-25" href="#__codelineno-8-25"></a>        <span class="n">Port</span><span class="p">(</span><span class="s1">&#39;solar&#39;</span><span class="p">,</span> <span class="n">imports</span><span class="o">=</span><span class="p">[</span><span class="n">solar</span><span class="p">]),</span>
+<a id="__codelineno-8-26" name="__codelineno-8-26" href="#__codelineno-8-26"></a>        <span class="n">Port</span><span class="p">(</span><span class="s1">&#39;demand&#39;</span><span class="p">,</span> <span class="n">exports</span><span class="o">=</span><span class="p">[</span><span class="n">demand</span><span class="p">]),</span>
+<a id="__codelineno-8-27" name="__codelineno-8-27" href="#__codelineno-8-27"></a>    <span class="p">],</span>
+<a id="__codelineno-8-28" name="__codelineno-8-28" href="#__codelineno-8-28"></a><span class="p">)</span>
+<a id="__codelineno-8-29" name="__codelineno-8-29" href="#__codelineno-8-29"></a>
+<a id="__codelineno-8-30" name="__codelineno-8-30" href="#__codelineno-8-30"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Objective: </span><span class="si">{</span><span class="n">result</span><span class="o">.</span><span class="n">objective</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 </code></pre></div>
 <h2 id="parameters-summary">Parameters Summary<a class="headerlink" href="#parameters-summary" title="Permanent link">&para;</a></h2>
 <table>
@@ -1661,58 +1627,34 @@ the direct cost and the carbon tax portion.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>id</code></td>
-<td><code>str</code></td>
+<td><code>min_size</code></td>
+<td><code>float</code></td>
 <td>required</td>
-<td>Effect identifier</td>
+<td>Minimum size if invested</td>
 </tr>
 <tr>
-<td><code>unit</code></td>
-<td><code>str</code></td>
-<td><code>''</code></td>
-<td>Unit label</td>
+<td><code>max_size</code></td>
+<td><code>float</code></td>
+<td>required</td>
+<td>Maximum size</td>
 </tr>
 <tr>
-<td><code>is_objective</code></td>
+<td><code>mandatory</code></td>
 <td><code>bool</code></td>
-<td><code>False</code></td>
-<td>Whether this effect is minimized</td>
+<td><code>True</code></td>
+<td>If True, must be built (no binary indicator)</td>
 </tr>
 <tr>
-<td><code>maximum_total</code></td>
-<td><code>float \| None</code></td>
-<td><code>None</code></td>
-<td>Upper bound on total</td>
-</tr>
-<tr>
-<td><code>minimum_total</code></td>
-<td><code>float \| None</code></td>
-<td><code>None</code></td>
-<td>Lower bound on total</td>
-</tr>
-<tr>
-<td><code>maximum_per_hour</code></td>
-<td><code>TimeSeries \| None</code></td>
-<td><code>None</code></td>
-<td>Upper bound per timestep</td>
-</tr>
-<tr>
-<td><code>minimum_per_hour</code></td>
-<td><code>TimeSeries \| None</code></td>
-<td><code>None</code></td>
-<td>Lower bound per timestep</td>
-</tr>
-<tr>
-<td><code>contribution_from</code></td>
+<td><code>effects_per_size</code></td>
 <td><code>dict[str, float]</code></td>
 <td><code>{}</code></td>
-<td>Cross-effect factor (both domains)</td>
+<td>Effect cost per unit size (e.g., €/MW)</td>
 </tr>
 <tr>
-<td><code>contribution_from_per_hour</code></td>
-<td><code>dict[str, TimeSeries]</code></td>
+<td><code>effects_fixed</code></td>
+<td><code>dict[str, float]</code></td>
 <td><code>{}</code></td>
-<td>Cross-effect factor (temporal domain only)</td>
+<td>Fixed effect cost if built (optional only)</td>
 </tr>
 </tbody>
 </table>
@@ -1751,7 +1693,7 @@ the direct cost and the carbon tax portion.</p>
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../storage/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Storage">
+          <a href="../effects/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Effects">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -1761,20 +1703,20 @@ the direct cost and the carbon tax portion.</p>
                 Previous
               </span>
               <div class="md-ellipsis">
-                Storage
+                Effects
               </div>
             </div>
           </a>
         
         
           
-          <a href="../sizing/" class="md-footer__link md-footer__link--next" aria-label="Next: Sizing">
+          <a href="../status/" class="md-footer__link md-footer__link--next" aria-label="Next: Status">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Sizing
+                Status
               </div>
             </div>
             <div class="md-footer__button md-icon">

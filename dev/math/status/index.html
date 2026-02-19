@@ -11,10 +11,8 @@
       
       
       
-        <link rel="prev" href="../converters/">
+        <link rel="prev" href="../sizing/">
       
-      
-        <link rel="next" href="../effects/">
       
       
         
@@ -25,7 +23,7 @@
     
     
       
-        <title>Storage - fluxopt</title>
+        <title>Status - fluxopt</title>
       
     
     
@@ -78,7 +76,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#storage-dynamics" class="md-skip">
+        <a href="#status-onoff-constraints" class="md-skip">
           Skip to content
         </a>
       
@@ -112,7 +110,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Storage
+              Status
             
           </span>
         </div>
@@ -947,37 +945,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Storage
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../storage/" class="md-nav__link">
         
   
   
@@ -993,81 +964,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#charge-balance" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Charge Balance
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#charge-state-bounds" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Charge State Bounds
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#initial-cyclic-conditions" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Initial &amp; Cyclic Conditions
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#parameters" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Parameters
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#example" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Example
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -1133,10 +1029,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../status/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Status
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -1152,6 +1075,203 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#variables" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Variables
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#semi-continuous-flow-rates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Semi-Continuous Flow Rates
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#switch-transitions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Switch Transitions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#duration-tracking" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Duration Tracking
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Duration Tracking">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#uptime" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Uptime
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#downtime" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Downtime
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#minimum-duration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Minimum Duration
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#maximum-duration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Maximum Duration
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#previous-duration-carryover" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Previous Duration Carryover
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#effect-contributions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Effect Contributions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Effect Contributions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#running-costs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Running Costs
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#startup-costs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Startup Costs
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#interaction-with-sizing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Interaction with Sizing
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#parameters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parameters
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -1191,10 +1311,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#charge-balance" class="md-nav__link">
+  <a href="#overview" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Charge Balance
+        Overview
       
     </span>
   </a>
@@ -1202,10 +1322,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#charge-state-bounds" class="md-nav__link">
+  <a href="#variables" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Charge State Bounds
+        Variables
       
     </span>
   </a>
@@ -1213,10 +1333,143 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#initial-cyclic-conditions" class="md-nav__link">
+  <a href="#semi-continuous-flow-rates" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Initial &amp; Cyclic Conditions
+        Semi-Continuous Flow Rates
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#switch-transitions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Switch Transitions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#duration-tracking" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Duration Tracking
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Duration Tracking">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#uptime" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Uptime
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#downtime" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Downtime
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#minimum-duration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Minimum Duration
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#maximum-duration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Maximum Duration
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#previous-duration-carryover" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Previous Duration Carryover
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#effect-contributions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Effect Contributions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Effect Contributions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#running-costs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Running Costs
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#startup-costs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Startup Costs
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#interaction-with-sizing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Interaction with Sizing
       
     </span>
   </a>
@@ -1228,17 +1481,6 @@
     <span class="md-ellipsis">
       
         Parameters
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#example" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Example
       
     </span>
   </a>
@@ -1265,42 +1507,146 @@
   
 
 
-<h1 id="storage-dynamics">Storage Dynamics<a class="headerlink" href="#storage-dynamics" title="Permanent link">&para;</a></h1>
-<h2 id="charge-balance">Charge Balance<a class="headerlink" href="#charge-balance" title="Permanent link">&para;</a></h2>
-<p>The stored energy evolves over time according to charging, discharging, and
-self-discharge losses:</p>
+<h1 id="status-onoff-constraints">Status (On/Off Constraints)<a class="headerlink" href="#status-onoff-constraints" title="Permanent link">&para;</a></h1>
+<h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
+<p>Status adds binary on/off behavior to flows. The core variables are a binary
+status indicator and transition indicators (startup/shutdown). Duration tracking
+variables enforce minimum and maximum consecutive up- and downtime.</p>
+<h2 id="variables">Variables<a class="headerlink" href="#variables" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Symbol</th>
+<th>Code</th>
+<th>Domain</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><span class="arithmatex">\(\sigma_{f,t}\)</span></td>
+<td><code>flow_on[flow, time]</code></td>
+<td><span class="arithmatex">\(\{0, 1\}\)</span></td>
+<td>On/off indicator</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\tau^+_{f,t}\)</span></td>
+<td><code>flow_startup[flow, time]</code></td>
+<td><span class="arithmatex">\(\{0, 1\}\)</span></td>
+<td>Startup event indicator</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\tau^-_{f,t}\)</span></td>
+<td><code>flow_shutdown[flow, time]</code></td>
+<td><span class="arithmatex">\(\{0, 1\}\)</span></td>
+<td>Shutdown event indicator</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(D^{\text{up}}_{f,t}\)</span></td>
+<td><code>uptime[flow, time]</code></td>
+<td><span class="arithmatex">\(\geq 0\)</span></td>
+<td>Consecutive uptime [h]</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(D^{\text{down}}_{f,t}\)</span></td>
+<td><code>downtime[flow, time]</code></td>
+<td><span class="arithmatex">\(\geq 0\)</span></td>
+<td>Consecutive downtime [h]</td>
+</tr>
+</tbody>
+</table>
+<h2 id="semi-continuous-flow-rates">Semi-Continuous Flow Rates<a class="headerlink" href="#semi-continuous-flow-rates" title="Permanent link">&para;</a></h2>
+<p>With fixed size, the on/off indicator gates the flow rate bounds:</p>
 <div class="arithmatex">\[
-E_{s,t+1} = E_{s,t} \left(1 - \delta_s\right)^{\Delta t_t} + P^{\text{c}}_{s,t} \, \eta^{\text{c}}_s \, \Delta t_t - \frac{P^{\text{d}}_{s,t}}{\eta^{\text{d}}_s} \, \Delta t_t
+\bar{P}_f \cdot \underline{p}_{f,t} \cdot \sigma_{f,t} \leq P_{f,t} \leq \bar{P}_f \cdot \bar{p}_{f,t} \cdot \sigma_{f,t}
 \]</div>
-<p>where:</p>
-<ul>
-<li><span class="arithmatex">\(E_{s,t}\)</span> — stored energy at the start of timestep <span class="arithmatex">\(t\)</span></li>
-<li><span class="arithmatex">\(P^{\text{c}}_{s,t}\)</span> — charging flow rate (energy entering the storage)</li>
-<li><span class="arithmatex">\(P^{\text{d}}_{s,t}\)</span> — discharging flow rate (energy leaving the storage)</li>
-<li><span class="arithmatex">\(\eta^{\text{c}}_s\)</span> — charging efficiency (losses during charging)</li>
-<li><span class="arithmatex">\(\eta^{\text{d}}_s\)</span> — discharging efficiency (losses during discharging)</li>
-<li><span class="arithmatex">\(\delta_s \in [0, 1]\)</span> — self-discharge rate per hour</li>
-<li><span class="arithmatex">\(\Delta t_t\)</span> — timestep duration in hours</li>
-</ul>
-<p>The charge state has <span class="arithmatex">\(|\mathcal{T}| + 1\)</span> values (one before each timestep plus one
-after the last timestep).</p>
-<h2 id="charge-state-bounds">Charge State Bounds<a class="headerlink" href="#charge-state-bounds" title="Permanent link">&para;</a></h2>
-<p>The charge state is bounded by relative SOC limits scaled by the storage capacity:</p>
+<p>When <span class="arithmatex">\(\sigma_{f,t} = 0\)</span>: <span class="arithmatex">\(P_{f,t} = 0\)</span>. When <span class="arithmatex">\(\sigma_{f,t} = 1\)</span>:
+<span class="arithmatex">\(P_{f,t} \in [\bar{P}_f \underline{p}, \bar{P}_f \bar{p}]\)</span>.</p>
+<p>This gives the semi-continuous behavior <span class="arithmatex">\(\{0\} \cup [\underline{P}, \bar{P}]\)</span>.</p>
+<h2 id="switch-transitions">Switch Transitions<a class="headerlink" href="#switch-transitions" title="Permanent link">&para;</a></h2>
+<p>Startup and shutdown indicators are linked to status changes:</p>
 <div class="arithmatex">\[
-\bar{E}_s \cdot \underline{e}_s \leq E_{s,t} \leq \bar{E}_s \cdot \bar{e}_s \quad \forall \, s, t
+\tau^+_{f,t} - \tau^-_{f,t} = \sigma_{f,t} - \sigma_{f,t-1} \quad \forall \, t &gt; 0
 \]</div>
-<h2 id="initial-cyclic-conditions">Initial &amp; Cyclic Conditions<a class="headerlink" href="#initial-cyclic-conditions" title="Permanent link">&para;</a></h2>
-<p><strong>Fixed initial state:</strong></p>
+<p>At the first timestep with known previous state <span class="arithmatex">\(\sigma_{f,0}^{\text{prev}}\)</span>:</p>
 <div class="arithmatex">\[
-E_{s,t_0} = E_0
+\tau^+_{f,0} - \tau^-_{f,0} = \sigma_{f,0} - \sigma_{f,0}^{\text{prev}}
 \]</div>
-<p>where <span class="arithmatex">\(E_0\)</span> is <code>Storage.prior_level</code> (absolute MWh). If <code>prior_level</code> is <code>None</code>,
-the initial level is unconstrained (the optimizer chooses).</p>
-<p><strong>Cyclic condition</strong> (when <code>Storage.cyclic = True</code>):</p>
+<p>The previous state is derived from <code>Flow.prior</code>: on if the last prior value &gt; 0,
+off otherwise. Without <code>prior</code>, the initial transition is unconstrained.</p>
+<h2 id="duration-tracking">Duration Tracking<a class="headerlink" href="#duration-tracking" title="Permanent link">&para;</a></h2>
+<p>Duration tracking uses a Big-M formulation to count consecutive hours in a state.</p>
+<h3 id="uptime">Uptime<a class="headerlink" href="#uptime" title="Permanent link">&para;</a></h3>
+<p>The uptime variable <span class="arithmatex">\(D^{\text{up}}_{f,t}\)</span> tracks consecutive on-hours:</p>
+<p><strong>Reset when off:</strong></p>
 <div class="arithmatex">\[
-E_{s,t_{\text{end}}} = E_{s,t_0}
+D^{\text{up}}_{f,t} \leq \sigma_{f,t} \cdot M \quad \forall \, t
 \]</div>
-<p>This ensures the storage ends at the same level it started.</p>
+<p><strong>Forward accumulation:</strong></p>
+<div class="arithmatex">\[
+D^{\text{up}}_{f,t+1} \leq D^{\text{up}}_{f,t} + \Delta t_t \quad \forall \, t
+\]</div>
+<p><strong>Backward tightening (force accumulation when on):</strong></p>
+<div class="arithmatex">\[
+D^{\text{up}}_{f,t+1} \geq D^{\text{up}}_{f,t} + \Delta t_t + (\sigma_{f,t+1} - 1) \cdot M \quad \forall \, t
+\]</div>
+<p>where <span class="arithmatex">\(M\)</span> is the total horizon length (Big-M constant).</p>
+<h3 id="downtime">Downtime<a class="headerlink" href="#downtime" title="Permanent link">&para;</a></h3>
+<p>Downtime tracking uses the same formulation applied to the inverted state
+<span class="arithmatex">\((1 - \sigma_{f,t})\)</span>.</p>
+<h3 id="minimum-duration">Minimum Duration<a class="headerlink" href="#minimum-duration" title="Permanent link">&para;</a></h3>
+<p>Minimum uptime is enforced at shutdown transitions — the accumulated duration
+must meet the minimum before turning off:</p>
+<div class="arithmatex">\[
+D^{\text{up}}_{f,t} \geq D^{\text{up,min}} \cdot (\sigma_{f,t} - \sigma_{f,t+1}) \quad \forall \, t &lt; |\mathcal{T}|
+\]</div>
+<p>The term <span class="arithmatex">\((\sigma_{f,t} - \sigma_{f,t+1})\)</span> equals 1 only at shutdown
+(on → off), enforcing <span class="arithmatex">\(D^{\text{up}}_{f,t} \geq D^{\text{up,min}}\)</span>.</p>
+<p>Minimum downtime follows the same pattern on <span class="arithmatex">\((1 - \sigma)\)</span>.</p>
+<h3 id="maximum-duration">Maximum Duration<a class="headerlink" href="#maximum-duration" title="Permanent link">&para;</a></h3>
+<p>Maximum duration is enforced as an upper bound on the duration variable itself.</p>
+<h3 id="previous-duration-carryover">Previous Duration Carryover<a class="headerlink" href="#previous-duration-carryover" title="Permanent link">&para;</a></h3>
+<p>When <code>Flow.prior</code> provides historical state, the previous duration is computed
+by counting consecutive matching timesteps at the end of the prior. At <span class="arithmatex">\(t=0\)</span>:</p>
+<div class="arithmatex">\[
+D^{\text{up}}_{f,0} = \sigma_{f,0} \cdot (D^{\text{up,prev}} + \Delta t_0)
+\]</div>
+<p>If the previous uptime hasn't yet met the minimum, the unit is forced to stay on:</p>
+<div class="arithmatex">\[
+\sigma_{f,0} \geq 1 \quad \text{if } 0 &lt; D^{\text{up,prev}} &lt; D^{\text{up,min}}
+\]</div>
+<h2 id="effect-contributions">Effect Contributions<a class="headerlink" href="#effect-contributions" title="Permanent link">&para;</a></h2>
+<h3 id="running-costs">Running Costs<a class="headerlink" href="#running-costs" title="Permanent link">&para;</a></h3>
+<p>Running costs are charged per hour of operation, multiplied by the on-indicator:</p>
+<div class="arithmatex">\[
+\Phi_{k,t}^{\text{running}} = \sum_{f} r_{f,k,t} \cdot \sigma_{f,t} \cdot \Delta t_t
+\]</div>
+<p>where <span class="arithmatex">\(r_{f,k,t}\)</span> is <code>Status.effects_per_running_hour[k]</code>.</p>
+<h3 id="startup-costs">Startup Costs<a class="headerlink" href="#startup-costs" title="Permanent link">&para;</a></h3>
+<p>Startup costs are charged per startup event (no duration scaling):</p>
+<div class="arithmatex">\[
+\Phi_{k,t}^{\text{startup}} = \sum_{f} u_{f,k,t} \cdot \tau^+_{f,t}
+\]</div>
+<p>where <span class="arithmatex">\(u_{f,k,t}\)</span> is <code>Status.effects_per_startup[k]</code>.</p>
+<p>Both feed into the <a href="../effects/">per-timestep effect equation</a>.</p>
+<h2 id="interaction-with-sizing">Interaction with Sizing<a class="headerlink" href="#interaction-with-sizing" title="Permanent link">&para;</a></h2>
+<p>When a flow has both <code>Status</code> and <code>Sizing</code>, the on/off indicator and the size
+variable are decoupled via Big-M constraints:</p>
+<div class="arithmatex">\[
+P_{f,t} \leq \sigma_{f,t} \cdot M^+ \qquad \text{(on-indicator gates flow)}
+\]</div>
+<div class="arithmatex">\[
+P_{f,t} \leq S_f \cdot \bar{p}_{f,t} \qquad \text{(rate limited by size)}
+\]</div>
+<div class="arithmatex">\[
+P_{f,t} \geq (\sigma_{f,t} - 1) \cdot M^- + S_f \cdot \underline{p}_{f,t} \qquad \text{(minimum when on)}
+\]</div>
+<p>where <span class="arithmatex">\(M^+ = S^+ \cdot \bar{p}_{f,t}\)</span> and <span class="arithmatex">\(M^- = S^+ \cdot \underline{p}_{f,t}\)</span>,
+using the maximum possible size <span class="arithmatex">\(S^+\)</span> as Big-M.</p>
+<p>An additional constraint prevents the unit from being "on" with zero size:</p>
+<div class="arithmatex">\[
+\sigma_{f,t} \leq S_f \quad \forall \, t
+\]</div>
 <h2 id="parameters">Parameters<a class="headerlink" href="#parameters" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -1312,65 +1658,68 @@ E_{s,t_{\text{end}}} = E_{s,t_0}
 </thead>
 <tbody>
 <tr>
-<td><span class="arithmatex">\(E_{s,t}\)</span></td>
-<td>Stored energy variable</td>
-<td><code>storage--level[storage, time]</code></td>
+<td><span class="arithmatex">\(\sigma_{f,t}\)</span></td>
+<td>On/off binary</td>
+<td><code>flow_on[flow, time]</code></td>
 </tr>
 <tr>
-<td><span class="arithmatex">\(P^{\text{c}}_{s,t}\)</span></td>
-<td>Charging flow rate</td>
-<td><code>flow_rate[charge_flow, time]</code></td>
+<td><span class="arithmatex">\(\tau^+_{f,t}\)</span></td>
+<td>Startup indicator</td>
+<td><code>flow_startup[flow, time]</code></td>
 </tr>
 <tr>
-<td><span class="arithmatex">\(P^{\text{d}}_{s,t}\)</span></td>
-<td>Discharging flow rate</td>
-<td><code>flow_rate[discharge_flow, time]</code></td>
+<td><span class="arithmatex">\(\tau^-_{f,t}\)</span></td>
+<td>Shutdown indicator</td>
+<td><code>flow_shutdown[flow, time]</code></td>
 </tr>
 <tr>
-<td><span class="arithmatex">\(\bar{E}_s\)</span></td>
-<td>Storage capacity</td>
-<td><code>Storage.capacity</code></td>
+<td><span class="arithmatex">\(D^{\text{up}}_{f,t}\)</span></td>
+<td>Consecutive uptime</td>
+<td><code>uptime[flow, time]</code></td>
 </tr>
 <tr>
-<td><span class="arithmatex">\(\eta^{\text{c}}_s\)</span></td>
-<td>Charging efficiency</td>
-<td><code>Storage.eta_charge</code></td>
+<td><span class="arithmatex">\(D^{\text{down}}_{f,t}\)</span></td>
+<td>Consecutive downtime</td>
+<td><code>downtime[flow, time]</code></td>
 </tr>
 <tr>
-<td><span class="arithmatex">\(\eta^{\text{d}}_s\)</span></td>
-<td>Discharging efficiency</td>
-<td><code>Storage.eta_discharge</code></td>
+<td><span class="arithmatex">\(D^{\text{up,min}}\)</span></td>
+<td>Minimum uptime</td>
+<td><code>Status.min_uptime</code></td>
 </tr>
 <tr>
-<td><span class="arithmatex">\(\delta_s\)</span></td>
-<td>Self-discharge rate</td>
-<td><code>Storage.relative_loss_per_hour</code></td>
+<td><span class="arithmatex">\(D^{\text{up,max}}\)</span></td>
+<td>Maximum uptime</td>
+<td><code>Status.max_uptime</code></td>
 </tr>
 <tr>
-<td><span class="arithmatex">\(\underline{e}_s\)</span></td>
-<td>Relative min SOC</td>
-<td><code>Storage.relative_minimum_level</code></td>
+<td><span class="arithmatex">\(D^{\text{down,min}}\)</span></td>
+<td>Minimum downtime</td>
+<td><code>Status.min_downtime</code></td>
 </tr>
 <tr>
-<td><span class="arithmatex">\(\bar{e}_s\)</span></td>
-<td>Relative max SOC</td>
-<td><code>Storage.relative_maximum_level</code></td>
+<td><span class="arithmatex">\(D^{\text{down,max}}\)</span></td>
+<td>Maximum downtime</td>
+<td><code>Status.max_downtime</code></td>
 </tr>
 <tr>
-<td><span class="arithmatex">\(\Delta t_t\)</span></td>
-<td>Timestep duration</td>
-<td>dt</td>
+<td><span class="arithmatex">\(r_{f,k,t}\)</span></td>
+<td>Running cost coefficient</td>
+<td><code>Status.effects_per_running_hour</code></td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(u_{f,k,t}\)</span></td>
+<td>Startup cost coefficient</td>
+<td><code>Status.effects_per_startup</code></td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(M\)</span></td>
+<td>Big-M (horizon length)</td>
+<td>computed</td>
 </tr>
 </tbody>
 </table>
 <p>See <a href="../notation/">Notation</a> for the full symbol table.</p>
-<h2 id="example">Example<a class="headerlink" href="#example" title="Permanent link">&para;</a></h2>
-<p>A battery with <span class="arithmatex">\(\bar{E} = 10\)</span> MWh, <span class="arithmatex">\(\eta^{\text{c}} = 0.95\)</span>,
-<span class="arithmatex">\(\eta^{\text{d}} = 0.95\)</span>, <span class="arithmatex">\(\delta = 0.001\)</span>/h, <span class="arithmatex">\(\Delta t = 1\)</span> h:</p>
-<p>Starting at <span class="arithmatex">\(E_0 = 5\)</span> MWh, charging at <span class="arithmatex">\(P^{\text{c}} = 2\)</span> MW:</p>
-<div class="arithmatex">\[
-E_1 = 5 \times (1 - 0.001)^{1} + 2 \times 0.95 \times 1 = 4.995 + 1.9 = 6.895 \; \text{MWh}
-\]</div>
 
 
 
@@ -1406,7 +1755,7 @@ E_1 = 5 \times (1 - 0.001)^{1} + 2 \times 0.95 \times 1 = 4.995 + 1.9 = 6.895 \;
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../converters/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Converters">
+          <a href="../sizing/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Sizing">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -1416,27 +1765,11 @@ E_1 = 5 \times (1 - 0.001)^{1} + 2 \times 0.95 \times 1 = 4.995 + 1.9 = 6.895 \;
                 Previous
               </span>
               <div class="md-ellipsis">
-                Converters
+                Sizing
               </div>
             </div>
           </a>
         
-        
-          
-          <a href="../effects/" class="md-footer__link md-footer__link--next" aria-label="Next: Effects">
-            <div class="md-footer__title">
-              <span class="md-footer__direction">
-                Next
-              </span>
-              <div class="md-ellipsis">
-                Effects
-              </div>
-            </div>
-            <div class="md-footer__button md-icon">
-              
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
-            </div>
-          </a>
         
       </nav>
     

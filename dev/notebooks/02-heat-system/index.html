@@ -572,6 +572,62 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/sizing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sizing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/status/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Status
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -807,10 +863,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#charge-state" class="md-nav__link">
+  <a href="#storage-level" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Charge State
+        Storage Level
       
     </span>
   </a>
@@ -829,10 +885,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#effect-contributions" class="md-nav__link">
+  <a href="#effect-totals" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Effect Contributions
+        Effect Totals
       
     </span>
   </a>
@@ -1128,6 +1184,62 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../math/sizing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sizing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../math/status/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Status
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -1240,10 +1352,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#charge-state" class="md-nav__link">
+  <a href="#storage-level" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Charge State
+        Storage Level
       
     </span>
   </a>
@@ -1262,10 +1374,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#effect-contributions" class="md-nav__link">
+  <a href="#effect-totals" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Effect Contributions
+        Effect Totals
       
     </span>
   </a>
@@ -2067,8 +2179,8 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
 </div>
 </div>
 </div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell">
-<div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=2">
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs">
+<div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=2">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -2091,9 +2203,8 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">plotly.express</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">px</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">plotly.io</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pio</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">polars</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pl</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">fluxopt</span><span class="w"> </span><span class="kn">import</span> <span class="n">Bus</span><span class="p">,</span> <span class="n">Converter</span><span class="p">,</span> <span class="n">Effect</span><span class="p">,</span> <span class="n">Flow</span><span class="p">,</span> <span class="n">Port</span><span class="p">,</span> <span class="n">Storage</span><span class="p">,</span> <span class="n">solve</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">fluxopt</span><span class="w"> </span><span class="kn">import</span> <span class="n">Bus</span><span class="p">,</span> <span class="n">Converter</span><span class="p">,</span> <span class="n">Effect</span><span class="p">,</span> <span class="n">Flow</span><span class="p">,</span> <span class="n">Port</span><span class="p">,</span> <span class="n">Storage</span><span class="p">,</span> <span class="n">optimize</span>
 
 <span class="n">pio</span><span class="o">.</span><span class="n">renderers</span><span class="o">.</span><span class="n">default</span> <span class="o">=</span> <span class="s1">'notebook_connected'</span>
 </pre></div>
@@ -2102,33 +2213,10 @@ from datetime import datetime, timedelta
 
 import plotly.express as px
 import plotly.io as pio
-import polars as pl
 
-from fluxopt import Bus, Converter, Effect, Flow, Port, Storage, solve
+from fluxopt import Bus, Converter, Effect, Flow, Port, Storage, optimize
 
 pio.renderers.default = 'notebook_connected'</div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell-outputWrapper">
-<div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser">
-</div>
-<div class="jp-OutputArea jp-Cell-outputArea">
-<div class="jp-OutputArea-child">
-<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="application/vnd.jupyter.stderr" tabindex="0">
-<pre>
-<span class="ansi-red-fg">---------------------------------------------------------------------------</span>
-<span class="ansi-red-fg">ModuleNotFoundError</span>                       Traceback (most recent call last)
-<span class="ansi-cyan-fg">Cell</span><span class="ansi-cyan-fg"> </span><span class="ansi-green-fg">In[1]</span><span class="ansi-green-fg">, line 4</span>
-<span class="ansi-green-fg">      1</span> <span class="ansi-bold" style="color: rgb(0,135,0)">import</span><span style="color: rgb(188,188,188)"> </span><span class="ansi-blue-intense-fg ansi-bold">math</span>
-<span class="ansi-green-fg">      2</span> <span class="ansi-bold" style="color: rgb(0,135,0)">from</span><span style="color: rgb(188,188,188)"> </span><span class="ansi-blue-intense-fg ansi-bold">datetime</span><span style="color: rgb(188,188,188)"> </span><span class="ansi-bold" style="color: rgb(0,135,0)">import</span> datetime, timedelta
-<span class="ansi-green-fg">----&gt; </span><span class="ansi-green-fg">4</span> <span class="ansi-bold" style="color: rgb(0,135,0)">import</span><span style="color: rgb(188,188,188)"> </span><span class="ansi-blue-intense-fg ansi-bold">plotly</span><span class="ansi-blue-intense-fg ansi-bold">.</span><span class="ansi-blue-intense-fg ansi-bold">express</span><span style="color: rgb(188,188,188)"> </span><span class="ansi-bold" style="color: rgb(0,135,0)">as</span><span style="color: rgb(188,188,188)"> </span><span class="ansi-blue-intense-fg ansi-bold">px</span>
-<span class="ansi-green-fg">      5</span> <span class="ansi-bold" style="color: rgb(0,135,0)">import</span><span style="color: rgb(188,188,188)"> </span><span class="ansi-blue-intense-fg ansi-bold">plotly</span><span class="ansi-blue-intense-fg ansi-bold">.</span><span class="ansi-blue-intense-fg ansi-bold">io</span><span style="color: rgb(188,188,188)"> </span><span class="ansi-bold" style="color: rgb(0,135,0)">as</span><span style="color: rgb(188,188,188)"> </span><span class="ansi-blue-intense-fg ansi-bold">pio</span>
-<span class="ansi-green-fg">      6</span> <span class="ansi-bold" style="color: rgb(0,135,0)">import</span><span style="color: rgb(188,188,188)"> </span><span class="ansi-blue-intense-fg ansi-bold">polars</span><span style="color: rgb(188,188,188)"> </span><span class="ansi-bold" style="color: rgb(0,135,0)">as</span><span style="color: rgb(188,188,188)"> </span><span class="ansi-blue-intense-fg ansi-bold">pl</span>
-
-<span class="ansi-red-fg">ModuleNotFoundError</span>: No module named 'plotly'</pre>
 </div>
 </div>
 </div>
@@ -2146,8 +2234,8 @@ pattern, and gas prices have off-peak/peak tariffs.</p>
 </div>
 </div>
 </div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell">
-<div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=4">
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs">
+<div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=4">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -2166,9 +2254,7 @@ pattern, and gas prices have off-peak/peak tariffs.</p>
 </clipboard-copy>
 </div>
 <div class="highlight-ipynb hl-python"><pre><span></span><span class="n">n_hours</span> <span class="o">=</span> <span class="mi">48</span>
-<span class="n">timesteps</span> <span class="o">=</span> <span class="n">pl</span><span class="o">.</span><span class="n">datetime_range</span><span class="p">(</span>
-    <span class="n">datetime</span><span class="p">(</span><span class="mi">2024</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">15</span><span class="p">),</span> <span class="n">datetime</span><span class="p">(</span><span class="mi">2024</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">15</span><span class="p">)</span> <span class="o">+</span> <span class="n">timedelta</span><span class="p">(</span><span class="n">hours</span><span class="o">=</span><span class="n">n_hours</span> <span class="o">-</span> <span class="mi">1</span><span class="p">),</span> <span class="n">interval</span><span class="o">=</span><span class="s1">'1h'</span><span class="p">,</span> <span class="n">eager</span><span class="o">=</span><span class="kc">True</span>
-<span class="p">)</span>
+<span class="n">timesteps</span> <span class="o">=</span> <span class="p">[</span><span class="n">datetime</span><span class="p">(</span><span class="mi">2024</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">15</span><span class="p">)</span> <span class="o">+</span> <span class="n">timedelta</span><span class="p">(</span><span class="n">hours</span><span class="o">=</span><span class="n">h</span><span class="p">)</span> <span class="k">for</span> <span class="n">h</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_hours</span><span class="p">)]</span>
 
 <span class="c1"># Heat demand: sinusoidal pattern - peaks during business hours, low at night</span>
 <span class="n">heat_demand</span> <span class="o">=</span> <span class="p">[</span><span class="mi">50</span> <span class="o">+</span> <span class="mi">40</span> <span class="o">*</span> <span class="nb">max</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">math</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">math</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="p">((</span><span class="n">h</span> <span class="o">%</span> <span class="mi">24</span><span class="p">)</span> <span class="o">-</span> <span class="mi">6</span><span class="p">)</span> <span class="o">/</span> <span class="mi">12</span><span class="p">))</span> <span class="k">for</span> <span class="n">h</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_hours</span><span class="p">)]</span>
@@ -2177,38 +2263,13 @@ pattern, and gas prices have off-peak/peak tariffs.</p>
 <span class="n">gas_price</span> <span class="o">=</span> <span class="p">[</span><span class="mf">0.04</span> <span class="k">if</span> <span class="p">(</span><span class="n">h</span> <span class="o">%</span> <span class="mi">24</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">6</span> <span class="ow">or</span> <span class="p">(</span><span class="n">h</span> <span class="o">%</span> <span class="mi">24</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">22</span> <span class="k">else</span> <span class="mf">0.08</span> <span class="k">for</span> <span class="n">h</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_hours</span><span class="p">)]</span>
 </pre></div>
 <div class="clipboard-copy-txt" id="cell-2">n_hours = 48
-timesteps = pl.datetime_range(
-    datetime(2024, 1, 15), datetime(2024, 1, 15) + timedelta(hours=n_hours - 1), interval='1h', eager=True
-)
+timesteps = [datetime(2024, 1, 15) + timedelta(hours=h) for h in range(n_hours)]
 
 # Heat demand: sinusoidal pattern - peaks during business hours, low at night
 heat_demand = [50 + 40 * max(0.0, math.sin(math.pi * ((h % 24) - 6) / 12)) for h in range(n_hours)]
 
 # Gas price: off-peak (22:00-06:00) at 0.04 EUR/kWh, peak at 0.08 EUR/kWh
 gas_price = [0.04 if (h % 24) &lt; 6 or (h % 24) &gt;= 22 else 0.08 for h in range(n_hours)]</div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell-outputWrapper">
-<div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser">
-</div>
-<div class="jp-OutputArea jp-Cell-outputArea">
-<div class="jp-OutputArea-child">
-<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="application/vnd.jupyter.stderr" tabindex="0">
-<pre>
-<span class="ansi-red-fg">---------------------------------------------------------------------------</span>
-<span class="ansi-red-fg">NameError</span>                                 Traceback (most recent call last)
-<span class="ansi-cyan-fg">Cell</span><span class="ansi-cyan-fg"> </span><span class="ansi-green-fg">In[2]</span><span class="ansi-green-fg">, line 2</span>
-<span class="ansi-green-fg">      1</span> n_hours = <span class="ansi-green-fg">48</span>
-<span class="ansi-green-fg">----&gt; </span><span class="ansi-green-fg">2</span> timesteps = <span class="ansi-yellow-bg">pl</span>.datetime_range(
-<span class="ansi-green-fg">      3</span>     datetime(<span class="ansi-green-fg">2024</span>, <span class="ansi-green-fg">1</span>, <span class="ansi-green-fg">15</span>), datetime(<span class="ansi-green-fg">2024</span>, <span class="ansi-green-fg">1</span>, <span class="ansi-green-fg">15</span>) + timedelta(hours=n_hours - <span class="ansi-green-fg">1</span>), interval=<span class="ansi-yellow-fg">'</span><span class="ansi-yellow-fg">1h</span><span class="ansi-yellow-fg">'</span>, eager=<span class="ansi-bold" style="color: rgb(0,135,0)">True</span>
-<span class="ansi-green-fg">      4</span> )
-<span class="ansi-green-fg">      6</span> <span style="color: rgb(95,135,135)"># Heat demand: sinusoidal pattern - peaks during business hours, low at night</span>
-<span class="ansi-green-fg">      7</span> heat_demand = [<span class="ansi-green-fg">50</span> + <span class="ansi-green-fg">40</span> * <span style="color: rgb(0,135,0)">max</span>(<span class="ansi-green-fg">0.0</span>, math.sin(math.pi * ((h % <span class="ansi-green-fg">24</span>) - <span class="ansi-green-fg">6</span>) / <span class="ansi-green-fg">12</span>)) <span class="ansi-bold" style="color: rgb(0,135,0)">for</span> h <span class="ansi-bold" style="color: rgb(175,0,255)">in</span> <span style="color: rgb(0,135,0)">range</span>(n_hours)]
-
-<span class="ansi-red-fg">NameError</span>: name 'pl' is not defined</pre>
 </div>
 </div>
 </div>
@@ -2244,9 +2305,9 @@ gas_price = [0.04 if (h % 24) &lt; 6 or (h % 24) &gt;= 22 else 0.08 for h in ran
 </div>
 </clipboard-copy>
 </div>
-<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">px</span><span class="o">.</span><span class="n">line</span><span class="p">(</span><span class="n">x</span><span class="o">=</span><span class="n">timesteps</span><span class="p">,</span> <span class="n">y</span><span class="o">=</span><span class="n">heat_demand</span><span class="p">,</span> <span class="n">labels</span><span class="o">=</span><span class="p">{</span><span class="s1">'x'</span><span class="p">:</span> <span class="s1">'Time'</span><span class="p">,</span> <span class="s1">'y'</span><span class="p">:</span> <span class="s1">'kW'</span><span class="p">},</span> <span class="n">title</span><span class="o">=</span><span class="s1">'Heat Demand'</span><span class="p">)</span>
+<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">px</span><span class="o">.</span><span class="n">bar</span><span class="p">(</span><span class="n">x</span><span class="o">=</span><span class="n">timesteps</span><span class="p">,</span> <span class="n">y</span><span class="o">=</span><span class="n">heat_demand</span><span class="p">,</span> <span class="n">labels</span><span class="o">=</span><span class="p">{</span><span class="s1">'x'</span><span class="p">:</span> <span class="s1">'Time'</span><span class="p">,</span> <span class="s1">'y'</span><span class="p">:</span> <span class="s1">'kW'</span><span class="p">},</span> <span class="n">title</span><span class="o">=</span><span class="s1">'Heat Demand'</span><span class="p">)</span>
 </pre></div>
-<div class="clipboard-copy-txt" id="cell-3">px.line(x=timesteps, y=heat_demand, labels={'x': 'Time', 'y': 'kW'}, title='Heat Demand')</div>
+<div class="clipboard-copy-txt" id="cell-3">px.bar(x=timesteps, y=heat_demand, labels={'x': 'Time', 'y': 'kW'}, title='Heat Demand')</div>
 </div>
 </div>
 </div>
@@ -2257,14 +2318,43 @@ gas_price = [0.04 if (h % 24) &lt; 6 or (h % 24) &gt;= 22 else 0.08 for h in ran
 <div class="jp-OutputArea jp-Cell-outputArea">
 <div class="jp-OutputArea-child">
 <div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="application/vnd.jupyter.stderr" tabindex="0">
-<pre>
-<span class="ansi-red-fg">---------------------------------------------------------------------------</span>
-<span class="ansi-red-fg">NameError</span>                                 Traceback (most recent call last)
-<span class="ansi-cyan-fg">Cell</span><span class="ansi-cyan-fg"> </span><span class="ansi-green-fg">In[3]</span><span class="ansi-green-fg">, line 1</span>
-<span class="ansi-green-fg">----&gt; </span><span class="ansi-green-fg">1</span> <span class="ansi-yellow-bg">px</span>.line(x=timesteps, y=heat_demand, labels={<span class="ansi-yellow-fg">'</span><span class="ansi-yellow-fg">x</span><span class="ansi-yellow-fg">'</span>: <span class="ansi-yellow-fg">'</span><span class="ansi-yellow-fg">Time</span><span class="ansi-yellow-fg">'</span>, <span class="ansi-yellow-fg">'</span><span class="ansi-yellow-fg">y</span><span class="ansi-yellow-fg">'</span>: <span class="ansi-yellow-fg">'</span><span class="ansi-yellow-fg">kW</span><span class="ansi-yellow-fg">'</span>}, title=<span class="ansi-yellow-fg">'</span><span class="ansi-yellow-fg">Heat Demand</span><span class="ansi-yellow-fg">'</span>)
+<div class="jp-RenderedHTMLCommon jp-RenderedHTML jp-OutputArea-output" data-mime-type="text/html" tabindex="0">
+<script type="text/javascript">
+        window.PlotlyConfig = {MathJaxConfig: 'local'};
+        if (window.MathJax && window.MathJax.Hub && window.MathJax.Hub.Config) {window.MathJax.Hub.Config({SVG: {font: "STIX-Web"}});}
+        </script>
+<script type="module">import "https://cdn.plot.ly/plotly-3.3.1.min"</script>
+</div>
+</div>
+<div class="jp-OutputArea-child">
+<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
+<div class="jp-RenderedHTMLCommon jp-RenderedHTML jp-OutputArea-output" data-mime-type="text/html" tabindex="0">
+<div> <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/MathJax.js?config=TeX-AMS-MML_SVG"></script><script type="text/javascript">if (window.MathJax && window.MathJax.Hub && window.MathJax.Hub.Config) {window.MathJax.Hub.Config({SVG: {font: "STIX-Web"}});}</script> <script type="text/javascript">window.PlotlyConfig = {MathJaxConfig: 'local'};</script>
+<script charset="utf-8" crossorigin="anonymous" integrity="sha256-4rD3fugVb/nVJYUv5Ky3v+fYXoouHaBSP20WIJuEiWg=" src="https://cdn.plot.ly/plotly-3.3.1.min.js"></script> <div class="plotly-graph-div" id="7d143e82-59d2-4b14-8d12-8aeefeb81955" style="height:525px; width:100%;"></div> <script type="text/javascript">                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("7d143e82-59d2-4b14-8d12-8aeefeb81955")) {                    Plotly.newPlot(                        "7d143e82-59d2-4b14-8d12-8aeefeb81955",                        [{"hovertemplate":"Time=%{x}\u003cbr\u003ekW=%{y}\u003cextra\u003e\u003c\u002fextra\u003e","legendgroup":"","marker":{"color":"#636efa","pattern":{"shape":""}},"name":"","orientation":"v","showlegend":false,"textposition":"auto","x":["2024-01-15T00:00:00.000000","2024-01-15T01:00:00.000000","2024-01-15T02:00:00.000000","2024-01-15T03:00:00.000000","2024-01-15T04:00:00.000000","2024-01-15T05:00:00.000000","2024-01-15T06:00:00.000000","2024-01-15T07:00:00.000000","2024-01-15T08:00:00.000000","2024-01-15T09:00:00.000000","2024-01-15T10:00:00.000000","2024-01-15T11:00:00.000000","2024-01-15T12:00:00.000000","2024-01-15T13:00:00.000000","2024-01-15T14:00:00.000000","2024-01-15T15:00:00.000000","2024-01-15T16:00:00.000000","2024-01-15T17:00:00.000000","2024-01-15T18:00:00.000000","2024-01-15T19:00:00.000000","2024-01-15T20:00:00.000000","2024-01-15T21:00:00.000000","2024-01-15T22:00:00.000000","2024-01-15T23:00:00.000000","2024-01-16T00:00:00.000000","2024-01-16T01:00:00.000000","2024-01-16T02:00:00.000000","2024-01-16T03:00:00.000000","2024-01-16T04:00:00.000000","2024-01-16T05:00:00.000000","2024-01-16T06:00:00.000000","2024-01-16T07:00:00.000000","2024-01-16T08:00:00.000000","2024-01-16T09:00:00.000000","2024-01-16T10:00:00.000000","2024-01-16T11:00:00.000000","2024-01-16T12:00:00.000000","2024-01-16T13:00:00.000000","2024-01-16T14:00:00.000000","2024-01-16T15:00:00.000000","2024-01-16T16:00:00.000000","2024-01-16T17:00:00.000000","2024-01-16T18:00:00.000000","2024-01-16T19:00:00.000000","2024-01-16T20:00:00.000000","2024-01-16T21:00:00.000000","2024-01-16T22:00:00.000000","2024-01-16T23:00:00.000000"],"xaxis":"x","y":{"dtype":"f8","bdata":"AAAAAAAASUAAAAAAAABJQAAAAAAAAElAAAAAAAAASUAAAAAAAABJQAAAAAAAAElAAAAAAAAASUAN8n1MJy1OQAAAAAAAgFFAsMIHgDGSU0D1l5toBilVQLa7RibFKFZAAAAAAACAVkC2u0YmxShWQPaXm2gGKVVAsMIHgDGSU0AAAAAAAIBRQA7yfUwnLU5AAQAAAAAASUAAAAAAAABJQAAAAAAAAElAAAAAAAAASUAAAAAAAABJQAAAAAAAAElAAAAAAAAASUAAAAAAAABJQAAAAAAAAElAAAAAAAAASUAAAAAAAABJQAAAAAAAAElAAAAAAAAASUAN8n1MJy1OQAAAAAAAgFFAsMIHgDGSU0D1l5toBilVQLa7RibFKFZAAAAAAACAVkC2u0YmxShWQPaXm2gGKVVAsMIHgDGSU0AAAAAAAIBRQA7yfUwnLU5AAQAAAAAASUAAAAAAAABJQAAAAAAAAElAAAAAAAAASUAAAAAAAABJQAAAAAAAAElA"},"yaxis":"y","type":"bar"}],                        {"template":{"data":{"histogram2dcontour":[{"type":"histogram2dcontour","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"choropleth":[{"type":"choropleth","colorbar":{"outlinewidth":0,"ticks":""}}],"histogram2d":[{"type":"histogram2d","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"heatmap":[{"type":"heatmap","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"contourcarpet":[{"type":"contourcarpet","colorbar":{"outlinewidth":0,"ticks":""}}],"contour":[{"type":"contour","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"surface":[{"type":"surface","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"mesh3d":[{"type":"mesh3d","colorbar":{"outlinewidth":0,"ticks":""}}],"scatter":[{"fillpattern":{"fillmode":"overlay","size":10,"solidity":0.2},"type":"scatter"}],"parcoords":[{"type":"parcoords","line":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterpolargl":[{"type":"scatterpolargl","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"bar":[{"error_x":{"color":"#2a3f5f"},"error_y":{"color":"#2a3f5f"},"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"bar"}],"scattergeo":[{"type":"scattergeo","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterpolar":[{"type":"scatterpolar","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"histogram":[{"marker":{"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"histogram"}],"scattergl":[{"type":"scattergl","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatter3d":[{"type":"scatter3d","line":{"colorbar":{"outlinewidth":0,"ticks":""}},"marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattermap":[{"type":"scattermap","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattermapbox":[{"type":"scattermapbox","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterternary":[{"type":"scatterternary","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattercarpet":[{"type":"scattercarpet","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"carpet":[{"aaxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"baxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"type":"carpet"}],"table":[{"cells":{"fill":{"color":"#EBF0F8"},"line":{"color":"white"}},"header":{"fill":{"color":"#C8D4E3"},"line":{"color":"white"}},"type":"table"}],"barpolar":[{"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"barpolar"}],"pie":[{"automargin":true,"type":"pie"}]},"layout":{"autotypenumbers":"strict","colorway":["#636efa","#EF553B","#00cc96","#ab63fa","#FFA15A","#19d3f3","#FF6692","#B6E880","#FF97FF","#FECB52"],"font":{"color":"#2a3f5f"},"hovermode":"closest","hoverlabel":{"align":"left"},"paper_bgcolor":"white","plot_bgcolor":"#E5ECF6","polar":{"bgcolor":"#E5ECF6","angularaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"radialaxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"ternary":{"bgcolor":"#E5ECF6","aaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"baxis":{"gridcolor":"white","linecolor":"white","ticks":""},"caxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"coloraxis":{"colorbar":{"outlinewidth":0,"ticks":""}},"colorscale":{"sequential":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"sequentialminus":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"diverging":[[0,"#8e0152"],[0.1,"#c51b7d"],[0.2,"#de77ae"],[0.3,"#f1b6da"],[0.4,"#fde0ef"],[0.5,"#f7f7f7"],[0.6,"#e6f5d0"],[0.7,"#b8e186"],[0.8,"#7fbc41"],[0.9,"#4d9221"],[1,"#276419"]]},"xaxis":{"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","automargin":true,"zerolinewidth":2},"yaxis":{"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","automargin":true,"zerolinewidth":2},"scene":{"xaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2},"yaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2},"zaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2}},"shapedefaults":{"line":{"color":"#2a3f5f"}},"annotationdefaults":{"arrowcolor":"#2a3f5f","arrowhead":0,"arrowwidth":1},"geo":{"bgcolor":"white","landcolor":"#E5ECF6","subunitcolor":"white","showland":true,"showlakes":true,"lakecolor":"white"},"title":{"x":0.05},"mapbox":{"style":"light"}}},"xaxis":{"anchor":"y","domain":[0.0,1.0],"title":{"text":"Time"}},"yaxis":{"anchor":"x","domain":[0.0,1.0],"title":{"text":"kW"}},"legend":{"tracegroupgap":0},"title":{"text":"Heat Demand"},"barmode":"relative"},                        {"responsive": true}                    ).then(function(){
+                            
+var gd = document.getElementById('7d143e82-59d2-4b14-8d12-8aeefeb81955');
+var x = new MutationObserver(function (mutations, observer) {{
+        var display = window.getComputedStyle(gd).display;
+        if (!display || display === 'none') {{
+            console.log([gd, 'removed!']);
+            Plotly.purge(gd);
+            observer.disconnect();
+        }}
+}});
 
-<span class="ansi-red-fg">NameError</span>: name 'px' is not defined</pre>
+// Listen for the removal of the full notebook cells
+var notebookContainer = gd.closest('#notebook-container');
+if (notebookContainer) {{
+    x.observe(notebookContainer, {childList: true});
+}}
+
+// Listen for the clearing of the current output cell
+var outputEl = gd.closest('.output');
+if (outputEl) {{
+    x.observe(outputEl, {childList: true});
+}}
+
+                        })                };            </script> </div>
 </div>
 </div>
 </div>
@@ -2302,14 +2392,33 @@ gas_price = [0.04 if (h % 24) &lt; 6 or (h % 24) &gt;= 22 else 0.08 for h in ran
 <div class="jp-OutputArea jp-Cell-outputArea">
 <div class="jp-OutputArea-child">
 <div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="application/vnd.jupyter.stderr" tabindex="0">
-<pre>
-<span class="ansi-red-fg">---------------------------------------------------------------------------</span>
-<span class="ansi-red-fg">NameError</span>                                 Traceback (most recent call last)
-<span class="ansi-cyan-fg">Cell</span><span class="ansi-cyan-fg"> </span><span class="ansi-green-fg">In[4]</span><span class="ansi-green-fg">, line 1</span>
-<span class="ansi-green-fg">----&gt; </span><span class="ansi-green-fg">1</span> <span class="ansi-yellow-bg">px</span>.line(x=timesteps, y=gas_price, labels={<span class="ansi-yellow-fg">'</span><span class="ansi-yellow-fg">x</span><span class="ansi-yellow-fg">'</span>: <span class="ansi-yellow-fg">'</span><span class="ansi-yellow-fg">Time</span><span class="ansi-yellow-fg">'</span>, <span class="ansi-yellow-fg">'</span><span class="ansi-yellow-fg">y</span><span class="ansi-yellow-fg">'</span>: <span class="ansi-yellow-fg">'</span><span class="ansi-yellow-fg">EUR/kWh</span><span class="ansi-yellow-fg">'</span>}, title=<span class="ansi-yellow-fg">'</span><span class="ansi-yellow-fg">Gas Price</span><span class="ansi-yellow-fg">'</span>)
+<div class="jp-RenderedHTMLCommon jp-RenderedHTML jp-OutputArea-output" data-mime-type="text/html" tabindex="0">
+<div> <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/MathJax.js?config=TeX-AMS-MML_SVG"></script><script type="text/javascript">if (window.MathJax && window.MathJax.Hub && window.MathJax.Hub.Config) {window.MathJax.Hub.Config({SVG: {font: "STIX-Web"}});}</script> <script type="text/javascript">window.PlotlyConfig = {MathJaxConfig: 'local'};</script>
+<script charset="utf-8" crossorigin="anonymous" integrity="sha256-4rD3fugVb/nVJYUv5Ky3v+fYXoouHaBSP20WIJuEiWg=" src="https://cdn.plot.ly/plotly-3.3.1.min.js"></script> <div class="plotly-graph-div" id="65b80da6-ee62-4d61-8262-c6058abdc67f" style="height:525px; width:100%;"></div> <script type="text/javascript">                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("65b80da6-ee62-4d61-8262-c6058abdc67f")) {                    Plotly.newPlot(                        "65b80da6-ee62-4d61-8262-c6058abdc67f",                        [{"hovertemplate":"Time=%{x}\u003cbr\u003eEUR\u002fkWh=%{y}\u003cextra\u003e\u003c\u002fextra\u003e","legendgroup":"","line":{"color":"#636efa","dash":"solid"},"marker":{"symbol":"circle"},"mode":"lines","name":"","orientation":"v","showlegend":false,"x":["2024-01-15T00:00:00.000000","2024-01-15T01:00:00.000000","2024-01-15T02:00:00.000000","2024-01-15T03:00:00.000000","2024-01-15T04:00:00.000000","2024-01-15T05:00:00.000000","2024-01-15T06:00:00.000000","2024-01-15T07:00:00.000000","2024-01-15T08:00:00.000000","2024-01-15T09:00:00.000000","2024-01-15T10:00:00.000000","2024-01-15T11:00:00.000000","2024-01-15T12:00:00.000000","2024-01-15T13:00:00.000000","2024-01-15T14:00:00.000000","2024-01-15T15:00:00.000000","2024-01-15T16:00:00.000000","2024-01-15T17:00:00.000000","2024-01-15T18:00:00.000000","2024-01-15T19:00:00.000000","2024-01-15T20:00:00.000000","2024-01-15T21:00:00.000000","2024-01-15T22:00:00.000000","2024-01-15T23:00:00.000000","2024-01-16T00:00:00.000000","2024-01-16T01:00:00.000000","2024-01-16T02:00:00.000000","2024-01-16T03:00:00.000000","2024-01-16T04:00:00.000000","2024-01-16T05:00:00.000000","2024-01-16T06:00:00.000000","2024-01-16T07:00:00.000000","2024-01-16T08:00:00.000000","2024-01-16T09:00:00.000000","2024-01-16T10:00:00.000000","2024-01-16T11:00:00.000000","2024-01-16T12:00:00.000000","2024-01-16T13:00:00.000000","2024-01-16T14:00:00.000000","2024-01-16T15:00:00.000000","2024-01-16T16:00:00.000000","2024-01-16T17:00:00.000000","2024-01-16T18:00:00.000000","2024-01-16T19:00:00.000000","2024-01-16T20:00:00.000000","2024-01-16T21:00:00.000000","2024-01-16T22:00:00.000000","2024-01-16T23:00:00.000000"],"xaxis":"x","y":{"dtype":"f8","bdata":"exSuR+F6pD97FK5H4XqkP3sUrkfheqQ\u002fexSuR+F6pD97FK5H4XqkP3sUrkfheqQ\u002fexSuR+F6tD97FK5H4Xq0P3sUrkfherQ\u002fexSuR+F6tD97FK5H4Xq0P3sUrkfherQ\u002fexSuR+F6tD97FK5H4Xq0P3sUrkfherQ\u002fexSuR+F6tD97FK5H4Xq0P3sUrkfherQ\u002fexSuR+F6tD97FK5H4Xq0P3sUrkfherQ\u002fexSuR+F6tD97FK5H4XqkP3sUrkfheqQ\u002fexSuR+F6pD97FK5H4XqkP3sUrkfheqQ\u002fexSuR+F6pD97FK5H4XqkP3sUrkfheqQ\u002fexSuR+F6tD97FK5H4Xq0P3sUrkfherQ\u002fexSuR+F6tD97FK5H4Xq0P3sUrkfherQ\u002fexSuR+F6tD97FK5H4Xq0P3sUrkfherQ\u002fexSuR+F6tD97FK5H4Xq0P3sUrkfherQ\u002fexSuR+F6tD97FK5H4Xq0P3sUrkfherQ\u002fexSuR+F6tD97FK5H4XqkP3sUrkfheqQ\u002f"},"yaxis":"y","type":"scatter"}],                        {"template":{"data":{"histogram2dcontour":[{"type":"histogram2dcontour","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"choropleth":[{"type":"choropleth","colorbar":{"outlinewidth":0,"ticks":""}}],"histogram2d":[{"type":"histogram2d","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"heatmap":[{"type":"heatmap","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"contourcarpet":[{"type":"contourcarpet","colorbar":{"outlinewidth":0,"ticks":""}}],"contour":[{"type":"contour","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"surface":[{"type":"surface","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"mesh3d":[{"type":"mesh3d","colorbar":{"outlinewidth":0,"ticks":""}}],"scatter":[{"fillpattern":{"fillmode":"overlay","size":10,"solidity":0.2},"type":"scatter"}],"parcoords":[{"type":"parcoords","line":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterpolargl":[{"type":"scatterpolargl","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"bar":[{"error_x":{"color":"#2a3f5f"},"error_y":{"color":"#2a3f5f"},"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"bar"}],"scattergeo":[{"type":"scattergeo","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterpolar":[{"type":"scatterpolar","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"histogram":[{"marker":{"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"histogram"}],"scattergl":[{"type":"scattergl","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatter3d":[{"type":"scatter3d","line":{"colorbar":{"outlinewidth":0,"ticks":""}},"marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattermap":[{"type":"scattermap","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattermapbox":[{"type":"scattermapbox","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterternary":[{"type":"scatterternary","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattercarpet":[{"type":"scattercarpet","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"carpet":[{"aaxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"baxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"type":"carpet"}],"table":[{"cells":{"fill":{"color":"#EBF0F8"},"line":{"color":"white"}},"header":{"fill":{"color":"#C8D4E3"},"line":{"color":"white"}},"type":"table"}],"barpolar":[{"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"barpolar"}],"pie":[{"automargin":true,"type":"pie"}]},"layout":{"autotypenumbers":"strict","colorway":["#636efa","#EF553B","#00cc96","#ab63fa","#FFA15A","#19d3f3","#FF6692","#B6E880","#FF97FF","#FECB52"],"font":{"color":"#2a3f5f"},"hovermode":"closest","hoverlabel":{"align":"left"},"paper_bgcolor":"white","plot_bgcolor":"#E5ECF6","polar":{"bgcolor":"#E5ECF6","angularaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"radialaxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"ternary":{"bgcolor":"#E5ECF6","aaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"baxis":{"gridcolor":"white","linecolor":"white","ticks":""},"caxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"coloraxis":{"colorbar":{"outlinewidth":0,"ticks":""}},"colorscale":{"sequential":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"sequentialminus":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"diverging":[[0,"#8e0152"],[0.1,"#c51b7d"],[0.2,"#de77ae"],[0.3,"#f1b6da"],[0.4,"#fde0ef"],[0.5,"#f7f7f7"],[0.6,"#e6f5d0"],[0.7,"#b8e186"],[0.8,"#7fbc41"],[0.9,"#4d9221"],[1,"#276419"]]},"xaxis":{"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","automargin":true,"zerolinewidth":2},"yaxis":{"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","automargin":true,"zerolinewidth":2},"scene":{"xaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2},"yaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2},"zaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2}},"shapedefaults":{"line":{"color":"#2a3f5f"}},"annotationdefaults":{"arrowcolor":"#2a3f5f","arrowhead":0,"arrowwidth":1},"geo":{"bgcolor":"white","landcolor":"#E5ECF6","subunitcolor":"white","showland":true,"showlakes":true,"lakecolor":"white"},"title":{"x":0.05},"mapbox":{"style":"light"}}},"xaxis":{"anchor":"y","domain":[0.0,1.0],"title":{"text":"Time"}},"yaxis":{"anchor":"x","domain":[0.0,1.0],"title":{"text":"EUR\u002fkWh"}},"legend":{"tracegroupgap":0},"title":{"text":"Gas Price"}},                        {"responsive": true}                    ).then(function(){
+                            
+var gd = document.getElementById('65b80da6-ee62-4d61-8262-c6058abdc67f');
+var x = new MutationObserver(function (mutations, observer) {{
+        var display = window.getComputedStyle(gd).display;
+        if (!display || display === 'none') {{
+            console.log([gd, 'removed!']);
+            Plotly.purge(gd);
+            observer.disconnect();
+        }}
+}});
 
-<span class="ansi-red-fg">NameError</span>: name 'px' is not defined</pre>
+// Listen for the removal of the full notebook cells
+var notebookContainer = gd.closest('#notebook-container');
+if (notebookContainer) {{
+    x.observe(notebookContainer, {childList: true});
+}}
+
+// Listen for the clearing of the current output cell
+var outputEl = gd.closest('.output');
+if (outputEl) {{
+    x.observe(outputEl, {childList: true});
+}}
+
+                        })                };            </script> </div>
 </div>
 </div>
 </div>
@@ -2373,13 +2482,14 @@ gas_price = [0.04 if (h % 24) &lt; 6 or (h % 24) &gt;= 22 else 0.08 for h in ran
     <span class="n">eta_charge</span><span class="o">=</span><span class="mf">0.98</span><span class="p">,</span>
     <span class="n">eta_discharge</span><span class="o">=</span><span class="mf">0.98</span><span class="p">,</span>
     <span class="n">relative_loss_per_hour</span><span class="o">=</span><span class="mf">0.005</span><span class="p">,</span>
-    <span class="n">initial_charge_state</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span>  <span class="c1"># start half-full (fraction of capacity)</span>
+    <span class="n">prior_level</span><span class="o">=</span><span class="mf">250.0</span><span class="p">,</span>  <span class="c1"># start half-full (absolute kWh)</span>
+    <span class="n">cyclic</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
 <span class="p">)</span>
 
-<span class="n">result</span> <span class="o">=</span> <span class="n">solve</span><span class="p">(</span>
+<span class="n">result</span> <span class="o">=</span> <span class="n">optimize</span><span class="p">(</span>
     <span class="n">timesteps</span><span class="o">=</span><span class="n">timesteps</span><span class="p">,</span>
     <span class="n">buses</span><span class="o">=</span><span class="p">[</span><span class="n">Bus</span><span class="p">(</span><span class="s1">'gas'</span><span class="p">),</span> <span class="n">Bus</span><span class="p">(</span><span class="s1">'heat'</span><span class="p">)],</span>
-    <span class="n">effects</span><span class="o">=</span><span class="p">[</span><span class="n">Effect</span><span class="p">(</span><span class="s1">'cost'</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="s1">'€'</span><span class="p">,</span> <span class="n">is_objective</span><span class="o">=</span><span class="kc">True</span><span class="p">)],</span>
+    <span class="n">effects</span><span class="o">=</span><span class="p">[</span><span class="n">Effect</span><span class="p">(</span><span class="s1">'cost'</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="s1">'EUR'</span><span class="p">,</span> <span class="n">is_objective</span><span class="o">=</span><span class="kc">True</span><span class="p">)],</span>
     <span class="n">ports</span><span class="o">=</span><span class="p">[</span>
         <span class="n">Port</span><span class="p">(</span><span class="s1">'gas_grid'</span><span class="p">,</span> <span class="n">imports</span><span class="o">=</span><span class="p">[</span><span class="n">gas_source</span><span class="p">]),</span>
         <span class="n">Port</span><span class="p">(</span><span class="s1">'office'</span><span class="p">,</span> <span class="n">exports</span><span class="o">=</span><span class="p">[</span><span class="n">demand_flow</span><span class="p">]),</span>
@@ -2413,13 +2523,14 @@ storage = Storage(
     eta_charge=0.98,
     eta_discharge=0.98,
     relative_loss_per_hour=0.005,
-    initial_charge_state=0.5,  # start half-full (fraction of capacity)
+    prior_level=250.0,  # start half-full (absolute kWh)
+    cyclic=False,
 )
 
-result = solve(
+result = optimize(
     timesteps=timesteps,
     buses=[Bus('gas'), Bus('heat')],
-    effects=[Effect('cost', unit='€', is_objective=True)],
+    effects=[Effect('cost', unit='EUR', is_objective=True)],
     ports=[
         Port('gas_grid', imports=[gas_source]),
         Port('office', exports=[demand_flow]),
@@ -2439,17 +2550,36 @@ result = solve(
 <div class="jp-OutputArea jp-Cell-outputArea">
 <div class="jp-OutputArea-child">
 <div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="application/vnd.jupyter.stderr" tabindex="0">
-<pre>
-<span class="ansi-red-fg">---------------------------------------------------------------------------</span>
-<span class="ansi-red-fg">NameError</span>                                 Traceback (most recent call last)
-<span class="ansi-cyan-fg">Cell</span><span class="ansi-cyan-fg"> </span><span class="ansi-green-fg">In[5]</span><span class="ansi-green-fg">, line 2</span>
-<span class="ansi-green-fg">      1</span> <span style="color: rgb(95,135,135)"># Gas supply with time-varying price</span>
-<span class="ansi-green-fg">----&gt; </span><span class="ansi-green-fg">2</span> gas_source = <span class="ansi-yellow-bg">Flow</span>(bus=<span class="ansi-yellow-fg">'</span><span class="ansi-yellow-fg">gas</span><span class="ansi-yellow-fg">'</span>, size=<span class="ansi-green-fg">500</span>, effects_per_flow_hour={<span class="ansi-yellow-fg">'</span><span class="ansi-yellow-fg">cost</span><span class="ansi-yellow-fg">'</span>: gas_price})
-<span class="ansi-green-fg">      4</span> <span style="color: rgb(95,135,135)"># Boiler: 150 kW thermal capacity, 92% efficiency</span>
-<span class="ansi-green-fg">      5</span> fuel = Flow(bus=<span class="ansi-yellow-fg">'</span><span class="ansi-yellow-fg">gas</span><span class="ansi-yellow-fg">'</span>, size=<span class="ansi-green-fg">300</span>)
+<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
+<pre>Running HiGHS 1.13.1 (git hash: 1d267d9): Copyright (c) 2026 under MIT licence terms
+LP linopy-problem-9mzh0h_3 has 869 rows; 437 cols; 1399 nonzeros
+Coefficient ranges:
+  Matrix  [4e-02, 1e+00]
+  Cost    [1e+00, 1e+00]
+  Bound   [0e+00, 0e+00]
+  RHS     [5e+01, 5e+02]
+Presolving model
+96 rows, 192 cols, 335 nonzeros  0s
+Dependent equations search running on 94 equations with time limit of 1000.00s
+Dependent equations search removed 0 rows and 0 nonzeros in 0.00s (limit = 1000.00s)
+94 rows, 190 cols, 331 nonzeros  0s
+Presolve reductions: rows 94(-775); columns 190(-247); nonzeros 331(-1068) 
+Solving the presolved LP
+Using dual simplex solver
+  Iteration        Objective     Infeasibilities num(sum)
+          0     0.0000000000e+00 Pr: 49(3255.17) 0.0s
+        124     1.7717298375e+02 Pr: 0(0) 0.0s
 
-<span class="ansi-red-fg">NameError</span>: name 'Flow' is not defined</pre>
+Performed postsolve
+Solving the original LP from the solution after postsolve
+
+Model name          : linopy-problem-9mzh0h_3
+Model status        : Optimal
+Simplex   iterations: 124
+Objective value     :  1.7717298375e+02
+P-D objective error :  1.5996641037e-16
+HiGHS run time      :          0.00
+</pre>
 </div>
 </div>
 </div>
@@ -2487,23 +2617,15 @@ result = solve(
 </div>
 <div class="highlight-ipynb hl-python"><pre><span></span><span class="n">total_heat</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">heat_demand</span><span class="p">)</span>
 
-<span class="n">pl</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span>
-    <span class="p">{</span>
-        <span class="s1">'Metric'</span><span class="p">:</span> <span class="p">[</span><span class="s1">'Total heat delivered'</span><span class="p">,</span> <span class="s1">'Total cost'</span><span class="p">,</span> <span class="s1">'Avg cost of heat'</span><span class="p">],</span>
-        <span class="s1">'Value'</span><span class="p">:</span> <span class="p">[</span><span class="n">total_heat</span><span class="p">,</span> <span class="n">result</span><span class="o">.</span><span class="n">objective_value</span><span class="p">,</span> <span class="n">result</span><span class="o">.</span><span class="n">objective_value</span> <span class="o">/</span> <span class="n">total_heat</span> <span class="o">*</span> <span class="mi">100</span><span class="p">],</span>
-        <span class="s1">'Unit'</span><span class="p">:</span> <span class="p">[</span><span class="s1">'kWh'</span><span class="p">,</span> <span class="s1">'EUR'</span><span class="p">,</span> <span class="s1">'ct/kWh'</span><span class="p">],</span>
-    <span class="p">}</span>
-<span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'Total heat delivered: </span><span class="si">{</span><span class="n">total_heat</span><span class="si">:</span><span class="s1">.0f</span><span class="si">}</span><span class="s1"> kWh'</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'Total cost:          </span><span class="si">{</span><span class="n">result</span><span class="o">.</span><span class="n">objective</span><span class="si">:</span><span class="s1">.2f</span><span class="si">}</span><span class="s1"> EUR'</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'Avg cost of heat:    </span><span class="si">{</span><span class="n">result</span><span class="o">.</span><span class="n">objective</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">total_heat</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">100</span><span class="si">:</span><span class="s1">.2f</span><span class="si">}</span><span class="s1"> ct/kWh'</span><span class="p">)</span>
 </pre></div>
 <div class="clipboard-copy-txt" id="cell-6">total_heat = sum(heat_demand)
 
-pl.DataFrame(
-    {
-        'Metric': ['Total heat delivered', 'Total cost', 'Avg cost of heat'],
-        'Value': [total_heat, result.objective_value, result.objective_value / total_heat * 100],
-        'Unit': ['kWh', 'EUR', 'ct/kWh'],
-    }
-)</div>
+print(f'Total heat delivered: {total_heat:.0f} kWh')
+print(f'Total cost:          {result.objective:.2f} EUR')
+print(f'Avg cost of heat:    {result.objective / total_heat * 100:.2f} ct/kWh')</div>
 </div>
 </div>
 </div>
@@ -2514,19 +2636,11 @@ pl.DataFrame(
 <div class="jp-OutputArea jp-Cell-outputArea">
 <div class="jp-OutputArea-child">
 <div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="application/vnd.jupyter.stderr" tabindex="0">
-<pre>
-<span class="ansi-red-fg">---------------------------------------------------------------------------</span>
-<span class="ansi-red-fg">NameError</span>                                 Traceback (most recent call last)
-<span class="ansi-cyan-fg">Cell</span><span class="ansi-cyan-fg"> </span><span class="ansi-green-fg">In[6]</span><span class="ansi-green-fg">, line 1</span>
-<span class="ansi-green-fg">----&gt; </span><span class="ansi-green-fg">1</span> total_heat = <span style="color: rgb(0,135,0)">sum</span>(<span class="ansi-yellow-bg">heat_demand</span>)
-<span class="ansi-green-fg">      3</span> pl.DataFrame(
-<span class="ansi-green-fg">      4</span>     {
-<span class="ansi-green-fg">      5</span>         <span class="ansi-yellow-fg">'</span><span class="ansi-yellow-fg">Metric</span><span class="ansi-yellow-fg">'</span>: [<span class="ansi-yellow-fg">'</span><span class="ansi-yellow-fg">Total heat delivered</span><span class="ansi-yellow-fg">'</span>, <span class="ansi-yellow-fg">'</span><span class="ansi-yellow-fg">Total cost</span><span class="ansi-yellow-fg">'</span>, <span class="ansi-yellow-fg">'</span><span class="ansi-yellow-fg">Avg cost of heat</span><span class="ansi-yellow-fg">'</span>],
-<span class="ansi-green-fg">   (...)</span><span class="ansi-green-fg">      8</span>     }
-<span class="ansi-green-fg">      9</span> )
-
-<span class="ansi-red-fg">NameError</span>: name 'heat_demand' is not defined</pre>
+<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
+<pre>Total heat delivered: 3008 kWh
+Total cost:          177.17 EUR
+Avg cost of heat:    5.89 ct/kWh
+</pre>
 </div>
 </div>
 </div>
@@ -2562,25 +2676,11 @@ pl.DataFrame(
 </div>
 </clipboard-copy>
 </div>
-<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">px</span><span class="o">.</span><span class="n">line</span><span class="p">(</span>
-    <span class="n">result</span><span class="o">.</span><span class="n">flow_rates</span><span class="p">,</span>
-    <span class="n">x</span><span class="o">=</span><span class="s1">'time'</span><span class="p">,</span>
-    <span class="n">y</span><span class="o">=</span><span class="s1">'solution'</span><span class="p">,</span>
-    <span class="n">color</span><span class="o">=</span><span class="s1">'flow'</span><span class="p">,</span>
-    <span class="n">title</span><span class="o">=</span><span class="s1">'Flow Rates'</span><span class="p">,</span>
-    <span class="n">labels</span><span class="o">=</span><span class="p">{</span><span class="s1">'solution'</span><span class="p">:</span> <span class="s1">'kW'</span><span class="p">},</span>
-    <span class="n">line_shape</span><span class="o">=</span><span class="s1">'hv'</span><span class="p">,</span>
-<span class="p">)</span>
+<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">df</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">flow_rates</span><span class="o">.</span><span class="n">to_dataframe</span><span class="p">(</span><span class="s1">'kW'</span><span class="p">)</span><span class="o">.</span><span class="n">reset_index</span><span class="p">()</span>
+<span class="n">px</span><span class="o">.</span><span class="n">line</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="n">x</span><span class="o">=</span><span class="s1">'time'</span><span class="p">,</span> <span class="n">y</span><span class="o">=</span><span class="s1">'kW'</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s1">'flow'</span><span class="p">,</span> <span class="n">title</span><span class="o">=</span><span class="s1">'Flow Rates'</span><span class="p">,</span> <span class="n">line_shape</span><span class="o">=</span><span class="s1">'hv'</span><span class="p">)</span>
 </pre></div>
-<div class="clipboard-copy-txt" id="cell-7">px.line(
-    result.flow_rates,
-    x='time',
-    y='solution',
-    color='flow',
-    title='Flow Rates',
-    labels={'solution': 'kW'},
-    line_shape='hv',
-)</div>
+<div class="clipboard-copy-txt" id="cell-7">df = result.flow_rates.to_dataframe('kW').reset_index()
+px.line(df, x='time', y='kW', color='flow', title='Flow Rates', line_shape='hv')</div>
 </div>
 </div>
 </div>
@@ -2591,22 +2691,33 @@ pl.DataFrame(
 <div class="jp-OutputArea jp-Cell-outputArea">
 <div class="jp-OutputArea-child">
 <div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="application/vnd.jupyter.stderr" tabindex="0">
-<pre>
-<span class="ansi-red-fg">---------------------------------------------------------------------------</span>
-<span class="ansi-red-fg">NameError</span>                                 Traceback (most recent call last)
-<span class="ansi-cyan-fg">Cell</span><span class="ansi-cyan-fg"> </span><span class="ansi-green-fg">In[7]</span><span class="ansi-green-fg">, line 1</span>
-<span class="ansi-green-fg">----&gt; </span><span class="ansi-green-fg">1</span> <span class="ansi-yellow-bg">px</span>.line(
-<span class="ansi-green-fg">      2</span>     result.flow_rates,
-<span class="ansi-green-fg">      3</span>     x=<span class="ansi-yellow-fg">'</span><span class="ansi-yellow-fg">time</span><span class="ansi-yellow-fg">'</span>,
-<span class="ansi-green-fg">      4</span>     y=<span class="ansi-yellow-fg">'</span><span class="ansi-yellow-fg">solution</span><span class="ansi-yellow-fg">'</span>,
-<span class="ansi-green-fg">      5</span>     color=<span class="ansi-yellow-fg">'</span><span class="ansi-yellow-fg">flow</span><span class="ansi-yellow-fg">'</span>,
-<span class="ansi-green-fg">      6</span>     title=<span class="ansi-yellow-fg">'</span><span class="ansi-yellow-fg">Flow Rates</span><span class="ansi-yellow-fg">'</span>,
-<span class="ansi-green-fg">      7</span>     labels={<span class="ansi-yellow-fg">'</span><span class="ansi-yellow-fg">solution</span><span class="ansi-yellow-fg">'</span>: <span class="ansi-yellow-fg">'</span><span class="ansi-yellow-fg">kW</span><span class="ansi-yellow-fg">'</span>},
-<span class="ansi-green-fg">      8</span>     line_shape=<span class="ansi-yellow-fg">'</span><span class="ansi-yellow-fg">hv</span><span class="ansi-yellow-fg">'</span>,
-<span class="ansi-green-fg">      9</span> )
+<div class="jp-RenderedHTMLCommon jp-RenderedHTML jp-OutputArea-output" data-mime-type="text/html" tabindex="0">
+<div> <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/MathJax.js?config=TeX-AMS-MML_SVG"></script><script type="text/javascript">if (window.MathJax && window.MathJax.Hub && window.MathJax.Hub.Config) {window.MathJax.Hub.Config({SVG: {font: "STIX-Web"}});}</script> <script type="text/javascript">window.PlotlyConfig = {MathJaxConfig: 'local'};</script>
+<script charset="utf-8" crossorigin="anonymous" integrity="sha256-4rD3fugVb/nVJYUv5Ky3v+fYXoouHaBSP20WIJuEiWg=" src="https://cdn.plot.ly/plotly-3.3.1.min.js"></script> <div class="plotly-graph-div" id="20aea6dc-3b25-4a90-84a0-841d43bce572" style="height:525px; width:100%;"></div> <script type="text/javascript">                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("20aea6dc-3b25-4a90-84a0-841d43bce572")) {                    Plotly.newPlot(                        "20aea6dc-3b25-4a90-84a0-841d43bce572",                        [{"hovertemplate":"flow=gas_grid(gas)\u003cbr\u003etime=%{x}\u003cbr\u003ekW=%{y}\u003cextra\u003e\u003c\u002fextra\u003e","legendgroup":"gas_grid(gas)","line":{"color":"#636efa","dash":"solid","shape":"hv"},"marker":{"symbol":"circle"},"mode":"lines","name":"gas_grid(gas)","orientation":"v","showlegend":true,"x":["2024-01-15T00:00:00.000000","2024-01-15T01:00:00.000000","2024-01-15T02:00:00.000000","2024-01-15T03:00:00.000000","2024-01-15T04:00:00.000000","2024-01-15T05:00:00.000000","2024-01-15T06:00:00.000000","2024-01-15T07:00:00.000000","2024-01-15T08:00:00.000000","2024-01-15T09:00:00.000000","2024-01-15T10:00:00.000000","2024-01-15T11:00:00.000000","2024-01-15T12:00:00.000000","2024-01-15T13:00:00.000000","2024-01-15T14:00:00.000000","2024-01-15T15:00:00.000000","2024-01-15T16:00:00.000000","2024-01-15T17:00:00.000000","2024-01-15T18:00:00.000000","2024-01-15T19:00:00.000000","2024-01-15T20:00:00.000000","2024-01-15T21:00:00.000000","2024-01-15T22:00:00.000000","2024-01-15T23:00:00.000000","2024-01-16T00:00:00.000000","2024-01-16T01:00:00.000000","2024-01-16T02:00:00.000000","2024-01-16T03:00:00.000000","2024-01-16T04:00:00.000000","2024-01-16T05:00:00.000000","2024-01-16T06:00:00.000000","2024-01-16T07:00:00.000000","2024-01-16T08:00:00.000000","2024-01-16T09:00:00.000000","2024-01-16T10:00:00.000000","2024-01-16T11:00:00.000000","2024-01-16T12:00:00.000000","2024-01-16T13:00:00.000000","2024-01-16T14:00:00.000000","2024-01-16T15:00:00.000000","2024-01-16T16:00:00.000000","2024-01-16T17:00:00.000000","2024-01-16T18:00:00.000000","2024-01-16T19:00:00.000000","2024-01-16T20:00:00.000000","2024-01-16T21:00:00.000000","2024-01-16T22:00:00.000000","2024-01-16T23:00:00.000000"],"xaxis":"x","y":{"dtype":"f8","bdata":"QhaykIUsS0BCFrKQhSxLQEIWspCFLEtAta5KO0bsXkCykIUsZGFkQLKQhSxkYWRAAAAAAAAAAIAAAAAAAAAAgAAAAAAAAACAAAAAAAAAAIAAAAAAAAAAgAAAAAAAAACAcpYkv\u002f\u002fRRkAq1\u002fPxDRZYQJwfqRgSAFdAfMjQwtxFVUDIQhaykAVTQNAZfPdzZlBAQhaykIUsS0BCFrKQhSxLQEIWspCFLEtAQhaykIUsS0BCFrKQhSxLQEIWspCFLEtA3diXHwDRUUCykIUsZGFkQLKQhSxkYWRAspCFLGRhZECykIUsZGFkQLKQhSxkYWRAAAAAAAAAAIAAAAAAAAAAgAAAAAAAAACAAAAAAAAAAIAAAAAAAAAAgAAAAAAAAACAcpYkv\u002f\u002fRRkAq1\u002fPxDRZYQJwfqRgSAFdAfMjQwtxFVUDIQhaykAVTQNAZfPdzZlBAQhaykIUsS0BCFrKQhSxLQEIWspCFLEtAQhaykIUsS0BCFrKQhSxLQEIWspCFLEtA"},"yaxis":"y","type":"scatter"},{"hovertemplate":"flow=office(heat)\u003cbr\u003etime=%{x}\u003cbr\u003ekW=%{y}\u003cextra\u003e\u003c\u002fextra\u003e","legendgroup":"office(heat)","line":{"color":"#EF553B","dash":"solid","shape":"hv"},"marker":{"symbol":"circle"},"mode":"lines","name":"office(heat)","orientation":"v","showlegend":true,"x":["2024-01-15T00:00:00.000000","2024-01-15T01:00:00.000000","2024-01-15T02:00:00.000000","2024-01-15T03:00:00.000000","2024-01-15T04:00:00.000000","2024-01-15T05:00:00.000000","2024-01-15T06:00:00.000000","2024-01-15T07:00:00.000000","2024-01-15T08:00:00.000000","2024-01-15T09:00:00.000000","2024-01-15T10:00:00.000000","2024-01-15T11:00:00.000000","2024-01-15T12:00:00.000000","2024-01-15T13:00:00.000000","2024-01-15T14:00:00.000000","2024-01-15T15:00:00.000000","2024-01-15T16:00:00.000000","2024-01-15T17:00:00.000000","2024-01-15T18:00:00.000000","2024-01-15T19:00:00.000000","2024-01-15T20:00:00.000000","2024-01-15T21:00:00.000000","2024-01-15T22:00:00.000000","2024-01-15T23:00:00.000000","2024-01-16T00:00:00.000000","2024-01-16T01:00:00.000000","2024-01-16T02:00:00.000000","2024-01-16T03:00:00.000000","2024-01-16T04:00:00.000000","2024-01-16T05:00:00.000000","2024-01-16T06:00:00.000000","2024-01-16T07:00:00.000000","2024-01-16T08:00:00.000000","2024-01-16T09:00:00.000000","2024-01-16T10:00:00.000000","2024-01-16T11:00:00.000000","2024-01-16T12:00:00.000000","2024-01-16T13:00:00.000000","2024-01-16T14:00:00.000000","2024-01-16T15:00:00.000000","2024-01-16T16:00:00.000000","2024-01-16T17:00:00.000000","2024-01-16T18:00:00.000000","2024-01-16T19:00:00.000000","2024-01-16T20:00:00.000000","2024-01-16T21:00:00.000000","2024-01-16T22:00:00.000000","2024-01-16T23:00:00.000000"],"xaxis":"x","y":{"dtype":"f8","bdata":"AAAAAAAASUAAAAAAAABJQAAAAAAAAElAAAAAAAAASUAAAAAAAABJQAAAAAAAAElAAAAAAAAASUAN8n1MJy1OQAAAAAAAgFFAsMIHgDGSU0D1l5toBilVQLa7RibFKFZAAAAAAACAVkC2u0YmxShWQPaXm2gGKVVAsMIHgDGSU0AAAAAAAIBRQA7yfUwnLU5AAAAAAAAASUAAAAAAAABJQAAAAAAAAElAAAAAAAAASUAAAAAAAABJQAAAAAAAAElAAAAAAAAASUAAAAAAAABJQAAAAAAAAElAAAAAAAAASUAAAAAAAABJQAAAAAAAAElAAAAAAAAASUAN8n1MJy1OQAAAAAAAgFFAsMIHgDGSU0D1l5toBilVQLa7RibFKFZAAAAAAACAVkC2u0YmxShWQPaXm2gGKVVAsMIHgDGSU0AAAAAAAIBRQA7yfUwnLU5AAAAAAAAASUAAAAAAAABJQAAAAAAAAElAAAAAAAAASUAAAAAAAABJQAAAAAAAAElA"},"yaxis":"y","type":"scatter"},{"hovertemplate":"flow=boiler(gas)\u003cbr\u003etime=%{x}\u003cbr\u003ekW=%{y}\u003cextra\u003e\u003c\u002fextra\u003e","legendgroup":"boiler(gas)","line":{"color":"#00cc96","dash":"solid","shape":"hv"},"marker":{"symbol":"circle"},"mode":"lines","name":"boiler(gas)","orientation":"v","showlegend":true,"x":["2024-01-15T00:00:00.000000","2024-01-15T01:00:00.000000","2024-01-15T02:00:00.000000","2024-01-15T03:00:00.000000","2024-01-15T04:00:00.000000","2024-01-15T05:00:00.000000","2024-01-15T06:00:00.000000","2024-01-15T07:00:00.000000","2024-01-15T08:00:00.000000","2024-01-15T09:00:00.000000","2024-01-15T10:00:00.000000","2024-01-15T11:00:00.000000","2024-01-15T12:00:00.000000","2024-01-15T13:00:00.000000","2024-01-15T14:00:00.000000","2024-01-15T15:00:00.000000","2024-01-15T16:00:00.000000","2024-01-15T17:00:00.000000","2024-01-15T18:00:00.000000","2024-01-15T19:00:00.000000","2024-01-15T20:00:00.000000","2024-01-15T21:00:00.000000","2024-01-15T22:00:00.000000","2024-01-15T23:00:00.000000","2024-01-16T00:00:00.000000","2024-01-16T01:00:00.000000","2024-01-16T02:00:00.000000","2024-01-16T03:00:00.000000","2024-01-16T04:00:00.000000","2024-01-16T05:00:00.000000","2024-01-16T06:00:00.000000","2024-01-16T07:00:00.000000","2024-01-16T08:00:00.000000","2024-01-16T09:00:00.000000","2024-01-16T10:00:00.000000","2024-01-16T11:00:00.000000","2024-01-16T12:00:00.000000","2024-01-16T13:00:00.000000","2024-01-16T14:00:00.000000","2024-01-16T15:00:00.000000","2024-01-16T16:00:00.000000","2024-01-16T17:00:00.000000","2024-01-16T18:00:00.000000","2024-01-16T19:00:00.000000","2024-01-16T20:00:00.000000","2024-01-16T21:00:00.000000","2024-01-16T22:00:00.000000","2024-01-16T23:00:00.000000"],"xaxis":"x","y":{"dtype":"f8","bdata":"QhaykIUsS0BCFrKQhSxLQEIWspCFLEtAta5KO0bsXkCykIUsZGFkQLKQhSxkYWRAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcpYkv\u002f\u002fRRkAq1\u002fPxDRZYQJwfqRgSAFdAfMjQwtxFVUDIQhaykAVTQNAZfPdzZlBAQhaykIUsS0BCFrKQhSxLQEIWspCFLEtAQhaykIUsS0BCFrKQhSxLQEIWspCFLEtA3diXHwDRUUCykIUsZGFkQLKQhSxkYWRAspCFLGRhZECykIUsZGFkQLKQhSxkYWRAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcpYkv\u002f\u002fRRkAq1\u002fPxDRZYQJwfqRgSAFdAfMjQwtxFVUDIQhaykAVTQNAZfPdzZlBAQhaykIUsS0BCFrKQhSxLQEIWspCFLEtAQhaykIUsS0BCFrKQhSxLQEIWspCFLEtA"},"yaxis":"y","type":"scatter"},{"hovertemplate":"flow=boiler(heat)\u003cbr\u003etime=%{x}\u003cbr\u003ekW=%{y}\u003cextra\u003e\u003c\u002fextra\u003e","legendgroup":"boiler(heat)","line":{"color":"#ab63fa","dash":"solid","shape":"hv"},"marker":{"symbol":"circle"},"mode":"lines","name":"boiler(heat)","orientation":"v","showlegend":true,"x":["2024-01-15T00:00:00.000000","2024-01-15T01:00:00.000000","2024-01-15T02:00:00.000000","2024-01-15T03:00:00.000000","2024-01-15T04:00:00.000000","2024-01-15T05:00:00.000000","2024-01-15T06:00:00.000000","2024-01-15T07:00:00.000000","2024-01-15T08:00:00.000000","2024-01-15T09:00:00.000000","2024-01-15T10:00:00.000000","2024-01-15T11:00:00.000000","2024-01-15T12:00:00.000000","2024-01-15T13:00:00.000000","2024-01-15T14:00:00.000000","2024-01-15T15:00:00.000000","2024-01-15T16:00:00.000000","2024-01-15T17:00:00.000000","2024-01-15T18:00:00.000000","2024-01-15T19:00:00.000000","2024-01-15T20:00:00.000000","2024-01-15T21:00:00.000000","2024-01-15T22:00:00.000000","2024-01-15T23:00:00.000000","2024-01-16T00:00:00.000000","2024-01-16T01:00:00.000000","2024-01-16T02:00:00.000000","2024-01-16T03:00:00.000000","2024-01-16T04:00:00.000000","2024-01-16T05:00:00.000000","2024-01-16T06:00:00.000000","2024-01-16T07:00:00.000000","2024-01-16T08:00:00.000000","2024-01-16T09:00:00.000000","2024-01-16T10:00:00.000000","2024-01-16T11:00:00.000000","2024-01-16T12:00:00.000000","2024-01-16T13:00:00.000000","2024-01-16T14:00:00.000000","2024-01-16T15:00:00.000000","2024-01-16T16:00:00.000000","2024-01-16T17:00:00.000000","2024-01-16T18:00:00.000000","2024-01-16T19:00:00.000000","2024-01-16T20:00:00.000000","2024-01-16T21:00:00.000000","2024-01-16T22:00:00.000000","2024-01-16T23:00:00.000000"],"xaxis":"x","y":{"dtype":"f8","bdata":"AAAAAAAASUAAAAAAAABJQAAAAAAAAElA0E7e7vhyXEAAAAAAAMBiQAAAAAAAwGJAAAAAAAAAAIAAAAAAAAAAgAAAAAAAAACAAAAAAAAAAIAAAAAAAAAAgAAAAAAAAACAxRlfm6P+REC2u0YmxShWQPaXm2gGKVVAsMIHgDGSU0AAAAAAAIBRQA7yfUwnLU5AAAAAAAAASUAAAAAAAABJQAAAAAAAAElAAAAAAAAASUAAAAAAAABJQAAAAAAAAElARr1i1R5kUEAAAAAAAMBiQAAAAAAAwGJAAAAAAADAYkAAAAAAAMBiQAAAAAAAwGJAAAAAAAAAAIAAAAAAAAAAgAAAAAAAAACAAAAAAAAAAIAAAAAAAAAAgAAAAAAAAACAxRlfm6P+REC2u0YmxShWQPaXm2gGKVVAsMIHgDGSU0AAAAAAAIBRQA7yfUwnLU5AAAAAAAAASUAAAAAAAABJQAAAAAAAAElAAAAAAAAASUAAAAAAAABJQAAAAAAAAElA"},"yaxis":"y","type":"scatter"},{"hovertemplate":"flow=thermal_storage(charge)\u003cbr\u003etime=%{x}\u003cbr\u003ekW=%{y}\u003cextra\u003e\u003c\u002fextra\u003e","legendgroup":"thermal_storage(charge)","line":{"color":"#FFA15A","dash":"solid","shape":"hv"},"marker":{"symbol":"circle"},"mode":"lines","name":"thermal_storage(charge)","orientation":"v","showlegend":true,"x":["2024-01-15T00:00:00.000000","2024-01-15T01:00:00.000000","2024-01-15T02:00:00.000000","2024-01-15T03:00:00.000000","2024-01-15T04:00:00.000000","2024-01-15T05:00:00.000000","2024-01-15T06:00:00.000000","2024-01-15T07:00:00.000000","2024-01-15T08:00:00.000000","2024-01-15T09:00:00.000000","2024-01-15T10:00:00.000000","2024-01-15T11:00:00.000000","2024-01-15T12:00:00.000000","2024-01-15T13:00:00.000000","2024-01-15T14:00:00.000000","2024-01-15T15:00:00.000000","2024-01-15T16:00:00.000000","2024-01-15T17:00:00.000000","2024-01-15T18:00:00.000000","2024-01-15T19:00:00.000000","2024-01-15T20:00:00.000000","2024-01-15T21:00:00.000000","2024-01-15T22:00:00.000000","2024-01-15T23:00:00.000000","2024-01-16T00:00:00.000000","2024-01-16T01:00:00.000000","2024-01-16T02:00:00.000000","2024-01-16T03:00:00.000000","2024-01-16T04:00:00.000000","2024-01-16T05:00:00.000000","2024-01-16T06:00:00.000000","2024-01-16T07:00:00.000000","2024-01-16T08:00:00.000000","2024-01-16T09:00:00.000000","2024-01-16T10:00:00.000000","2024-01-16T11:00:00.000000","2024-01-16T12:00:00.000000","2024-01-16T13:00:00.000000","2024-01-16T14:00:00.000000","2024-01-16T15:00:00.000000","2024-01-16T16:00:00.000000","2024-01-16T17:00:00.000000","2024-01-16T18:00:00.000000","2024-01-16T19:00:00.000000","2024-01-16T20:00:00.000000","2024-01-16T21:00:00.000000","2024-01-16T22:00:00.000000","2024-01-16T23:00:00.000000"],"xaxis":"x","y":{"dtype":"f8","bdata":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAoZ283fHlT0AAAAAAAABZQAAAAAAAAFlAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAMOoVq\u002fYgL0AAAAAAAABZQAAAAAAAAFlAAAAAAAAAWUAAAAAAAABZQAAAAAAAAFlAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"},"yaxis":"y","type":"scatter"},{"hovertemplate":"flow=thermal_storage(discharge)\u003cbr\u003etime=%{x}\u003cbr\u003ekW=%{y}\u003cextra\u003e\u003c\u002fextra\u003e","legendgroup":"thermal_storage(discharge)","line":{"color":"#19d3f3","dash":"solid","shape":"hv"},"marker":{"symbol":"circle"},"mode":"lines","name":"thermal_storage(discharge)","orientation":"v","showlegend":true,"x":["2024-01-15T00:00:00.000000","2024-01-15T01:00:00.000000","2024-01-15T02:00:00.000000","2024-01-15T03:00:00.000000","2024-01-15T04:00:00.000000","2024-01-15T05:00:00.000000","2024-01-15T06:00:00.000000","2024-01-15T07:00:00.000000","2024-01-15T08:00:00.000000","2024-01-15T09:00:00.000000","2024-01-15T10:00:00.000000","2024-01-15T11:00:00.000000","2024-01-15T12:00:00.000000","2024-01-15T13:00:00.000000","2024-01-15T14:00:00.000000","2024-01-15T15:00:00.000000","2024-01-15T16:00:00.000000","2024-01-15T17:00:00.000000","2024-01-15T18:00:00.000000","2024-01-15T19:00:00.000000","2024-01-15T20:00:00.000000","2024-01-15T21:00:00.000000","2024-01-15T22:00:00.000000","2024-01-15T23:00:00.000000","2024-01-16T00:00:00.000000","2024-01-16T01:00:00.000000","2024-01-16T02:00:00.000000","2024-01-16T03:00:00.000000","2024-01-16T04:00:00.000000","2024-01-16T05:00:00.000000","2024-01-16T06:00:00.000000","2024-01-16T07:00:00.000000","2024-01-16T08:00:00.000000","2024-01-16T09:00:00.000000","2024-01-16T10:00:00.000000","2024-01-16T11:00:00.000000","2024-01-16T12:00:00.000000","2024-01-16T13:00:00.000000","2024-01-16T14:00:00.000000","2024-01-16T15:00:00.000000","2024-01-16T16:00:00.000000","2024-01-16T17:00:00.000000","2024-01-16T18:00:00.000000","2024-01-16T19:00:00.000000","2024-01-16T20:00:00.000000","2024-01-16T21:00:00.000000","2024-01-16T22:00:00.000000","2024-01-16T23:00:00.000000"],"xaxis":"x","y":{"dtype":"f8","bdata":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAASUAN8n1MJy1OQAAAAAAAgFFAsMIHgDGSU0D1l5toBilVQLa7RibFKFZAO+agZFwBSEAAAAAAAAAAgAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAIAAAAAAAAAAgAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAASUAN8n1MJy1OQAAAAAAAgFFAsMIHgDGSU0D1l5toBilVQLa7RibFKFZAO+agZFwBSEAAAAAAAAAAgAAAAAAAAACAAAAAAAAAAIAAAAAAAAAAgAAAAAAAAACAAAAAAAAAAIAAAAAAAAAAgAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAA"},"yaxis":"y","type":"scatter"}],                        {"template":{"data":{"histogram2dcontour":[{"type":"histogram2dcontour","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"choropleth":[{"type":"choropleth","colorbar":{"outlinewidth":0,"ticks":""}}],"histogram2d":[{"type":"histogram2d","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"heatmap":[{"type":"heatmap","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"contourcarpet":[{"type":"contourcarpet","colorbar":{"outlinewidth":0,"ticks":""}}],"contour":[{"type":"contour","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"surface":[{"type":"surface","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"mesh3d":[{"type":"mesh3d","colorbar":{"outlinewidth":0,"ticks":""}}],"scatter":[{"fillpattern":{"fillmode":"overlay","size":10,"solidity":0.2},"type":"scatter"}],"parcoords":[{"type":"parcoords","line":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterpolargl":[{"type":"scatterpolargl","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"bar":[{"error_x":{"color":"#2a3f5f"},"error_y":{"color":"#2a3f5f"},"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"bar"}],"scattergeo":[{"type":"scattergeo","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterpolar":[{"type":"scatterpolar","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"histogram":[{"marker":{"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"histogram"}],"scattergl":[{"type":"scattergl","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatter3d":[{"type":"scatter3d","line":{"colorbar":{"outlinewidth":0,"ticks":""}},"marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattermap":[{"type":"scattermap","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattermapbox":[{"type":"scattermapbox","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterternary":[{"type":"scatterternary","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattercarpet":[{"type":"scattercarpet","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"carpet":[{"aaxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"baxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"type":"carpet"}],"table":[{"cells":{"fill":{"color":"#EBF0F8"},"line":{"color":"white"}},"header":{"fill":{"color":"#C8D4E3"},"line":{"color":"white"}},"type":"table"}],"barpolar":[{"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"barpolar"}],"pie":[{"automargin":true,"type":"pie"}]},"layout":{"autotypenumbers":"strict","colorway":["#636efa","#EF553B","#00cc96","#ab63fa","#FFA15A","#19d3f3","#FF6692","#B6E880","#FF97FF","#FECB52"],"font":{"color":"#2a3f5f"},"hovermode":"closest","hoverlabel":{"align":"left"},"paper_bgcolor":"white","plot_bgcolor":"#E5ECF6","polar":{"bgcolor":"#E5ECF6","angularaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"radialaxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"ternary":{"bgcolor":"#E5ECF6","aaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"baxis":{"gridcolor":"white","linecolor":"white","ticks":""},"caxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"coloraxis":{"colorbar":{"outlinewidth":0,"ticks":""}},"colorscale":{"sequential":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"sequentialminus":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"diverging":[[0,"#8e0152"],[0.1,"#c51b7d"],[0.2,"#de77ae"],[0.3,"#f1b6da"],[0.4,"#fde0ef"],[0.5,"#f7f7f7"],[0.6,"#e6f5d0"],[0.7,"#b8e186"],[0.8,"#7fbc41"],[0.9,"#4d9221"],[1,"#276419"]]},"xaxis":{"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","automargin":true,"zerolinewidth":2},"yaxis":{"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","automargin":true,"zerolinewidth":2},"scene":{"xaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2},"yaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2},"zaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2}},"shapedefaults":{"line":{"color":"#2a3f5f"}},"annotationdefaults":{"arrowcolor":"#2a3f5f","arrowhead":0,"arrowwidth":1},"geo":{"bgcolor":"white","landcolor":"#E5ECF6","subunitcolor":"white","showland":true,"showlakes":true,"lakecolor":"white"},"title":{"x":0.05},"mapbox":{"style":"light"}}},"xaxis":{"anchor":"y","domain":[0.0,1.0],"title":{"text":"time"}},"yaxis":{"anchor":"x","domain":[0.0,1.0],"title":{"text":"kW"}},"legend":{"title":{"text":"flow"},"tracegroupgap":0},"title":{"text":"Flow Rates"}},                        {"responsive": true}                    ).then(function(){
+                            
+var gd = document.getElementById('20aea6dc-3b25-4a90-84a0-841d43bce572');
+var x = new MutationObserver(function (mutations, observer) {{
+        var display = window.getComputedStyle(gd).display;
+        if (!display || display === 'none') {{
+            console.log([gd, 'removed!']);
+            Plotly.purge(gd);
+            observer.disconnect();
+        }}
+}});
 
-<span class="ansi-red-fg">NameError</span>: name 'px' is not defined</pre>
+// Listen for the removal of the full notebook cells
+var notebookContainer = gd.closest('#notebook-container');
+if (notebookContainer) {{
+    x.observe(notebookContainer, {childList: true});
+}}
+
+// Listen for the clearing of the current output cell
+var outputEl = gd.closest('.output');
+if (outputEl) {{
+    x.observe(outputEl, {childList: true});
+}}
+
+                        })                };            </script> </div>
 </div>
 </div>
 </div>
@@ -2642,27 +2753,13 @@ pl.DataFrame(
 </div>
 </clipboard-copy>
 </div>
-<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">storage_flows</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">flow_rates</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s1">'flow'</span><span class="p">)</span><span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">starts_with</span><span class="p">(</span><span class="s1">'thermal_storage'</span><span class="p">))</span>
-<span class="n">px</span><span class="o">.</span><span class="n">line</span><span class="p">(</span>
-    <span class="n">storage_flows</span><span class="p">,</span>
-    <span class="n">x</span><span class="o">=</span><span class="s1">'time'</span><span class="p">,</span>
-    <span class="n">y</span><span class="o">=</span><span class="s1">'solution'</span><span class="p">,</span>
-    <span class="n">color</span><span class="o">=</span><span class="s1">'flow'</span><span class="p">,</span>
-    <span class="n">title</span><span class="o">=</span><span class="s1">'Storage Charge / Discharge'</span><span class="p">,</span>
-    <span class="n">labels</span><span class="o">=</span><span class="p">{</span><span class="s1">'solution'</span><span class="p">:</span> <span class="s1">'kW'</span><span class="p">},</span>
-    <span class="n">line_shape</span><span class="o">=</span><span class="s1">'hv'</span><span class="p">,</span>
-<span class="p">)</span>
+<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">storage_flows</span> <span class="o">=</span> <span class="p">[</span><span class="n">f</span> <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">result</span><span class="o">.</span><span class="n">flow_rates</span><span class="o">.</span><span class="n">coords</span><span class="p">[</span><span class="s1">'flow'</span><span class="p">]</span><span class="o">.</span><span class="n">values</span> <span class="k">if</span> <span class="s1">'thermal_storage'</span> <span class="ow">in</span> <span class="n">f</span><span class="p">]</span>
+<span class="n">df</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">flow_rates</span><span class="o">.</span><span class="n">sel</span><span class="p">(</span><span class="n">flow</span><span class="o">=</span><span class="n">storage_flows</span><span class="p">)</span><span class="o">.</span><span class="n">to_dataframe</span><span class="p">(</span><span class="s1">'kW'</span><span class="p">)</span><span class="o">.</span><span class="n">reset_index</span><span class="p">()</span>
+<span class="n">px</span><span class="o">.</span><span class="n">line</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="n">x</span><span class="o">=</span><span class="s1">'time'</span><span class="p">,</span> <span class="n">y</span><span class="o">=</span><span class="s1">'kW'</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s1">'flow'</span><span class="p">,</span> <span class="n">title</span><span class="o">=</span><span class="s1">'Storage Charge / Discharge'</span><span class="p">,</span> <span class="n">line_shape</span><span class="o">=</span><span class="s1">'hv'</span><span class="p">)</span>
 </pre></div>
-<div class="clipboard-copy-txt" id="cell-8">storage_flows = result.flow_rates.filter(pl.col('flow').str.starts_with('thermal_storage'))
-px.line(
-    storage_flows,
-    x='time',
-    y='solution',
-    color='flow',
-    title='Storage Charge / Discharge',
-    labels={'solution': 'kW'},
-    line_shape='hv',
-)</div>
+<div class="clipboard-copy-txt" id="cell-8">storage_flows = [f for f in result.flow_rates.coords['flow'].values if 'thermal_storage' in f]
+df = result.flow_rates.sel(flow=storage_flows).to_dataframe('kW').reset_index()
+px.line(df, x='time', y='kW', color='flow', title='Storage Charge / Discharge', line_shape='hv')</div>
 </div>
 </div>
 </div>
@@ -2673,19 +2770,33 @@ px.line(
 <div class="jp-OutputArea jp-Cell-outputArea">
 <div class="jp-OutputArea-child">
 <div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="application/vnd.jupyter.stderr" tabindex="0">
-<pre>
-<span class="ansi-red-fg">---------------------------------------------------------------------------</span>
-<span class="ansi-red-fg">NameError</span>                                 Traceback (most recent call last)
-<span class="ansi-cyan-fg">Cell</span><span class="ansi-cyan-fg"> </span><span class="ansi-green-fg">In[8]</span><span class="ansi-green-fg">, line 1</span>
-<span class="ansi-green-fg">----&gt; </span><span class="ansi-green-fg">1</span> storage_flows = <span class="ansi-yellow-bg">result</span>.flow_rates.filter(pl.col(<span class="ansi-yellow-fg">'</span><span class="ansi-yellow-fg">flow</span><span class="ansi-yellow-fg">'</span>).str.starts_with(<span class="ansi-yellow-fg">'</span><span class="ansi-yellow-fg">thermal_storage</span><span class="ansi-yellow-fg">'</span>))
-<span class="ansi-green-fg">      2</span> px.line(
-<span class="ansi-green-fg">      3</span>     storage_flows,
-<span class="ansi-green-fg">      4</span>     x=<span class="ansi-yellow-fg">'</span><span class="ansi-yellow-fg">time</span><span class="ansi-yellow-fg">'</span>,
-<span class="ansi-green-fg">   (...)</span><span class="ansi-green-fg">      9</span>     line_shape=<span class="ansi-yellow-fg">'</span><span class="ansi-yellow-fg">hv</span><span class="ansi-yellow-fg">'</span>,
-<span class="ansi-green-fg">     10</span> )
+<div class="jp-RenderedHTMLCommon jp-RenderedHTML jp-OutputArea-output" data-mime-type="text/html" tabindex="0">
+<div> <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/MathJax.js?config=TeX-AMS-MML_SVG"></script><script type="text/javascript">if (window.MathJax && window.MathJax.Hub && window.MathJax.Hub.Config) {window.MathJax.Hub.Config({SVG: {font: "STIX-Web"}});}</script> <script type="text/javascript">window.PlotlyConfig = {MathJaxConfig: 'local'};</script>
+<script charset="utf-8" crossorigin="anonymous" integrity="sha256-4rD3fugVb/nVJYUv5Ky3v+fYXoouHaBSP20WIJuEiWg=" src="https://cdn.plot.ly/plotly-3.3.1.min.js"></script> <div class="plotly-graph-div" id="363c2033-aff6-4117-9959-5efe455df4b9" style="height:525px; width:100%;"></div> <script type="text/javascript">                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("363c2033-aff6-4117-9959-5efe455df4b9")) {                    Plotly.newPlot(                        "363c2033-aff6-4117-9959-5efe455df4b9",                        [{"hovertemplate":"flow=thermal_storage(charge)\u003cbr\u003etime=%{x}\u003cbr\u003ekW=%{y}\u003cextra\u003e\u003c\u002fextra\u003e","legendgroup":"thermal_storage(charge)","line":{"color":"#636efa","dash":"solid","shape":"hv"},"marker":{"symbol":"circle"},"mode":"lines","name":"thermal_storage(charge)","orientation":"v","showlegend":true,"x":["2024-01-15T00:00:00.000000","2024-01-15T01:00:00.000000","2024-01-15T02:00:00.000000","2024-01-15T03:00:00.000000","2024-01-15T04:00:00.000000","2024-01-15T05:00:00.000000","2024-01-15T06:00:00.000000","2024-01-15T07:00:00.000000","2024-01-15T08:00:00.000000","2024-01-15T09:00:00.000000","2024-01-15T10:00:00.000000","2024-01-15T11:00:00.000000","2024-01-15T12:00:00.000000","2024-01-15T13:00:00.000000","2024-01-15T14:00:00.000000","2024-01-15T15:00:00.000000","2024-01-15T16:00:00.000000","2024-01-15T17:00:00.000000","2024-01-15T18:00:00.000000","2024-01-15T19:00:00.000000","2024-01-15T20:00:00.000000","2024-01-15T21:00:00.000000","2024-01-15T22:00:00.000000","2024-01-15T23:00:00.000000","2024-01-16T00:00:00.000000","2024-01-16T01:00:00.000000","2024-01-16T02:00:00.000000","2024-01-16T03:00:00.000000","2024-01-16T04:00:00.000000","2024-01-16T05:00:00.000000","2024-01-16T06:00:00.000000","2024-01-16T07:00:00.000000","2024-01-16T08:00:00.000000","2024-01-16T09:00:00.000000","2024-01-16T10:00:00.000000","2024-01-16T11:00:00.000000","2024-01-16T12:00:00.000000","2024-01-16T13:00:00.000000","2024-01-16T14:00:00.000000","2024-01-16T15:00:00.000000","2024-01-16T16:00:00.000000","2024-01-16T17:00:00.000000","2024-01-16T18:00:00.000000","2024-01-16T19:00:00.000000","2024-01-16T20:00:00.000000","2024-01-16T21:00:00.000000","2024-01-16T22:00:00.000000","2024-01-16T23:00:00.000000"],"xaxis":"x","y":{"dtype":"f8","bdata":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAoZ283fHlT0AAAAAAAABZQAAAAAAAAFlAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAMOoVq\u002fYgL0AAAAAAAABZQAAAAAAAAFlAAAAAAAAAWUAAAAAAAABZQAAAAAAAAFlAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"},"yaxis":"y","type":"scatter"},{"hovertemplate":"flow=thermal_storage(discharge)\u003cbr\u003etime=%{x}\u003cbr\u003ekW=%{y}\u003cextra\u003e\u003c\u002fextra\u003e","legendgroup":"thermal_storage(discharge)","line":{"color":"#EF553B","dash":"solid","shape":"hv"},"marker":{"symbol":"circle"},"mode":"lines","name":"thermal_storage(discharge)","orientation":"v","showlegend":true,"x":["2024-01-15T00:00:00.000000","2024-01-15T01:00:00.000000","2024-01-15T02:00:00.000000","2024-01-15T03:00:00.000000","2024-01-15T04:00:00.000000","2024-01-15T05:00:00.000000","2024-01-15T06:00:00.000000","2024-01-15T07:00:00.000000","2024-01-15T08:00:00.000000","2024-01-15T09:00:00.000000","2024-01-15T10:00:00.000000","2024-01-15T11:00:00.000000","2024-01-15T12:00:00.000000","2024-01-15T13:00:00.000000","2024-01-15T14:00:00.000000","2024-01-15T15:00:00.000000","2024-01-15T16:00:00.000000","2024-01-15T17:00:00.000000","2024-01-15T18:00:00.000000","2024-01-15T19:00:00.000000","2024-01-15T20:00:00.000000","2024-01-15T21:00:00.000000","2024-01-15T22:00:00.000000","2024-01-15T23:00:00.000000","2024-01-16T00:00:00.000000","2024-01-16T01:00:00.000000","2024-01-16T02:00:00.000000","2024-01-16T03:00:00.000000","2024-01-16T04:00:00.000000","2024-01-16T05:00:00.000000","2024-01-16T06:00:00.000000","2024-01-16T07:00:00.000000","2024-01-16T08:00:00.000000","2024-01-16T09:00:00.000000","2024-01-16T10:00:00.000000","2024-01-16T11:00:00.000000","2024-01-16T12:00:00.000000","2024-01-16T13:00:00.000000","2024-01-16T14:00:00.000000","2024-01-16T15:00:00.000000","2024-01-16T16:00:00.000000","2024-01-16T17:00:00.000000","2024-01-16T18:00:00.000000","2024-01-16T19:00:00.000000","2024-01-16T20:00:00.000000","2024-01-16T21:00:00.000000","2024-01-16T22:00:00.000000","2024-01-16T23:00:00.000000"],"xaxis":"x","y":{"dtype":"f8","bdata":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAASUAN8n1MJy1OQAAAAAAAgFFAsMIHgDGSU0D1l5toBilVQLa7RibFKFZAO+agZFwBSEAAAAAAAAAAgAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAIAAAAAAAAAAgAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAASUAN8n1MJy1OQAAAAAAAgFFAsMIHgDGSU0D1l5toBilVQLa7RibFKFZAO+agZFwBSEAAAAAAAAAAgAAAAAAAAACAAAAAAAAAAIAAAAAAAAAAgAAAAAAAAACAAAAAAAAAAIAAAAAAAAAAgAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAA"},"yaxis":"y","type":"scatter"}],                        {"template":{"data":{"histogram2dcontour":[{"type":"histogram2dcontour","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"choropleth":[{"type":"choropleth","colorbar":{"outlinewidth":0,"ticks":""}}],"histogram2d":[{"type":"histogram2d","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"heatmap":[{"type":"heatmap","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"contourcarpet":[{"type":"contourcarpet","colorbar":{"outlinewidth":0,"ticks":""}}],"contour":[{"type":"contour","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"surface":[{"type":"surface","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"mesh3d":[{"type":"mesh3d","colorbar":{"outlinewidth":0,"ticks":""}}],"scatter":[{"fillpattern":{"fillmode":"overlay","size":10,"solidity":0.2},"type":"scatter"}],"parcoords":[{"type":"parcoords","line":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterpolargl":[{"type":"scatterpolargl","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"bar":[{"error_x":{"color":"#2a3f5f"},"error_y":{"color":"#2a3f5f"},"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"bar"}],"scattergeo":[{"type":"scattergeo","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterpolar":[{"type":"scatterpolar","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"histogram":[{"marker":{"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"histogram"}],"scattergl":[{"type":"scattergl","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatter3d":[{"type":"scatter3d","line":{"colorbar":{"outlinewidth":0,"ticks":""}},"marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattermap":[{"type":"scattermap","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattermapbox":[{"type":"scattermapbox","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterternary":[{"type":"scatterternary","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattercarpet":[{"type":"scattercarpet","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"carpet":[{"aaxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"baxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"type":"carpet"}],"table":[{"cells":{"fill":{"color":"#EBF0F8"},"line":{"color":"white"}},"header":{"fill":{"color":"#C8D4E3"},"line":{"color":"white"}},"type":"table"}],"barpolar":[{"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"barpolar"}],"pie":[{"automargin":true,"type":"pie"}]},"layout":{"autotypenumbers":"strict","colorway":["#636efa","#EF553B","#00cc96","#ab63fa","#FFA15A","#19d3f3","#FF6692","#B6E880","#FF97FF","#FECB52"],"font":{"color":"#2a3f5f"},"hovermode":"closest","hoverlabel":{"align":"left"},"paper_bgcolor":"white","plot_bgcolor":"#E5ECF6","polar":{"bgcolor":"#E5ECF6","angularaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"radialaxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"ternary":{"bgcolor":"#E5ECF6","aaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"baxis":{"gridcolor":"white","linecolor":"white","ticks":""},"caxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"coloraxis":{"colorbar":{"outlinewidth":0,"ticks":""}},"colorscale":{"sequential":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"sequentialminus":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"diverging":[[0,"#8e0152"],[0.1,"#c51b7d"],[0.2,"#de77ae"],[0.3,"#f1b6da"],[0.4,"#fde0ef"],[0.5,"#f7f7f7"],[0.6,"#e6f5d0"],[0.7,"#b8e186"],[0.8,"#7fbc41"],[0.9,"#4d9221"],[1,"#276419"]]},"xaxis":{"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","automargin":true,"zerolinewidth":2},"yaxis":{"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","automargin":true,"zerolinewidth":2},"scene":{"xaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2},"yaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2},"zaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2}},"shapedefaults":{"line":{"color":"#2a3f5f"}},"annotationdefaults":{"arrowcolor":"#2a3f5f","arrowhead":0,"arrowwidth":1},"geo":{"bgcolor":"white","landcolor":"#E5ECF6","subunitcolor":"white","showland":true,"showlakes":true,"lakecolor":"white"},"title":{"x":0.05},"mapbox":{"style":"light"}}},"xaxis":{"anchor":"y","domain":[0.0,1.0],"title":{"text":"time"}},"yaxis":{"anchor":"x","domain":[0.0,1.0],"title":{"text":"kW"}},"legend":{"title":{"text":"flow"},"tracegroupgap":0},"title":{"text":"Storage Charge \u002f Discharge"}},                        {"responsive": true}                    ).then(function(){
+                            
+var gd = document.getElementById('363c2033-aff6-4117-9959-5efe455df4b9');
+var x = new MutationObserver(function (mutations, observer) {{
+        var display = window.getComputedStyle(gd).display;
+        if (!display || display === 'none') {{
+            console.log([gd, 'removed!']);
+            Plotly.purge(gd);
+            observer.disconnect();
+        }}
+}});
 
-<span class="ansi-red-fg">NameError</span>: name 'result' is not defined</pre>
+// Listen for the removal of the full notebook cells
+var notebookContainer = gd.closest('#notebook-container');
+if (notebookContainer) {{
+    x.observe(notebookContainer, {childList: true});
+}}
+
+// Listen for the clearing of the current output cell
+var outputEl = gd.closest('.output');
+if (outputEl) {{
+    x.observe(outputEl, {childList: true});
+}}
+
+                        })                };            </script> </div>
 </div>
 </div>
 </div>
@@ -2698,7 +2809,7 @@ px.line(
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h3 id="charge-state">Charge State<a class="anchor-link" href="#charge-state">¶</a></h3><p>The stored energy over time:</p>
+<h3 id="storage-level">Storage Level<a class="anchor-link" href="#storage-level">¶</a></h3><p>The stored energy over time:</p>
 </div>
 </div>
 </div>
@@ -2721,11 +2832,11 @@ px.line(
 </div>
 </clipboard-copy>
 </div>
-<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">cs</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">charge_state</span><span class="p">(</span><span class="s1">'thermal_storage'</span><span class="p">)</span>
-<span class="n">px</span><span class="o">.</span><span class="n">area</span><span class="p">(</span><span class="n">cs</span><span class="p">,</span> <span class="n">x</span><span class="o">=</span><span class="s1">'time'</span><span class="p">,</span> <span class="n">y</span><span class="o">=</span><span class="s1">'solution'</span><span class="p">,</span> <span class="n">title</span><span class="o">=</span><span class="s1">'Storage Charge State'</span><span class="p">,</span> <span class="n">labels</span><span class="o">=</span><span class="p">{</span><span class="s1">'solution'</span><span class="p">:</span> <span class="s1">'kWh'</span><span class="p">},</span> <span class="n">line_shape</span><span class="o">=</span><span class="s1">'hv'</span><span class="p">)</span>
+<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">df</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">storage_level</span><span class="p">(</span><span class="s1">'thermal_storage'</span><span class="p">)</span><span class="o">.</span><span class="n">to_dataframe</span><span class="p">(</span><span class="s1">'kWh'</span><span class="p">)</span><span class="o">.</span><span class="n">reset_index</span><span class="p">()</span>
+<span class="n">px</span><span class="o">.</span><span class="n">area</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="n">x</span><span class="o">=</span><span class="s1">'time'</span><span class="p">,</span> <span class="n">y</span><span class="o">=</span><span class="s1">'kWh'</span><span class="p">,</span> <span class="n">title</span><span class="o">=</span><span class="s1">'Storage Level'</span><span class="p">,</span> <span class="n">line_shape</span><span class="o">=</span><span class="s1">'hv'</span><span class="p">)</span>
 </pre></div>
-<div class="clipboard-copy-txt" id="cell-9">cs = result.charge_state('thermal_storage')
-px.area(cs, x='time', y='solution', title='Storage Charge State', labels={'solution': 'kWh'}, line_shape='hv')</div>
+<div class="clipboard-copy-txt" id="cell-9">df = result.storage_level('thermal_storage').to_dataframe('kWh').reset_index()
+px.area(df, x='time', y='kWh', title='Storage Level', line_shape='hv')</div>
 </div>
 </div>
 </div>
@@ -2736,15 +2847,33 @@ px.area(cs, x='time', y='solution', title='Storage Charge State', labels={'solut
 <div class="jp-OutputArea jp-Cell-outputArea">
 <div class="jp-OutputArea-child">
 <div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="application/vnd.jupyter.stderr" tabindex="0">
-<pre>
-<span class="ansi-red-fg">---------------------------------------------------------------------------</span>
-<span class="ansi-red-fg">NameError</span>                                 Traceback (most recent call last)
-<span class="ansi-cyan-fg">Cell</span><span class="ansi-cyan-fg"> </span><span class="ansi-green-fg">In[9]</span><span class="ansi-green-fg">, line 1</span>
-<span class="ansi-green-fg">----&gt; </span><span class="ansi-green-fg">1</span> cs = <span class="ansi-yellow-bg">result</span>.charge_state(<span class="ansi-yellow-fg">'</span><span class="ansi-yellow-fg">thermal_storage</span><span class="ansi-yellow-fg">'</span>)
-<span class="ansi-green-fg">      2</span> px.area(cs, x=<span class="ansi-yellow-fg">'</span><span class="ansi-yellow-fg">time</span><span class="ansi-yellow-fg">'</span>, y=<span class="ansi-yellow-fg">'</span><span class="ansi-yellow-fg">solution</span><span class="ansi-yellow-fg">'</span>, title=<span class="ansi-yellow-fg">'</span><span class="ansi-yellow-fg">Storage Charge State</span><span class="ansi-yellow-fg">'</span>, labels={<span class="ansi-yellow-fg">'</span><span class="ansi-yellow-fg">solution</span><span class="ansi-yellow-fg">'</span>: <span class="ansi-yellow-fg">'</span><span class="ansi-yellow-fg">kWh</span><span class="ansi-yellow-fg">'</span>}, line_shape=<span class="ansi-yellow-fg">'</span><span class="ansi-yellow-fg">hv</span><span class="ansi-yellow-fg">'</span>)
+<div class="jp-RenderedHTMLCommon jp-RenderedHTML jp-OutputArea-output" data-mime-type="text/html" tabindex="0">
+<div> <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/MathJax.js?config=TeX-AMS-MML_SVG"></script><script type="text/javascript">if (window.MathJax && window.MathJax.Hub && window.MathJax.Hub.Config) {window.MathJax.Hub.Config({SVG: {font: "STIX-Web"}});}</script> <script type="text/javascript">window.PlotlyConfig = {MathJaxConfig: 'local'};</script>
+<script charset="utf-8" crossorigin="anonymous" integrity="sha256-4rD3fugVb/nVJYUv5Ky3v+fYXoouHaBSP20WIJuEiWg=" src="https://cdn.plot.ly/plotly-3.3.1.min.js"></script> <div class="plotly-graph-div" id="8b2ec6ef-e51d-4727-a3ff-caa8011ee75a" style="height:525px; width:100%;"></div> <script type="text/javascript">                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("8b2ec6ef-e51d-4727-a3ff-caa8011ee75a")) {                    Plotly.newPlot(                        "8b2ec6ef-e51d-4727-a3ff-caa8011ee75a",                        [{"fillpattern":{"shape":""},"hovertemplate":"time=%{x}\u003cbr\u003ekWh=%{y}\u003cextra\u003e\u003c\u002fextra\u003e","legendgroup":"","line":{"color":"#636efa","shape":"hv"},"marker":{"symbol":"circle"},"mode":"lines","name":"","orientation":"v","showlegend":false,"stackgroup":"1","x":["2024-01-15T00:00:00.000000","2024-01-15T01:00:00.000000","2024-01-15T02:00:00.000000","2024-01-15T03:00:00.000000","2024-01-15T04:00:00.000000","2024-01-15T05:00:00.000000","2024-01-15T06:00:00.000000","2024-01-15T07:00:00.000000","2024-01-15T08:00:00.000000","2024-01-15T09:00:00.000000","2024-01-15T10:00:00.000000","2024-01-15T11:00:00.000000","2024-01-15T12:00:00.000000","2024-01-15T13:00:00.000000","2024-01-15T14:00:00.000000","2024-01-15T15:00:00.000000","2024-01-15T16:00:00.000000","2024-01-15T17:00:00.000000","2024-01-15T18:00:00.000000","2024-01-15T19:00:00.000000","2024-01-15T20:00:00.000000","2024-01-15T21:00:00.000000","2024-01-15T22:00:00.000000","2024-01-15T23:00:00.000000","2024-01-16T00:00:00.000000","2024-01-16T01:00:00.000000","2024-01-16T02:00:00.000000","2024-01-16T03:00:00.000000","2024-01-16T04:00:00.000000","2024-01-16T05:00:00.000000","2024-01-16T06:00:00.000000","2024-01-16T07:00:00.000000","2024-01-16T08:00:00.000000","2024-01-16T09:00:00.000000","2024-01-16T10:00:00.000000","2024-01-16T11:00:00.000000","2024-01-16T12:00:00.000000","2024-01-16T13:00:00.000000","2024-01-16T14:00:00.000000","2024-01-16T15:00:00.000000","2024-01-16T16:00:00.000000","2024-01-16T17:00:00.000000","2024-01-16T18:00:00.000000","2024-01-16T19:00:00.000000","2024-01-16T20:00:00.000000","2024-01-16T21:00:00.000000","2024-01-16T22:00:00.000000","2024-01-16T23:00:00.000000"],"xaxis":"x","y":{"dtype":"f8","bdata":"AAAAAAAYb0AzMzMzM\u002fBuQE5iEFiZyG5AibwDHu04c0DLjudUUkB5QAAAAAAAQH9ARGN9aKzne0A0unaYmup3QJA86DsiVXNAc7llFY58bEDfvhbQTYxhQJJAarJJnkhAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAlRMvk5WBLkCEdNMpUUtcQO0y2duMU2pAibwDHu04c0DLjudUUkB5QAAAAAAAQH9ARGN9aKzne0A0unaYmup3QJA86DsiVXNAc7llFY58bEDfvhbQTYxhQJJAarJJnkhAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAA"},"yaxis":"y","type":"scatter"}],                        {"template":{"data":{"histogram2dcontour":[{"type":"histogram2dcontour","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"choropleth":[{"type":"choropleth","colorbar":{"outlinewidth":0,"ticks":""}}],"histogram2d":[{"type":"histogram2d","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"heatmap":[{"type":"heatmap","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"contourcarpet":[{"type":"contourcarpet","colorbar":{"outlinewidth":0,"ticks":""}}],"contour":[{"type":"contour","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"surface":[{"type":"surface","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"mesh3d":[{"type":"mesh3d","colorbar":{"outlinewidth":0,"ticks":""}}],"scatter":[{"fillpattern":{"fillmode":"overlay","size":10,"solidity":0.2},"type":"scatter"}],"parcoords":[{"type":"parcoords","line":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterpolargl":[{"type":"scatterpolargl","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"bar":[{"error_x":{"color":"#2a3f5f"},"error_y":{"color":"#2a3f5f"},"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"bar"}],"scattergeo":[{"type":"scattergeo","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterpolar":[{"type":"scatterpolar","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"histogram":[{"marker":{"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"histogram"}],"scattergl":[{"type":"scattergl","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatter3d":[{"type":"scatter3d","line":{"colorbar":{"outlinewidth":0,"ticks":""}},"marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattermap":[{"type":"scattermap","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattermapbox":[{"type":"scattermapbox","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterternary":[{"type":"scatterternary","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattercarpet":[{"type":"scattercarpet","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"carpet":[{"aaxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"baxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"type":"carpet"}],"table":[{"cells":{"fill":{"color":"#EBF0F8"},"line":{"color":"white"}},"header":{"fill":{"color":"#C8D4E3"},"line":{"color":"white"}},"type":"table"}],"barpolar":[{"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"barpolar"}],"pie":[{"automargin":true,"type":"pie"}]},"layout":{"autotypenumbers":"strict","colorway":["#636efa","#EF553B","#00cc96","#ab63fa","#FFA15A","#19d3f3","#FF6692","#B6E880","#FF97FF","#FECB52"],"font":{"color":"#2a3f5f"},"hovermode":"closest","hoverlabel":{"align":"left"},"paper_bgcolor":"white","plot_bgcolor":"#E5ECF6","polar":{"bgcolor":"#E5ECF6","angularaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"radialaxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"ternary":{"bgcolor":"#E5ECF6","aaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"baxis":{"gridcolor":"white","linecolor":"white","ticks":""},"caxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"coloraxis":{"colorbar":{"outlinewidth":0,"ticks":""}},"colorscale":{"sequential":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"sequentialminus":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"diverging":[[0,"#8e0152"],[0.1,"#c51b7d"],[0.2,"#de77ae"],[0.3,"#f1b6da"],[0.4,"#fde0ef"],[0.5,"#f7f7f7"],[0.6,"#e6f5d0"],[0.7,"#b8e186"],[0.8,"#7fbc41"],[0.9,"#4d9221"],[1,"#276419"]]},"xaxis":{"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","automargin":true,"zerolinewidth":2},"yaxis":{"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","automargin":true,"zerolinewidth":2},"scene":{"xaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2},"yaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2},"zaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2}},"shapedefaults":{"line":{"color":"#2a3f5f"}},"annotationdefaults":{"arrowcolor":"#2a3f5f","arrowhead":0,"arrowwidth":1},"geo":{"bgcolor":"white","landcolor":"#E5ECF6","subunitcolor":"white","showland":true,"showlakes":true,"lakecolor":"white"},"title":{"x":0.05},"mapbox":{"style":"light"}}},"xaxis":{"anchor":"y","domain":[0.0,1.0],"title":{"text":"time"}},"yaxis":{"anchor":"x","domain":[0.0,1.0],"title":{"text":"kWh"}},"legend":{"tracegroupgap":0},"title":{"text":"Storage Level"}},                        {"responsive": true}                    ).then(function(){
+                            
+var gd = document.getElementById('8b2ec6ef-e51d-4727-a3ff-caa8011ee75a');
+var x = new MutationObserver(function (mutations, observer) {{
+        var display = window.getComputedStyle(gd).display;
+        if (!display || display === 'none') {{
+            console.log([gd, 'removed!']);
+            Plotly.purge(gd);
+            observer.disconnect();
+        }}
+}});
 
-<span class="ansi-red-fg">NameError</span>: name 'result' is not defined</pre>
+// Listen for the removal of the full notebook cells
+var notebookContainer = gd.closest('#notebook-container');
+if (notebookContainer) {{
+    x.observe(notebookContainer, {childList: true});
+}}
+
+// Listen for the clearing of the current output cell
+var outputEl = gd.closest('.output');
+if (outputEl) {{
+    x.observe(outputEl, {childList: true});
+}}
+
+                        })                };            </script> </div>
 </div>
 </div>
 </div>
@@ -2780,27 +2909,17 @@ px.area(cs, x='time', y='solution', title='Storage Charge State', labels={'solut
 </div>
 </clipboard-copy>
 </div>
-<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">heat_flows</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">flow_rates</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s1">'flow'</span><span class="p">)</span><span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">contains</span><span class="p">(</span><span class="s1">'heat|charge|discharge'</span><span class="p">))</span>
-<span class="n">px</span><span class="o">.</span><span class="n">line</span><span class="p">(</span>
-    <span class="n">heat_flows</span><span class="p">,</span>
-    <span class="n">x</span><span class="o">=</span><span class="s1">'time'</span><span class="p">,</span>
-    <span class="n">y</span><span class="o">=</span><span class="s1">'solution'</span><span class="p">,</span>
-    <span class="n">color</span><span class="o">=</span><span class="s1">'flow'</span><span class="p">,</span>
-    <span class="n">title</span><span class="o">=</span><span class="s1">'Heat Bus Balance'</span><span class="p">,</span>
-    <span class="n">labels</span><span class="o">=</span><span class="p">{</span><span class="s1">'solution'</span><span class="p">:</span> <span class="s1">'kW'</span><span class="p">},</span>
-    <span class="n">line_shape</span><span class="o">=</span><span class="s1">'hv'</span><span class="p">,</span>
-<span class="p">)</span>
+<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">heat_flow_ids</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="n">f</span> <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">result</span><span class="o">.</span><span class="n">flow_rates</span><span class="o">.</span><span class="n">coords</span><span class="p">[</span><span class="s1">'flow'</span><span class="p">]</span><span class="o">.</span><span class="n">values</span> <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">k</span> <span class="ow">in</span> <span class="n">f</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="p">(</span><span class="s1">'heat'</span><span class="p">,</span> <span class="s1">'charge'</span><span class="p">,</span> <span class="s1">'discharge'</span><span class="p">))</span>
+<span class="p">]</span>
+<span class="n">df</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">flow_rates</span><span class="o">.</span><span class="n">sel</span><span class="p">(</span><span class="n">flow</span><span class="o">=</span><span class="n">heat_flow_ids</span><span class="p">)</span><span class="o">.</span><span class="n">to_dataframe</span><span class="p">(</span><span class="s1">'kW'</span><span class="p">)</span><span class="o">.</span><span class="n">reset_index</span><span class="p">()</span>
+<span class="n">px</span><span class="o">.</span><span class="n">line</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="n">x</span><span class="o">=</span><span class="s1">'time'</span><span class="p">,</span> <span class="n">y</span><span class="o">=</span><span class="s1">'kW'</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s1">'flow'</span><span class="p">,</span> <span class="n">title</span><span class="o">=</span><span class="s1">'Heat Bus Balance'</span><span class="p">,</span> <span class="n">line_shape</span><span class="o">=</span><span class="s1">'hv'</span><span class="p">)</span>
 </pre></div>
-<div class="clipboard-copy-txt" id="cell-10">heat_flows = result.flow_rates.filter(pl.col('flow').str.contains('heat|charge|discharge'))
-px.line(
-    heat_flows,
-    x='time',
-    y='solution',
-    color='flow',
-    title='Heat Bus Balance',
-    labels={'solution': 'kW'},
-    line_shape='hv',
-)</div>
+<div class="clipboard-copy-txt" id="cell-10">heat_flow_ids = [
+    f for f in result.flow_rates.coords['flow'].values if any(k in f for k in ('heat', 'charge', 'discharge'))
+]
+df = result.flow_rates.sel(flow=heat_flow_ids).to_dataframe('kW').reset_index()
+px.line(df, x='time', y='kW', color='flow', title='Heat Bus Balance', line_shape='hv')</div>
 </div>
 </div>
 </div>
@@ -2811,19 +2930,33 @@ px.line(
 <div class="jp-OutputArea jp-Cell-outputArea">
 <div class="jp-OutputArea-child">
 <div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="application/vnd.jupyter.stderr" tabindex="0">
-<pre>
-<span class="ansi-red-fg">---------------------------------------------------------------------------</span>
-<span class="ansi-red-fg">NameError</span>                                 Traceback (most recent call last)
-<span class="ansi-cyan-fg">Cell</span><span class="ansi-cyan-fg"> </span><span class="ansi-green-fg">In[10]</span><span class="ansi-green-fg">, line 1</span>
-<span class="ansi-green-fg">----&gt; </span><span class="ansi-green-fg">1</span> heat_flows = <span class="ansi-yellow-bg">result</span>.flow_rates.filter(pl.col(<span class="ansi-yellow-fg">'</span><span class="ansi-yellow-fg">flow</span><span class="ansi-yellow-fg">'</span>).str.contains(<span class="ansi-yellow-fg">'</span><span class="ansi-yellow-fg">heat|charge|discharge</span><span class="ansi-yellow-fg">'</span>))
-<span class="ansi-green-fg">      2</span> px.line(
-<span class="ansi-green-fg">      3</span>     heat_flows,
-<span class="ansi-green-fg">      4</span>     x=<span class="ansi-yellow-fg">'</span><span class="ansi-yellow-fg">time</span><span class="ansi-yellow-fg">'</span>,
-<span class="ansi-green-fg">   (...)</span><span class="ansi-green-fg">      9</span>     line_shape=<span class="ansi-yellow-fg">'</span><span class="ansi-yellow-fg">hv</span><span class="ansi-yellow-fg">'</span>,
-<span class="ansi-green-fg">     10</span> )
+<div class="jp-RenderedHTMLCommon jp-RenderedHTML jp-OutputArea-output" data-mime-type="text/html" tabindex="0">
+<div> <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/MathJax.js?config=TeX-AMS-MML_SVG"></script><script type="text/javascript">if (window.MathJax && window.MathJax.Hub && window.MathJax.Hub.Config) {window.MathJax.Hub.Config({SVG: {font: "STIX-Web"}});}</script> <script type="text/javascript">window.PlotlyConfig = {MathJaxConfig: 'local'};</script>
+<script charset="utf-8" crossorigin="anonymous" integrity="sha256-4rD3fugVb/nVJYUv5Ky3v+fYXoouHaBSP20WIJuEiWg=" src="https://cdn.plot.ly/plotly-3.3.1.min.js"></script> <div class="plotly-graph-div" id="03ce0c99-ceb6-4c02-b6ee-c41dc0259004" style="height:525px; width:100%;"></div> <script type="text/javascript">                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("03ce0c99-ceb6-4c02-b6ee-c41dc0259004")) {                    Plotly.newPlot(                        "03ce0c99-ceb6-4c02-b6ee-c41dc0259004",                        [{"hovertemplate":"flow=office(heat)\u003cbr\u003etime=%{x}\u003cbr\u003ekW=%{y}\u003cextra\u003e\u003c\u002fextra\u003e","legendgroup":"office(heat)","line":{"color":"#636efa","dash":"solid","shape":"hv"},"marker":{"symbol":"circle"},"mode":"lines","name":"office(heat)","orientation":"v","showlegend":true,"x":["2024-01-15T00:00:00.000000","2024-01-15T01:00:00.000000","2024-01-15T02:00:00.000000","2024-01-15T03:00:00.000000","2024-01-15T04:00:00.000000","2024-01-15T05:00:00.000000","2024-01-15T06:00:00.000000","2024-01-15T07:00:00.000000","2024-01-15T08:00:00.000000","2024-01-15T09:00:00.000000","2024-01-15T10:00:00.000000","2024-01-15T11:00:00.000000","2024-01-15T12:00:00.000000","2024-01-15T13:00:00.000000","2024-01-15T14:00:00.000000","2024-01-15T15:00:00.000000","2024-01-15T16:00:00.000000","2024-01-15T17:00:00.000000","2024-01-15T18:00:00.000000","2024-01-15T19:00:00.000000","2024-01-15T20:00:00.000000","2024-01-15T21:00:00.000000","2024-01-15T22:00:00.000000","2024-01-15T23:00:00.000000","2024-01-16T00:00:00.000000","2024-01-16T01:00:00.000000","2024-01-16T02:00:00.000000","2024-01-16T03:00:00.000000","2024-01-16T04:00:00.000000","2024-01-16T05:00:00.000000","2024-01-16T06:00:00.000000","2024-01-16T07:00:00.000000","2024-01-16T08:00:00.000000","2024-01-16T09:00:00.000000","2024-01-16T10:00:00.000000","2024-01-16T11:00:00.000000","2024-01-16T12:00:00.000000","2024-01-16T13:00:00.000000","2024-01-16T14:00:00.000000","2024-01-16T15:00:00.000000","2024-01-16T16:00:00.000000","2024-01-16T17:00:00.000000","2024-01-16T18:00:00.000000","2024-01-16T19:00:00.000000","2024-01-16T20:00:00.000000","2024-01-16T21:00:00.000000","2024-01-16T22:00:00.000000","2024-01-16T23:00:00.000000"],"xaxis":"x","y":{"dtype":"f8","bdata":"AAAAAAAASUAAAAAAAABJQAAAAAAAAElAAAAAAAAASUAAAAAAAABJQAAAAAAAAElAAAAAAAAASUAN8n1MJy1OQAAAAAAAgFFAsMIHgDGSU0D1l5toBilVQLa7RibFKFZAAAAAAACAVkC2u0YmxShWQPaXm2gGKVVAsMIHgDGSU0AAAAAAAIBRQA7yfUwnLU5AAAAAAAAASUAAAAAAAABJQAAAAAAAAElAAAAAAAAASUAAAAAAAABJQAAAAAAAAElAAAAAAAAASUAAAAAAAABJQAAAAAAAAElAAAAAAAAASUAAAAAAAABJQAAAAAAAAElAAAAAAAAASUAN8n1MJy1OQAAAAAAAgFFAsMIHgDGSU0D1l5toBilVQLa7RibFKFZAAAAAAACAVkC2u0YmxShWQPaXm2gGKVVAsMIHgDGSU0AAAAAAAIBRQA7yfUwnLU5AAAAAAAAASUAAAAAAAABJQAAAAAAAAElAAAAAAAAASUAAAAAAAABJQAAAAAAAAElA"},"yaxis":"y","type":"scatter"},{"hovertemplate":"flow=boiler(heat)\u003cbr\u003etime=%{x}\u003cbr\u003ekW=%{y}\u003cextra\u003e\u003c\u002fextra\u003e","legendgroup":"boiler(heat)","line":{"color":"#EF553B","dash":"solid","shape":"hv"},"marker":{"symbol":"circle"},"mode":"lines","name":"boiler(heat)","orientation":"v","showlegend":true,"x":["2024-01-15T00:00:00.000000","2024-01-15T01:00:00.000000","2024-01-15T02:00:00.000000","2024-01-15T03:00:00.000000","2024-01-15T04:00:00.000000","2024-01-15T05:00:00.000000","2024-01-15T06:00:00.000000","2024-01-15T07:00:00.000000","2024-01-15T08:00:00.000000","2024-01-15T09:00:00.000000","2024-01-15T10:00:00.000000","2024-01-15T11:00:00.000000","2024-01-15T12:00:00.000000","2024-01-15T13:00:00.000000","2024-01-15T14:00:00.000000","2024-01-15T15:00:00.000000","2024-01-15T16:00:00.000000","2024-01-15T17:00:00.000000","2024-01-15T18:00:00.000000","2024-01-15T19:00:00.000000","2024-01-15T20:00:00.000000","2024-01-15T21:00:00.000000","2024-01-15T22:00:00.000000","2024-01-15T23:00:00.000000","2024-01-16T00:00:00.000000","2024-01-16T01:00:00.000000","2024-01-16T02:00:00.000000","2024-01-16T03:00:00.000000","2024-01-16T04:00:00.000000","2024-01-16T05:00:00.000000","2024-01-16T06:00:00.000000","2024-01-16T07:00:00.000000","2024-01-16T08:00:00.000000","2024-01-16T09:00:00.000000","2024-01-16T10:00:00.000000","2024-01-16T11:00:00.000000","2024-01-16T12:00:00.000000","2024-01-16T13:00:00.000000","2024-01-16T14:00:00.000000","2024-01-16T15:00:00.000000","2024-01-16T16:00:00.000000","2024-01-16T17:00:00.000000","2024-01-16T18:00:00.000000","2024-01-16T19:00:00.000000","2024-01-16T20:00:00.000000","2024-01-16T21:00:00.000000","2024-01-16T22:00:00.000000","2024-01-16T23:00:00.000000"],"xaxis":"x","y":{"dtype":"f8","bdata":"AAAAAAAASUAAAAAAAABJQAAAAAAAAElA0E7e7vhyXEAAAAAAAMBiQAAAAAAAwGJAAAAAAAAAAIAAAAAAAAAAgAAAAAAAAACAAAAAAAAAAIAAAAAAAAAAgAAAAAAAAACAxRlfm6P+REC2u0YmxShWQPaXm2gGKVVAsMIHgDGSU0AAAAAAAIBRQA7yfUwnLU5AAAAAAAAASUAAAAAAAABJQAAAAAAAAElAAAAAAAAASUAAAAAAAABJQAAAAAAAAElARr1i1R5kUEAAAAAAAMBiQAAAAAAAwGJAAAAAAADAYkAAAAAAAMBiQAAAAAAAwGJAAAAAAAAAAIAAAAAAAAAAgAAAAAAAAACAAAAAAAAAAIAAAAAAAAAAgAAAAAAAAACAxRlfm6P+REC2u0YmxShWQPaXm2gGKVVAsMIHgDGSU0AAAAAAAIBRQA7yfUwnLU5AAAAAAAAASUAAAAAAAABJQAAAAAAAAElAAAAAAAAASUAAAAAAAABJQAAAAAAAAElA"},"yaxis":"y","type":"scatter"},{"hovertemplate":"flow=thermal_storage(charge)\u003cbr\u003etime=%{x}\u003cbr\u003ekW=%{y}\u003cextra\u003e\u003c\u002fextra\u003e","legendgroup":"thermal_storage(charge)","line":{"color":"#00cc96","dash":"solid","shape":"hv"},"marker":{"symbol":"circle"},"mode":"lines","name":"thermal_storage(charge)","orientation":"v","showlegend":true,"x":["2024-01-15T00:00:00.000000","2024-01-15T01:00:00.000000","2024-01-15T02:00:00.000000","2024-01-15T03:00:00.000000","2024-01-15T04:00:00.000000","2024-01-15T05:00:00.000000","2024-01-15T06:00:00.000000","2024-01-15T07:00:00.000000","2024-01-15T08:00:00.000000","2024-01-15T09:00:00.000000","2024-01-15T10:00:00.000000","2024-01-15T11:00:00.000000","2024-01-15T12:00:00.000000","2024-01-15T13:00:00.000000","2024-01-15T14:00:00.000000","2024-01-15T15:00:00.000000","2024-01-15T16:00:00.000000","2024-01-15T17:00:00.000000","2024-01-15T18:00:00.000000","2024-01-15T19:00:00.000000","2024-01-15T20:00:00.000000","2024-01-15T21:00:00.000000","2024-01-15T22:00:00.000000","2024-01-15T23:00:00.000000","2024-01-16T00:00:00.000000","2024-01-16T01:00:00.000000","2024-01-16T02:00:00.000000","2024-01-16T03:00:00.000000","2024-01-16T04:00:00.000000","2024-01-16T05:00:00.000000","2024-01-16T06:00:00.000000","2024-01-16T07:00:00.000000","2024-01-16T08:00:00.000000","2024-01-16T09:00:00.000000","2024-01-16T10:00:00.000000","2024-01-16T11:00:00.000000","2024-01-16T12:00:00.000000","2024-01-16T13:00:00.000000","2024-01-16T14:00:00.000000","2024-01-16T15:00:00.000000","2024-01-16T16:00:00.000000","2024-01-16T17:00:00.000000","2024-01-16T18:00:00.000000","2024-01-16T19:00:00.000000","2024-01-16T20:00:00.000000","2024-01-16T21:00:00.000000","2024-01-16T22:00:00.000000","2024-01-16T23:00:00.000000"],"xaxis":"x","y":{"dtype":"f8","bdata":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAoZ283fHlT0AAAAAAAABZQAAAAAAAAFlAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAMOoVq\u002fYgL0AAAAAAAABZQAAAAAAAAFlAAAAAAAAAWUAAAAAAAABZQAAAAAAAAFlAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"},"yaxis":"y","type":"scatter"},{"hovertemplate":"flow=thermal_storage(discharge)\u003cbr\u003etime=%{x}\u003cbr\u003ekW=%{y}\u003cextra\u003e\u003c\u002fextra\u003e","legendgroup":"thermal_storage(discharge)","line":{"color":"#ab63fa","dash":"solid","shape":"hv"},"marker":{"symbol":"circle"},"mode":"lines","name":"thermal_storage(discharge)","orientation":"v","showlegend":true,"x":["2024-01-15T00:00:00.000000","2024-01-15T01:00:00.000000","2024-01-15T02:00:00.000000","2024-01-15T03:00:00.000000","2024-01-15T04:00:00.000000","2024-01-15T05:00:00.000000","2024-01-15T06:00:00.000000","2024-01-15T07:00:00.000000","2024-01-15T08:00:00.000000","2024-01-15T09:00:00.000000","2024-01-15T10:00:00.000000","2024-01-15T11:00:00.000000","2024-01-15T12:00:00.000000","2024-01-15T13:00:00.000000","2024-01-15T14:00:00.000000","2024-01-15T15:00:00.000000","2024-01-15T16:00:00.000000","2024-01-15T17:00:00.000000","2024-01-15T18:00:00.000000","2024-01-15T19:00:00.000000","2024-01-15T20:00:00.000000","2024-01-15T21:00:00.000000","2024-01-15T22:00:00.000000","2024-01-15T23:00:00.000000","2024-01-16T00:00:00.000000","2024-01-16T01:00:00.000000","2024-01-16T02:00:00.000000","2024-01-16T03:00:00.000000","2024-01-16T04:00:00.000000","2024-01-16T05:00:00.000000","2024-01-16T06:00:00.000000","2024-01-16T07:00:00.000000","2024-01-16T08:00:00.000000","2024-01-16T09:00:00.000000","2024-01-16T10:00:00.000000","2024-01-16T11:00:00.000000","2024-01-16T12:00:00.000000","2024-01-16T13:00:00.000000","2024-01-16T14:00:00.000000","2024-01-16T15:00:00.000000","2024-01-16T16:00:00.000000","2024-01-16T17:00:00.000000","2024-01-16T18:00:00.000000","2024-01-16T19:00:00.000000","2024-01-16T20:00:00.000000","2024-01-16T21:00:00.000000","2024-01-16T22:00:00.000000","2024-01-16T23:00:00.000000"],"xaxis":"x","y":{"dtype":"f8","bdata":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAASUAN8n1MJy1OQAAAAAAAgFFAsMIHgDGSU0D1l5toBilVQLa7RibFKFZAO+agZFwBSEAAAAAAAAAAgAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAIAAAAAAAAAAgAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAASUAN8n1MJy1OQAAAAAAAgFFAsMIHgDGSU0D1l5toBilVQLa7RibFKFZAO+agZFwBSEAAAAAAAAAAgAAAAAAAAACAAAAAAAAAAIAAAAAAAAAAgAAAAAAAAACAAAAAAAAAAIAAAAAAAAAAgAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAA"},"yaxis":"y","type":"scatter"}],                        {"template":{"data":{"histogram2dcontour":[{"type":"histogram2dcontour","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"choropleth":[{"type":"choropleth","colorbar":{"outlinewidth":0,"ticks":""}}],"histogram2d":[{"type":"histogram2d","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"heatmap":[{"type":"heatmap","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"contourcarpet":[{"type":"contourcarpet","colorbar":{"outlinewidth":0,"ticks":""}}],"contour":[{"type":"contour","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"surface":[{"type":"surface","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"mesh3d":[{"type":"mesh3d","colorbar":{"outlinewidth":0,"ticks":""}}],"scatter":[{"fillpattern":{"fillmode":"overlay","size":10,"solidity":0.2},"type":"scatter"}],"parcoords":[{"type":"parcoords","line":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterpolargl":[{"type":"scatterpolargl","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"bar":[{"error_x":{"color":"#2a3f5f"},"error_y":{"color":"#2a3f5f"},"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"bar"}],"scattergeo":[{"type":"scattergeo","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterpolar":[{"type":"scatterpolar","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"histogram":[{"marker":{"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"histogram"}],"scattergl":[{"type":"scattergl","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatter3d":[{"type":"scatter3d","line":{"colorbar":{"outlinewidth":0,"ticks":""}},"marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattermap":[{"type":"scattermap","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattermapbox":[{"type":"scattermapbox","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterternary":[{"type":"scatterternary","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattercarpet":[{"type":"scattercarpet","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"carpet":[{"aaxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"baxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"type":"carpet"}],"table":[{"cells":{"fill":{"color":"#EBF0F8"},"line":{"color":"white"}},"header":{"fill":{"color":"#C8D4E3"},"line":{"color":"white"}},"type":"table"}],"barpolar":[{"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"barpolar"}],"pie":[{"automargin":true,"type":"pie"}]},"layout":{"autotypenumbers":"strict","colorway":["#636efa","#EF553B","#00cc96","#ab63fa","#FFA15A","#19d3f3","#FF6692","#B6E880","#FF97FF","#FECB52"],"font":{"color":"#2a3f5f"},"hovermode":"closest","hoverlabel":{"align":"left"},"paper_bgcolor":"white","plot_bgcolor":"#E5ECF6","polar":{"bgcolor":"#E5ECF6","angularaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"radialaxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"ternary":{"bgcolor":"#E5ECF6","aaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"baxis":{"gridcolor":"white","linecolor":"white","ticks":""},"caxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"coloraxis":{"colorbar":{"outlinewidth":0,"ticks":""}},"colorscale":{"sequential":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"sequentialminus":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"diverging":[[0,"#8e0152"],[0.1,"#c51b7d"],[0.2,"#de77ae"],[0.3,"#f1b6da"],[0.4,"#fde0ef"],[0.5,"#f7f7f7"],[0.6,"#e6f5d0"],[0.7,"#b8e186"],[0.8,"#7fbc41"],[0.9,"#4d9221"],[1,"#276419"]]},"xaxis":{"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","automargin":true,"zerolinewidth":2},"yaxis":{"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","automargin":true,"zerolinewidth":2},"scene":{"xaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2},"yaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2},"zaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2}},"shapedefaults":{"line":{"color":"#2a3f5f"}},"annotationdefaults":{"arrowcolor":"#2a3f5f","arrowhead":0,"arrowwidth":1},"geo":{"bgcolor":"white","landcolor":"#E5ECF6","subunitcolor":"white","showland":true,"showlakes":true,"lakecolor":"white"},"title":{"x":0.05},"mapbox":{"style":"light"}}},"xaxis":{"anchor":"y","domain":[0.0,1.0],"title":{"text":"time"}},"yaxis":{"anchor":"x","domain":[0.0,1.0],"title":{"text":"kW"}},"legend":{"title":{"text":"flow"},"tracegroupgap":0},"title":{"text":"Heat Bus Balance"}},                        {"responsive": true}                    ).then(function(){
+                            
+var gd = document.getElementById('03ce0c99-ceb6-4c02-b6ee-c41dc0259004');
+var x = new MutationObserver(function (mutations, observer) {{
+        var display = window.getComputedStyle(gd).display;
+        if (!display || display === 'none') {{
+            console.log([gd, 'removed!']);
+            Plotly.purge(gd);
+            observer.disconnect();
+        }}
+}});
 
-<span class="ansi-red-fg">NameError</span>: name 'result' is not defined</pre>
+// Listen for the removal of the full notebook cells
+var notebookContainer = gd.closest('#notebook-container');
+if (notebookContainer) {{
+    x.observe(notebookContainer, {childList: true});
+}}
+
+// Listen for the clearing of the current output cell
+var outputEl = gd.closest('.output');
+if (outputEl) {{
+    x.observe(outputEl, {childList: true});
+}}
+
+                        })                };            </script> </div>
 </div>
 </div>
 </div>
@@ -2836,7 +2969,7 @@ px.line(
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h3 id="effect-contributions">Effect Contributions<a class="anchor-link" href="#effect-contributions">¶</a></h3><p>Breakdown of which flows drive cost:</p>
+<h3 id="effect-totals">Effect Totals<a class="anchor-link" href="#effect-totals">¶</a></h3>
 </div>
 </div>
 </div>
@@ -2859,23 +2992,11 @@ px.line(
 </div>
 </clipboard-copy>
 </div>
-<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">px</span><span class="o">.</span><span class="n">bar</span><span class="p">(</span>
-    <span class="n">result</span><span class="o">.</span><span class="n">contributions</span><span class="p">,</span>
-    <span class="n">x</span><span class="o">=</span><span class="s1">'time'</span><span class="p">,</span>
-    <span class="n">y</span><span class="o">=</span><span class="s1">'solution'</span><span class="p">,</span>
-    <span class="n">color</span><span class="o">=</span><span class="s1">'contributor'</span><span class="p">,</span>
-    <span class="n">title</span><span class="o">=</span><span class="s1">'Cost Contributions by Flow'</span><span class="p">,</span>
-    <span class="n">labels</span><span class="o">=</span><span class="p">{</span><span class="s1">'solution'</span><span class="p">:</span> <span class="s1">'EUR'</span><span class="p">},</span>
-<span class="p">)</span>
+<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">df</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">effects_temporal</span><span class="o">.</span><span class="n">to_dataframe</span><span class="p">(</span><span class="s1">'EUR'</span><span class="p">)</span><span class="o">.</span><span class="n">reset_index</span><span class="p">()</span>
+<span class="n">px</span><span class="o">.</span><span class="n">bar</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="n">x</span><span class="o">=</span><span class="s1">'time'</span><span class="p">,</span> <span class="n">y</span><span class="o">=</span><span class="s1">'EUR'</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s1">'effect'</span><span class="p">,</span> <span class="n">title</span><span class="o">=</span><span class="s1">'Effects per Timestep'</span><span class="p">)</span>
 </pre></div>
-<div class="clipboard-copy-txt" id="cell-11">px.bar(
-    result.contributions,
-    x='time',
-    y='solution',
-    color='contributor',
-    title='Cost Contributions by Flow',
-    labels={'solution': 'EUR'},
-)</div>
+<div class="clipboard-copy-txt" id="cell-11">df = result.effects_temporal.to_dataframe('EUR').reset_index()
+px.bar(df, x='time', y='EUR', color='effect', title='Effects per Timestep')</div>
 </div>
 </div>
 </div>
@@ -2886,21 +3007,33 @@ px.line(
 <div class="jp-OutputArea jp-Cell-outputArea">
 <div class="jp-OutputArea-child">
 <div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="application/vnd.jupyter.stderr" tabindex="0">
-<pre>
-<span class="ansi-red-fg">---------------------------------------------------------------------------</span>
-<span class="ansi-red-fg">NameError</span>                                 Traceback (most recent call last)
-<span class="ansi-cyan-fg">Cell</span><span class="ansi-cyan-fg"> </span><span class="ansi-green-fg">In[11]</span><span class="ansi-green-fg">, line 1</span>
-<span class="ansi-green-fg">----&gt; </span><span class="ansi-green-fg">1</span> <span class="ansi-yellow-bg">px</span>.bar(
-<span class="ansi-green-fg">      2</span>     result.contributions,
-<span class="ansi-green-fg">      3</span>     x=<span class="ansi-yellow-fg">'</span><span class="ansi-yellow-fg">time</span><span class="ansi-yellow-fg">'</span>,
-<span class="ansi-green-fg">      4</span>     y=<span class="ansi-yellow-fg">'</span><span class="ansi-yellow-fg">solution</span><span class="ansi-yellow-fg">'</span>,
-<span class="ansi-green-fg">      5</span>     color=<span class="ansi-yellow-fg">'</span><span class="ansi-yellow-fg">contributor</span><span class="ansi-yellow-fg">'</span>,
-<span class="ansi-green-fg">      6</span>     title=<span class="ansi-yellow-fg">'</span><span class="ansi-yellow-fg">Cost Contributions by Flow</span><span class="ansi-yellow-fg">'</span>,
-<span class="ansi-green-fg">      7</span>     labels={<span class="ansi-yellow-fg">'</span><span class="ansi-yellow-fg">solution</span><span class="ansi-yellow-fg">'</span>: <span class="ansi-yellow-fg">'</span><span class="ansi-yellow-fg">EUR</span><span class="ansi-yellow-fg">'</span>},
-<span class="ansi-green-fg">      8</span> )
+<div class="jp-RenderedHTMLCommon jp-RenderedHTML jp-OutputArea-output" data-mime-type="text/html" tabindex="0">
+<div> <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/MathJax.js?config=TeX-AMS-MML_SVG"></script><script type="text/javascript">if (window.MathJax && window.MathJax.Hub && window.MathJax.Hub.Config) {window.MathJax.Hub.Config({SVG: {font: "STIX-Web"}});}</script> <script type="text/javascript">window.PlotlyConfig = {MathJaxConfig: 'local'};</script>
+<script charset="utf-8" crossorigin="anonymous" integrity="sha256-4rD3fugVb/nVJYUv5Ky3v+fYXoouHaBSP20WIJuEiWg=" src="https://cdn.plot.ly/plotly-3.3.1.min.js"></script> <div class="plotly-graph-div" id="63880f31-cd6d-40e0-a775-abdc1cda85b7" style="height:525px; width:100%;"></div> <script type="text/javascript">                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("63880f31-cd6d-40e0-a775-abdc1cda85b7")) {                    Plotly.newPlot(                        "63880f31-cd6d-40e0-a775-abdc1cda85b7",                        [{"hovertemplate":"effect=cost\u003cbr\u003etime=%{x}\u003cbr\u003eEUR=%{y}\u003cextra\u003e\u003c\u002fextra\u003e","legendgroup":"cost","marker":{"color":"#636efa","pattern":{"shape":""}},"name":"cost","orientation":"v","showlegend":true,"textposition":"auto","x":["2024-01-15T00:00:00.000000","2024-01-15T01:00:00.000000","2024-01-15T02:00:00.000000","2024-01-15T03:00:00.000000","2024-01-15T04:00:00.000000","2024-01-15T05:00:00.000000","2024-01-15T06:00:00.000000","2024-01-15T07:00:00.000000","2024-01-15T08:00:00.000000","2024-01-15T09:00:00.000000","2024-01-15T10:00:00.000000","2024-01-15T11:00:00.000000","2024-01-15T12:00:00.000000","2024-01-15T13:00:00.000000","2024-01-15T14:00:00.000000","2024-01-15T15:00:00.000000","2024-01-15T16:00:00.000000","2024-01-15T17:00:00.000000","2024-01-15T18:00:00.000000","2024-01-15T19:00:00.000000","2024-01-15T20:00:00.000000","2024-01-15T21:00:00.000000","2024-01-15T22:00:00.000000","2024-01-15T23:00:00.000000","2024-01-16T00:00:00.000000","2024-01-16T01:00:00.000000","2024-01-16T02:00:00.000000","2024-01-16T03:00:00.000000","2024-01-16T04:00:00.000000","2024-01-16T05:00:00.000000","2024-01-16T06:00:00.000000","2024-01-16T07:00:00.000000","2024-01-16T08:00:00.000000","2024-01-16T09:00:00.000000","2024-01-16T10:00:00.000000","2024-01-16T11:00:00.000000","2024-01-16T12:00:00.000000","2024-01-16T13:00:00.000000","2024-01-16T14:00:00.000000","2024-01-16T15:00:00.000000","2024-01-16T16:00:00.000000","2024-01-16T17:00:00.000000","2024-01-16T18:00:00.000000","2024-01-16T19:00:00.000000","2024-01-16T20:00:00.000000","2024-01-16T21:00:00.000000","2024-01-16T22:00:00.000000","2024-01-16T23:00:00.000000"],"xaxis":"x","y":{"dtype":"f8","bdata":"FrKQhSxkAUAWspCFLGQBQBaykIUsZAFALP9iY2rKE0AhC1nIQhYaQCELWchCFhpAAAAAAAAAAIAAAAAAAAAAgAAAAAAAAACAAAAAAAAAAIAAAAAAAAAAgAAAAAAAAACA0MpXPMI1DUBAt9G6jNQeQGF62AC7cB1AyFyQLLQ6G0CFLGQhC1kYQI8M0hMF\u002fhRAFrKQhSxkEUAWspCFLGQRQBaykIUsZBFAFrKQhSxkEUAWspCFLGQBQBaykIUsZAFAbblRoxTOBkAhC1nIQhYaQCELWchCFhpAIQtZyEIWGkAhC1nIQhYaQCELWchCFhpAAAAAAAAAAIAAAAAAAAAAgAAAAAAAAACAAAAAAAAAAIAAAAAAAAAAgAAAAAAAAACA0MpXPMI1DUBAt9G6jNQeQGF62AC7cB1AyFyQLLQ6G0CFLGQhC1kYQI8M0hMF\u002fhRAFrKQhSxkEUAWspCFLGQRQBaykIUsZBFAFrKQhSxkEUAWspCFLGQBQBaykIUsZAFA"},"yaxis":"y","type":"bar"},{"hovertemplate":"effect=penalty\u003cbr\u003etime=%{x}\u003cbr\u003eEUR=%{y}\u003cextra\u003e\u003c\u002fextra\u003e","legendgroup":"penalty","marker":{"color":"#EF553B","pattern":{"shape":""}},"name":"penalty","orientation":"v","showlegend":true,"textposition":"auto","x":["2024-01-15T00:00:00.000000","2024-01-15T01:00:00.000000","2024-01-15T02:00:00.000000","2024-01-15T03:00:00.000000","2024-01-15T04:00:00.000000","2024-01-15T05:00:00.000000","2024-01-15T06:00:00.000000","2024-01-15T07:00:00.000000","2024-01-15T08:00:00.000000","2024-01-15T09:00:00.000000","2024-01-15T10:00:00.000000","2024-01-15T11:00:00.000000","2024-01-15T12:00:00.000000","2024-01-15T13:00:00.000000","2024-01-15T14:00:00.000000","2024-01-15T15:00:00.000000","2024-01-15T16:00:00.000000","2024-01-15T17:00:00.000000","2024-01-15T18:00:00.000000","2024-01-15T19:00:00.000000","2024-01-15T20:00:00.000000","2024-01-15T21:00:00.000000","2024-01-15T22:00:00.000000","2024-01-15T23:00:00.000000","2024-01-16T00:00:00.000000","2024-01-16T01:00:00.000000","2024-01-16T02:00:00.000000","2024-01-16T03:00:00.000000","2024-01-16T04:00:00.000000","2024-01-16T05:00:00.000000","2024-01-16T06:00:00.000000","2024-01-16T07:00:00.000000","2024-01-16T08:00:00.000000","2024-01-16T09:00:00.000000","2024-01-16T10:00:00.000000","2024-01-16T11:00:00.000000","2024-01-16T12:00:00.000000","2024-01-16T13:00:00.000000","2024-01-16T14:00:00.000000","2024-01-16T15:00:00.000000","2024-01-16T16:00:00.000000","2024-01-16T17:00:00.000000","2024-01-16T18:00:00.000000","2024-01-16T19:00:00.000000","2024-01-16T20:00:00.000000","2024-01-16T21:00:00.000000","2024-01-16T22:00:00.000000","2024-01-16T23:00:00.000000"],"xaxis":"x","y":{"dtype":"f8","bdata":"AAAAAAAAAIAAAAAAAAAAgAAAAAAAAACAAAAAAAAAAIAAAAAAAAAAgAAAAAAAAACAAAAAAAAAAIAAAAAAAAAAgAAAAAAAAACAAAAAAAAAAIAAAAAAAAAAgAAAAAAAAACAAAAAAAAAAIAAAAAAAAAAgAAAAAAAAACAAAAAAAAAAIAAAAAAAAAAgAAAAAAAAACAAAAAAAAAAIAAAAAAAAAAgAAAAAAAAACAAAAAAAAAAIAAAAAAAAAAgAAAAAAAAACAAAAAAAAAAIAAAAAAAAAAgAAAAAAAAACAAAAAAAAAAIAAAAAAAAAAgAAAAAAAAACAAAAAAAAAAIAAAAAAAAAAgAAAAAAAAACAAAAAAAAAAIAAAAAAAAAAgAAAAAAAAACAAAAAAAAAAIAAAAAAAAAAgAAAAAAAAACAAAAAAAAAAIAAAAAAAAAAgAAAAAAAAACAAAAAAAAAAIAAAAAAAAAAgAAAAAAAAACAAAAAAAAAAIAAAAAAAAAAgAAAAAAAAACA"},"yaxis":"y","type":"bar"}],                        {"template":{"data":{"histogram2dcontour":[{"type":"histogram2dcontour","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"choropleth":[{"type":"choropleth","colorbar":{"outlinewidth":0,"ticks":""}}],"histogram2d":[{"type":"histogram2d","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"heatmap":[{"type":"heatmap","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"contourcarpet":[{"type":"contourcarpet","colorbar":{"outlinewidth":0,"ticks":""}}],"contour":[{"type":"contour","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"surface":[{"type":"surface","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"mesh3d":[{"type":"mesh3d","colorbar":{"outlinewidth":0,"ticks":""}}],"scatter":[{"fillpattern":{"fillmode":"overlay","size":10,"solidity":0.2},"type":"scatter"}],"parcoords":[{"type":"parcoords","line":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterpolargl":[{"type":"scatterpolargl","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"bar":[{"error_x":{"color":"#2a3f5f"},"error_y":{"color":"#2a3f5f"},"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"bar"}],"scattergeo":[{"type":"scattergeo","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterpolar":[{"type":"scatterpolar","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"histogram":[{"marker":{"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"histogram"}],"scattergl":[{"type":"scattergl","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatter3d":[{"type":"scatter3d","line":{"colorbar":{"outlinewidth":0,"ticks":""}},"marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattermap":[{"type":"scattermap","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattermapbox":[{"type":"scattermapbox","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterternary":[{"type":"scatterternary","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattercarpet":[{"type":"scattercarpet","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"carpet":[{"aaxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"baxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"type":"carpet"}],"table":[{"cells":{"fill":{"color":"#EBF0F8"},"line":{"color":"white"}},"header":{"fill":{"color":"#C8D4E3"},"line":{"color":"white"}},"type":"table"}],"barpolar":[{"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"barpolar"}],"pie":[{"automargin":true,"type":"pie"}]},"layout":{"autotypenumbers":"strict","colorway":["#636efa","#EF553B","#00cc96","#ab63fa","#FFA15A","#19d3f3","#FF6692","#B6E880","#FF97FF","#FECB52"],"font":{"color":"#2a3f5f"},"hovermode":"closest","hoverlabel":{"align":"left"},"paper_bgcolor":"white","plot_bgcolor":"#E5ECF6","polar":{"bgcolor":"#E5ECF6","angularaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"radialaxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"ternary":{"bgcolor":"#E5ECF6","aaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"baxis":{"gridcolor":"white","linecolor":"white","ticks":""},"caxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"coloraxis":{"colorbar":{"outlinewidth":0,"ticks":""}},"colorscale":{"sequential":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"sequentialminus":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"diverging":[[0,"#8e0152"],[0.1,"#c51b7d"],[0.2,"#de77ae"],[0.3,"#f1b6da"],[0.4,"#fde0ef"],[0.5,"#f7f7f7"],[0.6,"#e6f5d0"],[0.7,"#b8e186"],[0.8,"#7fbc41"],[0.9,"#4d9221"],[1,"#276419"]]},"xaxis":{"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","automargin":true,"zerolinewidth":2},"yaxis":{"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","automargin":true,"zerolinewidth":2},"scene":{"xaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2},"yaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2},"zaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2}},"shapedefaults":{"line":{"color":"#2a3f5f"}},"annotationdefaults":{"arrowcolor":"#2a3f5f","arrowhead":0,"arrowwidth":1},"geo":{"bgcolor":"white","landcolor":"#E5ECF6","subunitcolor":"white","showland":true,"showlakes":true,"lakecolor":"white"},"title":{"x":0.05},"mapbox":{"style":"light"}}},"xaxis":{"anchor":"y","domain":[0.0,1.0],"title":{"text":"time"}},"yaxis":{"anchor":"x","domain":[0.0,1.0],"title":{"text":"EUR"}},"legend":{"title":{"text":"effect"},"tracegroupgap":0},"title":{"text":"Effects per Timestep"},"barmode":"relative"},                        {"responsive": true}                    ).then(function(){
+                            
+var gd = document.getElementById('63880f31-cd6d-40e0-a775-abdc1cda85b7');
+var x = new MutationObserver(function (mutations, observer) {{
+        var display = window.getComputedStyle(gd).display;
+        if (!display || display === 'none') {{
+            console.log([gd, 'removed!']);
+            Plotly.purge(gd);
+            observer.disconnect();
+        }}
+}});
 
-<span class="ansi-red-fg">NameError</span>: name 'px' is not defined</pre>
+// Listen for the removal of the full notebook cells
+var notebookContainer = gd.closest('#notebook-container');
+if (notebookContainer) {{
+    x.observe(notebookContainer, {childList: true});
+}}
+
+// Listen for the clearing of the current output cell
+var outputEl = gd.closest('.output');
+if (outputEl) {{
+    x.observe(outputEl, {childList: true});
+}}
+
+                        })                };            </script> </div>
 </div>
 </div>
 </div>
@@ -2919,7 +3052,7 @@ px.line(
 higher output to charge the storage</li>
 <li><strong>Discharge during peak</strong>: During expensive periods, storage supplements the
 boiler, reducing gas purchases</li>
-<li><strong>Efficiency trade-off</strong>: Storage has round-trip losses (0.98 × 0.98 = 96%)
+<li><strong>Efficiency trade-off</strong>: Storage has round-trip losses (0.98 x 0.98 = 96%)
 plus self-discharge, so shifting only happens when the price spread exceeds
 the loss cost</li>
 </ol>
@@ -2927,8 +3060,8 @@ the loss cost</li>
 <ul>
 <li>Add <strong>Storage</strong> with capacity, efficiency, and self-discharge</li>
 <li>Use <strong>time-varying prices</strong> via <code>effects_per_flow_hour</code></li>
-<li>Inspect <strong>charge states</strong> and <strong>storage operation</strong></li>
-<li>Join result DataFrames for combined analysis</li>
+<li>Inspect <strong>storage levels</strong> and <strong>storage operation</strong></li>
+<li>Use xarray DataArrays for result analysis</li>
 </ul>
 </div>
 </div>

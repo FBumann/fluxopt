@@ -572,6 +572,62 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/sizing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sizing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/status/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Status
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -1034,6 +1090,62 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sizing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sizing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../status/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Status
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -1169,6 +1281,11 @@ Each symbol maps to a specific field or variable in the code.</p>
 <td>Effects (cost, CO₂, …)</td>
 <td><code>effect</code> dimension</td>
 </tr>
+<tr>
+<td><span class="arithmatex">\(j \in \mathcal{K}\)</span></td>
+<td>Source effect (cross-effect)</td>
+<td><code>source_effect</code> dimension</td>
+</tr>
 </tbody>
 </table>
 <h2 id="variables">Variables<a class="headerlink" href="#variables" title="Permanent link">&para;</a></h2>
@@ -1185,31 +1302,101 @@ Each symbol maps to a specific field or variable in the code.</p>
 <tbody>
 <tr>
 <td><span class="arithmatex">\(P_{f,t}\)</span></td>
-<td><code>flow_rate[flow, time]</code></td>
+<td><code>flow--rate[flow, time]</code></td>
 <td><span class="arithmatex">\(\geq 0\)</span></td>
 <td>MW</td>
 <td>Flow rate</td>
 </tr>
 <tr>
 <td><span class="arithmatex">\(E_{s,t}\)</span></td>
-<td><code>charge_state[storage, time]</code></td>
+<td><code>storage--level[storage, time]</code></td>
 <td><span class="arithmatex">\(\geq 0\)</span></td>
 <td>MWh</td>
 <td>Stored energy</td>
 </tr>
 <tr>
-<td><span class="arithmatex">\(\Phi_{k,t}\)</span></td>
-<td><code>effect_per_timestep[effect, time]</code></td>
+<td><span class="arithmatex">\(\Phi_{k,t}^{\text{temporal}}\)</span></td>
+<td><code>effect--temporal[effect, time]</code></td>
 <td><span class="arithmatex">\(\mathbb{R}\)</span></td>
 <td>varies</td>
-<td>Per-timestep effect</td>
+<td>Temporal (per-timestep) effect</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\Phi_k^{\text{periodic}}\)</span></td>
+<td><code>effect--periodic[effect]</code></td>
+<td><span class="arithmatex">\(\mathbb{R}\)</span></td>
+<td>varies</td>
+<td>Periodic (investment) effect</td>
 </tr>
 <tr>
 <td><span class="arithmatex">\(\Phi_k\)</span></td>
-<td><code>effect_total[effect]</code></td>
+<td><code>effect--total[effect]</code></td>
 <td><span class="arithmatex">\(\mathbb{R}\)</span></td>
 <td>varies</td>
 <td>Total effect over horizon</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(S_f\)</span></td>
+<td><code>flow--size[flow]</code></td>
+<td><span class="arithmatex">\(\geq 0\)</span></td>
+<td>MW</td>
+<td>Invested flow capacity</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(y_f\)</span></td>
+<td><code>flow--size_indicator[flow]</code></td>
+<td><span class="arithmatex">\(\{0, 1\}\)</span></td>
+<td>—</td>
+<td>Binary invest indicator (flow)</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(S_s\)</span></td>
+<td><code>storage--capacity[storage]</code></td>
+<td><span class="arithmatex">\(\geq 0\)</span></td>
+<td>MWh</td>
+<td>Invested storage capacity</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(y_s\)</span></td>
+<td><code>storage--size_indicator[storage]</code></td>
+<td><span class="arithmatex">\(\{0, 1\}\)</span></td>
+<td>—</td>
+<td>Binary invest indicator (storage)</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\sigma_{f,t}\)</span></td>
+<td><code>flow--on[flow, time]</code></td>
+<td><span class="arithmatex">\(\{0, 1\}\)</span></td>
+<td>—</td>
+<td>On/off indicator</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\tau^+_{f,t}\)</span></td>
+<td><code>flow--startup[flow, time]</code></td>
+<td><span class="arithmatex">\(\{0, 1\}\)</span></td>
+<td>—</td>
+<td>Startup event indicator</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\tau^-_{f,t}\)</span></td>
+<td><code>flow--shutdown[flow, time]</code></td>
+<td><span class="arithmatex">\(\{0, 1\}\)</span></td>
+<td>—</td>
+<td>Shutdown event indicator</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(D^{\text{up}}_{f,t}\)</span></td>
+<td><code>uptime[flow, time]</code></td>
+<td><span class="arithmatex">\(\geq 0\)</span></td>
+<td>h</td>
+<td>Consecutive uptime</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(D^{\text{down}}_{f,t}\)</span></td>
+<td><code>downtime[flow, time]</code></td>
+<td><span class="arithmatex">\(\geq 0\)</span></td>
+<td>h</td>
+<td>Consecutive downtime</td>
 </tr>
 </tbody>
 </table>
@@ -1284,20 +1471,20 @@ Each symbol maps to a specific field or variable in the code.</p>
 <tr>
 <td><span class="arithmatex">\(\delta_s\)</span></td>
 <td><code>Storage.relative_loss_per_hour</code></td>
-<td><span class="arithmatex">\(\geq 0\)</span></td>
+<td><span class="arithmatex">\([0, 1]\)</span></td>
 <td>1/h</td>
 <td>Self-discharge rate</td>
 </tr>
 <tr>
 <td><span class="arithmatex">\(\underline{e}_s\)</span></td>
-<td><code>Storage.relative_minimum_charge_state</code></td>
+<td><code>Storage.relative_minimum_level</code></td>
 <td><span class="arithmatex">\([0, 1]\)</span></td>
 <td>—</td>
 <td>Relative min SOC</td>
 </tr>
 <tr>
 <td><span class="arithmatex">\(\bar{e}_s\)</span></td>
-<td><code>Storage.relative_maximum_charge_state</code></td>
+<td><code>Storage.relative_maximum_level</code></td>
 <td><span class="arithmatex">\([0, 1]\)</span></td>
 <td>—</td>
 <td>Relative max SOC</td>
@@ -1308,6 +1495,90 @@ Each symbol maps to a specific field or variable in the code.</p>
 <td><span class="arithmatex">\(\mathbb{R}\)</span></td>
 <td>—</td>
 <td>Conversion coefficient</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\alpha_{k,j}\)</span></td>
+<td><code>Effect.contribution_from</code></td>
+<td><span class="arithmatex">\(\mathbb{R}\)</span></td>
+<td>varies</td>
+<td>Cross-effect factor (scalar)</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\alpha_{k,j,t}\)</span></td>
+<td><code>Effect.contribution_from_per_hour</code></td>
+<td><span class="arithmatex">\(\mathbb{R}\)</span></td>
+<td>varies</td>
+<td>Cross-effect factor (time-varying)</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(S^-\)</span></td>
+<td><code>Sizing.min_size</code></td>
+<td><span class="arithmatex">\(\geq 0\)</span></td>
+<td>MW or MWh</td>
+<td>Minimum invested size (flow or storage)</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(S^+\)</span></td>
+<td><code>Sizing.max_size</code></td>
+<td><span class="arithmatex">\(\geq 0\)</span></td>
+<td>MW or MWh</td>
+<td>Maximum invested size (flow or storage)</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\gamma_{f,k}\)</span></td>
+<td><code>Sizing.effects_per_size</code></td>
+<td><span class="arithmatex">\(\mathbb{R}\)</span></td>
+<td>varies</td>
+<td>Per-size investment cost</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\phi_{f,k}\)</span></td>
+<td><code>Sizing.effects_fixed</code></td>
+<td><span class="arithmatex">\(\mathbb{R}\)</span></td>
+<td>varies</td>
+<td>Fixed investment cost</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(D^{\text{up,min}}\)</span></td>
+<td><code>Status.min_uptime</code></td>
+<td><span class="arithmatex">\(\geq 0\)</span></td>
+<td>h</td>
+<td>Minimum consecutive uptime</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(D^{\text{up,max}}\)</span></td>
+<td><code>Status.max_uptime</code></td>
+<td><span class="arithmatex">\(\geq 0\)</span></td>
+<td>h</td>
+<td>Maximum consecutive uptime</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(D^{\text{down,min}}\)</span></td>
+<td><code>Status.min_downtime</code></td>
+<td><span class="arithmatex">\(\geq 0\)</span></td>
+<td>h</td>
+<td>Minimum consecutive downtime</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(D^{\text{down,max}}\)</span></td>
+<td><code>Status.max_downtime</code></td>
+<td><span class="arithmatex">\(\geq 0\)</span></td>
+<td>h</td>
+<td>Maximum consecutive downtime</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(r_{f,k,t}\)</span></td>
+<td><code>Status.effects_per_running_hour</code></td>
+<td><span class="arithmatex">\(\mathbb{R}\)</span></td>
+<td>varies</td>
+<td>Running cost coefficient</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(u_{f,k,t}\)</span></td>
+<td><code>Status.effects_per_startup</code></td>
+<td><span class="arithmatex">\(\mathbb{R}\)</span></td>
+<td>varies</td>
+<td>Startup cost coefficient</td>
 </tr>
 <tr>
 <td><span class="arithmatex">\(w_t\)</span></td>
@@ -1358,7 +1629,7 @@ Each symbol maps to a specific field or variable in the code.</p>
 <tr>
 <td>Subscripts</td>
 <td>Indexing</td>
-<td><span class="arithmatex">\(f\)</span> (flow), <span class="arithmatex">\(t\)</span> (time), <span class="arithmatex">\(s\)</span> (storage), <span class="arithmatex">\(b\)</span> (bus), <span class="arithmatex">\(k\)</span> (effect)</td>
+<td><span class="arithmatex">\(f\)</span> (flow), <span class="arithmatex">\(t\)</span> (time), <span class="arithmatex">\(s\)</span> (storage), <span class="arithmatex">\(b\)</span> (bus), <span class="arithmatex">\(k\)</span> (effect), <span class="arithmatex">\(j\)</span> (source effect)</td>
 </tr>
 <tr>
 <td>Superscripts</td>

@@ -572,6 +572,62 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/sizing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sizing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/status/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Status
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -971,6 +1027,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#power-to-heat" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Power-to-Heat
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#heat-pump" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1073,6 +1140,62 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sizing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sizing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../status/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Status
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -1145,6 +1268,17 @@
     <span class="md-ellipsis">
       
         Boiler
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#power-to-heat" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Power-to-Heat
       
     </span>
   </a>
@@ -1255,17 +1389,27 @@ devices like CHP plants.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">Converter</span><span class="o">.</span><span class="n">boiler</span><span class="p">(</span><span class="s2">&quot;boiler&quot;</span><span class="p">,</span> <span class="n">thermal_efficiency</span><span class="o">=</span><span class="mf">0.9</span><span class="p">,</span> <span class="n">fuel_flow</span><span class="o">=</span><span class="n">gas</span><span class="p">,</span> <span class="n">thermal_flow</span><span class="o">=</span><span class="n">th</span><span class="p">)</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="c1"># conversion_factors = [{gas.id: 0.9, th.id: -1}]</span>
 </code></pre></div>
+<h3 id="power-to-heat">Power-to-Heat<a class="headerlink" href="#power-to-heat" title="Permanent link">&para;</a></h3>
+<p>An electric resistance heater with efficiency <span class="arithmatex">\(\eta = 0.99\)</span>:</p>
+<div class="arithmatex">\[
+\eta \cdot P_{\text{el},t} - P_{\text{th},t} = 0
+\]</div>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">Converter</span><span class="o">.</span><span class="n">power2heat</span><span class="p">(</span><span class="s2">&quot;p2h&quot;</span><span class="p">,</span> <span class="n">efficiency</span><span class="o">=</span><span class="mf">0.99</span><span class="p">,</span> <span class="n">electrical_flow</span><span class="o">=</span><span class="n">el</span><span class="p">,</span> <span class="n">thermal_flow</span><span class="o">=</span><span class="n">th</span><span class="p">)</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="c1"># conversion_factors = [{el.id: 0.99, th.id: -1}]</span>
+</code></pre></div>
 <h3 id="heat-pump">Heat Pump<a class="headerlink" href="#heat-pump" title="Permanent link">&para;</a></h3>
-<p>A heat pump with COP = 3.5:</p>
+<p>A heat pump with COP = 3.5 has <strong>two</strong> conversion equations — COP definition
+and energy balance:</p>
 <div class="arithmatex">\[
 \text{COP} \cdot P_{\text{el},t} - P_{\text{th},t} = 0
 \]</div>
 <div class="arithmatex">\[
-3.5 \cdot P_{\text{el},t} = P_{\text{th},t}
+P_{\text{el},t} + P_{\text{src},t} - P_{\text{th},t} = 0
 \]</div>
-<p>So 1 MW electrical input produces 3.5 MW thermal output.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">Converter</span><span class="o">.</span><span class="n">heat_pump</span><span class="p">(</span><span class="s2">&quot;hp&quot;</span><span class="p">,</span> <span class="n">cop</span><span class="o">=</span><span class="mf">3.5</span><span class="p">,</span> <span class="n">electrical_flow</span><span class="o">=</span><span class="n">el</span><span class="p">,</span> <span class="n">thermal_flow</span><span class="o">=</span><span class="n">th</span><span class="p">)</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="c1"># conversion_factors = [{el.id: 3.5, th.id: -1}]</span>
+<p>So 1 MW electrical input draws 2.5 MW from the environment and produces
+3.5 MW thermal output.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">Converter</span><span class="o">.</span><span class="n">heat_pump</span><span class="p">(</span><span class="s2">&quot;hp&quot;</span><span class="p">,</span> <span class="n">cop</span><span class="o">=</span><span class="mf">3.5</span><span class="p">,</span> <span class="n">electrical_flow</span><span class="o">=</span><span class="n">el</span><span class="p">,</span> <span class="n">source_flow</span><span class="o">=</span><span class="n">src</span><span class="p">,</span> <span class="n">thermal_flow</span><span class="o">=</span><span class="n">th</span><span class="p">)</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="c1"># conversion_factors = [{el.id: 3.5, th.id: -1}, {el.id: 1, src.id: 1, th.id: -1}]</span>
 </code></pre></div>
 <h3 id="chp-combined-heat-and-power">CHP (Combined Heat and Power)<a class="headerlink" href="#chp-combined-heat-and-power" title="Permanent link">&para;</a></h3>
 <p>A CHP with <span class="arithmatex">\(\eta_{\text{el}} = 0.4\)</span> and <span class="arithmatex">\(\eta_{\text{th}} = 0.5\)</span> has <strong>two</strong>
@@ -1277,18 +1421,18 @@ conversion equations:</p>
 \eta_{\text{th}} \cdot P_{\text{fuel},t} - P_{\text{th},t} = 0
 \]</div>
 <p>So 10 MW fuel input produces 4 MW electrical + 5 MW thermal.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">Converter</span><span class="o">.</span><span class="n">chp</span><span class="p">(</span><span class="s2">&quot;chp&quot;</span><span class="p">,</span> <span class="n">eta_el</span><span class="o">=</span><span class="mf">0.4</span><span class="p">,</span> <span class="n">eta_th</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>                     <span class="n">fuel_flow</span><span class="o">=</span><span class="n">fuel</span><span class="p">,</span> <span class="n">electrical_flow</span><span class="o">=</span><span class="n">el</span><span class="p">,</span> <span class="n">thermal_flow</span><span class="o">=</span><span class="n">th</span><span class="p">)</span>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="c1"># conversion_factors = [</span>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="c1">#     {fuel.id: 0.4, el.id: -1},</span>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="c1">#     {fuel.id: 0.5, th.id: -1},</span>
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="c1"># ]</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">Converter</span><span class="o">.</span><span class="n">chp</span><span class="p">(</span><span class="s2">&quot;chp&quot;</span><span class="p">,</span> <span class="n">eta_el</span><span class="o">=</span><span class="mf">0.4</span><span class="p">,</span> <span class="n">eta_th</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>                     <span class="n">fuel_flow</span><span class="o">=</span><span class="n">fuel</span><span class="p">,</span> <span class="n">electrical_flow</span><span class="o">=</span><span class="n">el</span><span class="p">,</span> <span class="n">thermal_flow</span><span class="o">=</span><span class="n">th</span><span class="p">)</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="c1"># conversion_factors = [</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="c1">#     {fuel.id: 0.4, el.id: -1},</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="c1">#     {fuel.id: 0.5, th.id: -1},</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="c1"># ]</span>
 </code></pre></div>
 <h3 id="time-varying-coefficients">Time-Varying Coefficients<a class="headerlink" href="#time-varying-coefficients" title="Permanent link">&para;</a></h3>
 <p>Conversion coefficients can be time-varying (e.g., a heat pump with hourly COP from
 weather data). Pass a list or array instead of a scalar:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">cop_profile</span> <span class="o">=</span> <span class="p">[</span><span class="mf">3.2</span><span class="p">,</span> <span class="mf">3.5</span><span class="p">,</span> <span class="mf">3.8</span><span class="p">,</span> <span class="mf">3.1</span><span class="p">]</span>  <span class="c1"># one value per timestep</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">Converter</span><span class="o">.</span><span class="n">heat_pump</span><span class="p">(</span><span class="s2">&quot;hp&quot;</span><span class="p">,</span> <span class="n">cop</span><span class="o">=</span><span class="n">cop_profile</span><span class="p">,</span> <span class="n">electrical_flow</span><span class="o">=</span><span class="n">el</span><span class="p">,</span> <span class="n">thermal_flow</span><span class="o">=</span><span class="n">th</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">cop_profile</span> <span class="o">=</span> <span class="p">[</span><span class="mf">3.2</span><span class="p">,</span> <span class="mf">3.5</span><span class="p">,</span> <span class="mf">3.8</span><span class="p">,</span> <span class="mf">3.1</span><span class="p">]</span>  <span class="c1"># one value per timestep</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="n">Converter</span><span class="o">.</span><span class="n">heat_pump</span><span class="p">(</span><span class="s2">&quot;hp&quot;</span><span class="p">,</span> <span class="n">cop</span><span class="o">=</span><span class="n">cop_profile</span><span class="p">,</span> <span class="n">electrical_flow</span><span class="o">=</span><span class="n">el</span><span class="p">,</span> <span class="n">source_flow</span><span class="o">=</span><span class="n">src</span><span class="p">,</span> <span class="n">thermal_flow</span><span class="o">=</span><span class="n">th</span><span class="p">)</span>
 </code></pre></div>
 
 

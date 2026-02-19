@@ -572,6 +572,62 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/sizing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sizing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/status/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Status
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -1023,6 +1079,62 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sizing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sizing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../status/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Status
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -1138,12 +1250,12 @@
 <tr>
 <td><span class="arithmatex">\(\mathcal{F}_b^{\text{out}}\)</span></td>
 <td>Flows producing into bus <span class="arithmatex">\(b\)</span></td>
-<td>Flows with <code>_is_input=False</code> connected to bus</td>
+<td><code>bus_coeff[f.id] = +1</code> (port imports, converter outputs, storage discharging)</td>
 </tr>
 <tr>
 <td><span class="arithmatex">\(\mathcal{F}_b^{\text{in}}\)</span></td>
 <td>Flows consuming from bus <span class="arithmatex">\(b\)</span></td>
-<td>Flows with <code>_is_input=True</code> connected to bus</td>
+<td><code>bus_coeff[f.id] = -1</code> (port exports, converter inputs, storage charging)</td>
 </tr>
 <tr>
 <td><span class="arithmatex">\(P_{f,t}\)</span></td>

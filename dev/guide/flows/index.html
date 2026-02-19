@@ -701,6 +701,62 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sizing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sizing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../status/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Status
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -1067,6 +1123,62 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../math/sizing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sizing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../math/status/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Status
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -1288,9 +1400,9 @@ and constraints.</p>
 </tr>
 <tr>
 <td><code>size</code></td>
-<td><code>float \| None</code></td>
+<td><code>float \| Sizing \| None</code></td>
 <td><code>None</code></td>
-<td>Nominal capacity [MW]</td>
+<td>Nominal capacity [MW] or <a href="../sizing/">investment</a></td>
 </tr>
 <tr>
 <td><code>relative_minimum</code></td>
@@ -1315,6 +1427,18 @@ and constraints.</p>
 <td><code>dict[str, TimeSeries]</code></td>
 <td><code>{}</code></td>
 <td>Effect coefficients per flow-hour</td>
+</tr>
+<tr>
+<td><code>status</code></td>
+<td><code>Status \| None</code></td>
+<td><code>None</code></td>
+<td><a href="../status/">On/off behavior</a> (semi-continuous, startup costs, durations)</td>
+</tr>
+<tr>
+<td><code>prior_rates</code></td>
+<td><code>list[float] \| None</code></td>
+<td><code>None</code></td>
+<td>Flow rates [MW] before the horizon (for <a href="../status/#prior-historical-state">status</a> initial conditions)</td>
 </tr>
 </tbody>
 </table>

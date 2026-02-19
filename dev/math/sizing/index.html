@@ -11,10 +11,10 @@
       
       
       
-        <link rel="prev" href="../converters/">
+        <link rel="prev" href="../effects/">
       
       
-        <link rel="next" href="../effects/">
+        <link rel="next" href="../status/">
       
       
         
@@ -25,7 +25,7 @@
     
     
       
-        <title>Storage - fluxopt</title>
+        <title>Sizing - fluxopt</title>
       
     
     
@@ -78,7 +78,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#storage-dynamics" class="md-skip">
+        <a href="#sizing-investment-optimization" class="md-skip">
           Skip to content
         </a>
       
@@ -112,7 +112,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Storage
+              Sizing
             
           </span>
         </div>
@@ -947,37 +947,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Storage
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../storage/" class="md-nav__link">
         
   
   
@@ -993,81 +966,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#charge-balance" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Charge Balance
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#charge-state-bounds" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Charge State Bounds
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#initial-cyclic-conditions" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Initial &amp; Cyclic Conditions
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#parameters" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Parameters
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#example" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Example
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -1105,10 +1003,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../sizing/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sizing
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -1124,6 +1049,170 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#variables" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Variables
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#mandatory-sizing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Mandatory Sizing
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#optional-sizing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Optional Sizing
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Optional Sizing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#binary-invest" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Binary Invest
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#flow-rate-bounds-with-sizing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Flow Rate Bounds with Sizing
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#storage-sizing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Storage Sizing
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#investment-effects" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Investment Effects
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Investment Effects">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#per-size" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-Size
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#total" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Total
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#parameters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parameters
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -1191,10 +1280,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#charge-balance" class="md-nav__link">
+  <a href="#overview" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Charge Balance
+        Overview
       
     </span>
   </a>
@@ -1202,10 +1291,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#charge-state-bounds" class="md-nav__link">
+  <a href="#variables" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Charge State Bounds
+        Variables
       
     </span>
   </a>
@@ -1213,13 +1302,113 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#initial-cyclic-conditions" class="md-nav__link">
+  <a href="#mandatory-sizing" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Initial &amp; Cyclic Conditions
+        Mandatory Sizing
       
     </span>
   </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#optional-sizing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Optional Sizing
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Optional Sizing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#binary-invest" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Binary Invest
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#flow-rate-bounds-with-sizing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Flow Rate Bounds with Sizing
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#storage-sizing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Storage Sizing
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#investment-effects" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Investment Effects
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Investment Effects">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#per-size" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-Size
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#total" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Total
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -1228,17 +1417,6 @@
     <span class="md-ellipsis">
       
         Parameters
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#example" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Example
       
     </span>
   </a>
@@ -1265,42 +1443,98 @@
   
 
 
-<h1 id="storage-dynamics">Storage Dynamics<a class="headerlink" href="#storage-dynamics" title="Permanent link">&para;</a></h1>
-<h2 id="charge-balance">Charge Balance<a class="headerlink" href="#charge-balance" title="Permanent link">&para;</a></h2>
-<p>The stored energy evolves over time according to charging, discharging, and
-self-discharge losses:</p>
+<h1 id="sizing-investment-optimization">Sizing (Investment Optimization)<a class="headerlink" href="#sizing-investment-optimization" title="Permanent link">&para;</a></h1>
+<h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
+<p>Sizing introduces a capacity decision variable <span class="arithmatex">\(S\)</span> that replaces the fixed
+nominal capacity <span class="arithmatex">\(\bar{P}_f\)</span>. The solver optimizes both the capacity and the
+dispatch simultaneously.</p>
+<h2 id="variables">Variables<a class="headerlink" href="#variables" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Symbol</th>
+<th>Code</th>
+<th>Domain</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><span class="arithmatex">\(S_f\)</span></td>
+<td><code>flow_size[flow]</code></td>
+<td><span class="arithmatex">\(\geq 0\)</span></td>
+<td>Invested flow capacity</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(y_f\)</span></td>
+<td><code>flow_size_indicator[flow]</code></td>
+<td><span class="arithmatex">\(\{0, 1\}\)</span></td>
+<td>Binary: invest yes/no (optional only)</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(S_s\)</span></td>
+<td><code>storage_capacity[storage]</code></td>
+<td><span class="arithmatex">\(\geq 0\)</span></td>
+<td>Invested storage capacity</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(y_s\)</span></td>
+<td><code>storage_size_indicator[storage]</code></td>
+<td><span class="arithmatex">\(\{0, 1\}\)</span></td>
+<td>Binary: invest yes/no (optional only)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="mandatory-sizing">Mandatory Sizing<a class="headerlink" href="#mandatory-sizing" title="Permanent link">&para;</a></h2>
+<p>When <code>mandatory=True</code>, the component must be built. The capacity is continuous:</p>
 <div class="arithmatex">\[
-E_{s,t+1} = E_{s,t} \left(1 - \delta_s\right)^{\Delta t_t} + P^{\text{c}}_{s,t} \, \eta^{\text{c}}_s \, \Delta t_t - \frac{P^{\text{d}}_{s,t}}{\eta^{\text{d}}_s} \, \Delta t_t
+S^- \leq S_f \leq S^+ \quad \text{(mandatory)}
 \]</div>
-<p>where:</p>
-<ul>
-<li><span class="arithmatex">\(E_{s,t}\)</span> — stored energy at the start of timestep <span class="arithmatex">\(t\)</span></li>
-<li><span class="arithmatex">\(P^{\text{c}}_{s,t}\)</span> — charging flow rate (energy entering the storage)</li>
-<li><span class="arithmatex">\(P^{\text{d}}_{s,t}\)</span> — discharging flow rate (energy leaving the storage)</li>
-<li><span class="arithmatex">\(\eta^{\text{c}}_s\)</span> — charging efficiency (losses during charging)</li>
-<li><span class="arithmatex">\(\eta^{\text{d}}_s\)</span> — discharging efficiency (losses during discharging)</li>
-<li><span class="arithmatex">\(\delta_s \in [0, 1]\)</span> — self-discharge rate per hour</li>
-<li><span class="arithmatex">\(\Delta t_t\)</span> — timestep duration in hours</li>
-</ul>
-<p>The charge state has <span class="arithmatex">\(|\mathcal{T}| + 1\)</span> values (one before each timestep plus one
-after the last timestep).</p>
-<h2 id="charge-state-bounds">Charge State Bounds<a class="headerlink" href="#charge-state-bounds" title="Permanent link">&para;</a></h2>
-<p>The charge state is bounded by relative SOC limits scaled by the storage capacity:</p>
+<p>where <span class="arithmatex">\(S^-\)</span> = <code>min_size</code> and <span class="arithmatex">\(S^+\)</span> = <code>max_size</code>.</p>
+<h2 id="optional-sizing">Optional Sizing<a class="headerlink" href="#optional-sizing" title="Permanent link">&para;</a></h2>
+<p>When <code>mandatory=False</code>, a binary indicator <span class="arithmatex">\(y_f\)</span> gates the capacity:</p>
 <div class="arithmatex">\[
-\bar{E}_s \cdot \underline{e}_s \leq E_{s,t} \leq \bar{E}_s \cdot \bar{e}_s \quad \forall \, s, t
+S^- \cdot y_f \leq S_f \leq S^+ \cdot y_f
 \]</div>
-<h2 id="initial-cyclic-conditions">Initial &amp; Cyclic Conditions<a class="headerlink" href="#initial-cyclic-conditions" title="Permanent link">&para;</a></h2>
-<p><strong>Fixed initial state:</strong></p>
+<p>When <span class="arithmatex">\(y_f = 0\)</span>: <span class="arithmatex">\(S_f = 0\)</span> (not built). When <span class="arithmatex">\(y_f = 1\)</span>: <span class="arithmatex">\(S_f \in [S^-, S^+]\)</span>.</p>
+<h3 id="binary-invest">Binary Invest<a class="headerlink" href="#binary-invest" title="Permanent link">&para;</a></h3>
+<p>When <span class="arithmatex">\(S^- = S^+\)</span>, the sizing reduces to a binary yes/no decision at exactly
+that capacity.</p>
+<h2 id="flow-rate-bounds-with-sizing">Flow Rate Bounds with Sizing<a class="headerlink" href="#flow-rate-bounds-with-sizing" title="Permanent link">&para;</a></h2>
+<p>With sizing, the fixed capacity <span class="arithmatex">\(\bar{P}_f\)</span> is replaced by the variable <span class="arithmatex">\(S_f\)</span>.
+The relative bounds scale by the invested size:</p>
 <div class="arithmatex">\[
-E_{s,t_0} = E_0
+S_f \cdot \underline{p}_{f,t} \leq P_{f,t} \leq S_f \cdot \bar{p}_{f,t} \quad \forall \, t
 \]</div>
-<p>where <span class="arithmatex">\(E_0\)</span> is <code>Storage.prior_level</code> (absolute MWh). If <code>prior_level</code> is <code>None</code>,
-the initial level is unconstrained (the optimizer chooses).</p>
-<p><strong>Cyclic condition</strong> (when <code>Storage.cyclic = True</code>):</p>
+<p>Similarly for fixed profiles:</p>
 <div class="arithmatex">\[
-E_{s,t_{\text{end}}} = E_{s,t_0}
+P_{f,t} = S_f \cdot \pi_{f,t} \quad \forall \, t
 \]</div>
-<p>This ensures the storage ends at the same level it started.</p>
+<h2 id="storage-sizing">Storage Sizing<a class="headerlink" href="#storage-sizing" title="Permanent link">&para;</a></h2>
+<p>The same pattern applies to storage capacity. The charge state bounds become:</p>
+<div class="arithmatex">\[
+S_s \cdot \underline{e}_s \leq E_{s,t} \leq S_s \cdot \bar{e}_s \quad \forall \, t
+\]</div>
+<h2 id="investment-effects">Investment Effects<a class="headerlink" href="#investment-effects" title="Permanent link">&para;</a></h2>
+<p>Investment costs contribute to effect totals. For each effect <span class="arithmatex">\(k\)</span>:</p>
+<h3 id="per-size">Per-Size<a class="headerlink" href="#per-size" title="Permanent link">&para;</a></h3>
+<div class="arithmatex">\[
+\Phi_k^{\text{invest,per\_size}} = \sum_{f} \gamma_{f,k} \cdot S_f + \sum_{s} \gamma_{s,k} \cdot S_s
+\]</div>
+<p>where <span class="arithmatex">\(\gamma_{f,k}\)</span> is <code>Sizing.effects_per_size[k]</code>.</p>
+<h3 id="fixed">Fixed<a class="headerlink" href="#fixed" title="Permanent link">&para;</a></h3>
+<div class="arithmatex">\[
+\Phi_k^{\text{invest,fixed}} = \sum_{f} \phi_{f,k} \cdot y_f + \sum_{s} \phi_{s,k} \cdot y_s
+\]</div>
+<p>where <span class="arithmatex">\(\phi_{f,k}\)</span> is <code>Sizing.effects_fixed[k]</code>. Only applies when
+<code>mandatory=False</code> (binary indicator exists).</p>
+<h3 id="total">Total<a class="headerlink" href="#total" title="Permanent link">&para;</a></h3>
+<p>The direct investment contribution to effect <span class="arithmatex">\(k\)</span> is:</p>
+<div class="arithmatex">\[
+\Phi_k^{\text{invest}} = \Phi_k^{\text{invest,per\_size}} + \Phi_k^{\text{invest,fixed}}
+\]</div>
+<p>This feeds into the <a href="../effects/">effect total</a> equation and can be further
+weighted by <a href="../effects/#cross-effect-contributions">cross-effect contributions</a>.</p>
 <h2 id="parameters">Parameters<a class="headerlink" href="#parameters" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -1312,65 +1546,43 @@ E_{s,t_{\text{end}}} = E_{s,t_0}
 </thead>
 <tbody>
 <tr>
-<td><span class="arithmatex">\(E_{s,t}\)</span></td>
-<td>Stored energy variable</td>
-<td><code>storage--level[storage, time]</code></td>
+<td><span class="arithmatex">\(S_f\)</span></td>
+<td>Flow capacity variable</td>
+<td><code>flow_size[flow]</code></td>
 </tr>
 <tr>
-<td><span class="arithmatex">\(P^{\text{c}}_{s,t}\)</span></td>
-<td>Charging flow rate</td>
-<td><code>flow_rate[charge_flow, time]</code></td>
+<td><span class="arithmatex">\(S_s\)</span></td>
+<td>Storage capacity variable</td>
+<td><code>storage_capacity[storage]</code></td>
 </tr>
 <tr>
-<td><span class="arithmatex">\(P^{\text{d}}_{s,t}\)</span></td>
-<td>Discharging flow rate</td>
-<td><code>flow_rate[discharge_flow, time]</code></td>
+<td><span class="arithmatex">\(y_f\)</span>, <span class="arithmatex">\(y_s\)</span></td>
+<td>Binary invest indicator</td>
+<td><code>flow_size_indicator</code>, <code>storage_size_indicator</code></td>
 </tr>
 <tr>
-<td><span class="arithmatex">\(\bar{E}_s\)</span></td>
-<td>Storage capacity</td>
-<td><code>Storage.capacity</code></td>
+<td><span class="arithmatex">\(S^-\)</span></td>
+<td>Minimum size</td>
+<td><code>Sizing.min_size</code></td>
 </tr>
 <tr>
-<td><span class="arithmatex">\(\eta^{\text{c}}_s\)</span></td>
-<td>Charging efficiency</td>
-<td><code>Storage.eta_charge</code></td>
+<td><span class="arithmatex">\(S^+\)</span></td>
+<td>Maximum size</td>
+<td><code>Sizing.max_size</code></td>
 </tr>
 <tr>
-<td><span class="arithmatex">\(\eta^{\text{d}}_s\)</span></td>
-<td>Discharging efficiency</td>
-<td><code>Storage.eta_discharge</code></td>
+<td><span class="arithmatex">\(\gamma_{f,k}\)</span></td>
+<td>Per-size investment cost</td>
+<td><code>Sizing.effects_per_size</code></td>
 </tr>
 <tr>
-<td><span class="arithmatex">\(\delta_s\)</span></td>
-<td>Self-discharge rate</td>
-<td><code>Storage.relative_loss_per_hour</code></td>
-</tr>
-<tr>
-<td><span class="arithmatex">\(\underline{e}_s\)</span></td>
-<td>Relative min SOC</td>
-<td><code>Storage.relative_minimum_level</code></td>
-</tr>
-<tr>
-<td><span class="arithmatex">\(\bar{e}_s\)</span></td>
-<td>Relative max SOC</td>
-<td><code>Storage.relative_maximum_level</code></td>
-</tr>
-<tr>
-<td><span class="arithmatex">\(\Delta t_t\)</span></td>
-<td>Timestep duration</td>
-<td>dt</td>
+<td><span class="arithmatex">\(\phi_{f,k}\)</span></td>
+<td>Fixed investment cost</td>
+<td><code>Sizing.effects_fixed</code></td>
 </tr>
 </tbody>
 </table>
 <p>See <a href="../notation/">Notation</a> for the full symbol table.</p>
-<h2 id="example">Example<a class="headerlink" href="#example" title="Permanent link">&para;</a></h2>
-<p>A battery with <span class="arithmatex">\(\bar{E} = 10\)</span> MWh, <span class="arithmatex">\(\eta^{\text{c}} = 0.95\)</span>,
-<span class="arithmatex">\(\eta^{\text{d}} = 0.95\)</span>, <span class="arithmatex">\(\delta = 0.001\)</span>/h, <span class="arithmatex">\(\Delta t = 1\)</span> h:</p>
-<p>Starting at <span class="arithmatex">\(E_0 = 5\)</span> MWh, charging at <span class="arithmatex">\(P^{\text{c}} = 2\)</span> MW:</p>
-<div class="arithmatex">\[
-E_1 = 5 \times (1 - 0.001)^{1} + 2 \times 0.95 \times 1 = 4.995 + 1.9 = 6.895 \; \text{MWh}
-\]</div>
 
 
 
@@ -1406,7 +1618,7 @@ E_1 = 5 \times (1 - 0.001)^{1} + 2 \times 0.95 \times 1 = 4.995 + 1.9 = 6.895 \;
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../converters/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Converters">
+          <a href="../effects/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Effects">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -1416,20 +1628,20 @@ E_1 = 5 \times (1 - 0.001)^{1} + 2 \times 0.95 \times 1 = 4.995 + 1.9 = 6.895 \;
                 Previous
               </span>
               <div class="md-ellipsis">
-                Converters
+                Effects
               </div>
             </div>
           </a>
         
         
           
-          <a href="../effects/" class="md-footer__link md-footer__link--next" aria-label="Next: Effects">
+          <a href="../status/" class="md-footer__link md-footer__link--next" aria-label="Next: Status">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Effects
+                Status
               </div>
             </div>
             <div class="md-footer__button md-icon">
