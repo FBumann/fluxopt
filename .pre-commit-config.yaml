@@ -23,7 +23,6 @@ repos:
       - id: mypy
         additional_dependencies:
           - pandas-stubs
-          - polars
         args: [--strict, src/]
         pass_filenames: false
         files: ^src/

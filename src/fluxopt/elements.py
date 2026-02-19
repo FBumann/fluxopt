@@ -6,38 +6,84 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from fluxopt.types import TimeSeries
 
+PENALTY_EFFECT_ID = 'penalty'
+
+
+@dataclass
+class Sizing:
+    """Capacity optimization parameters.
+
+    The solver decides the optimal size within [min_size, max_size].
+
+    - ``mandatory=True``: continuous, size in [min, max], no binary.
+    - ``mandatory=False``: binary indicator gates size: 0 or [min, max].
+    - ``min_size == max_size``: binary invest at exact size (yes/no).
+    """
+
+    min_size: float
+    max_size: float
+    mandatory: bool = True
+    effects_per_size: dict[str, float] = field(default_factory=dict)
+    effects_fixed: dict[str, float] = field(default_factory=dict)
+
+
+@dataclass
+class Status:
+    """Binary on/off behavior parameters.
+
+    Together with relative bounds, gives semi-continuous behavior:
+    ``{0} U [min, max] * size``.
+    """
+
+    min_uptime: float | None = None  # [h]
+    max_uptime: float | None = None  # [h]
+    min_downtime: float | None = None  # [h]
+    max_downtime: float | None = None  # [h]
+    effects_per_running_hour: dict[str, TimeSeries] = field(default_factory=dict)
+    effects_per_startup: dict[str, TimeSeries] = field(default_factory=dict)
+
 
 @dataclass(eq=False)
 class Flow:
     """A single energy flow on a bus.
 
-    ``id`` is optional: leave empty for the common single-flow-per-bus case and
-    the parent component will default it to the bus name.  Set it explicitly to
-    disambiguate when a component has multiple flows on the same bus::
+    ``id`` is optional: defaults to the bus name. Set explicitly to
+    disambiguate multiple flows on the same bus::
 
-        Flow(bus='elec')  # → boiler(elec)
-        Flow(bus='elec', id='base')  # → chp(base)
+        Flow(bus='elec')  # id → 'elec' → boiler(elec)
+        Flow(bus='elec', id='base')  # id → 'base' → chp(base)
 
-    After the parent component's ``__post_init__`` runs, ``id`` is expanded to
-    the qualified form ``{component.id}({id or bus})``.  For storage flows the
-    default is ``charge`` / ``discharge`` instead of the bus name.
+    After ``__post_init__`` of the parent component, ``id`` is expanded
+    to the qualified form ``component(id)``.
     """
 
     bus: str
     id: str = ''
-    size: float | None = None  # P̄_f  [MW]
+    size: float | Sizing | None = None  # P̄_f  [MW]
     relative_minimum: TimeSeries = 0.0  # p̲_f  [-]
     relative_maximum: TimeSeries = 1.0  # p̄_f  [-]
     fixed_relative_profile: TimeSeries | None = None  # π_f  [-]
     effects_per_flow_hour: dict[str, TimeSeries] = field(default_factory=dict)  # c_{f,k}  [varies]
+    status: Status | None = None
+    prior_rates: list[float] | None = None  # flow rates before horizon [MW]
 
-    _is_input: bool = field(default=False, init=False, repr=False)
+    def __post_init__(self) -> None:
+        """Default id to bus name if not set."""
+        if not self.id:
+            self.id = self.bus
+        if self.status is not None and isinstance(self.relative_minimum, (int, float)) and self.relative_minimum <= 0:
+            msg = (
+                f'Flow {self.id!r}: relative_minimum must be > 0 when status is set, '
+                f'otherwise on/off is indistinguishable (got {self.relative_minimum})'
+            )
+            raise ValueError(msg)
 
 
 @dataclass
 class Bus:
     id: str
     carrier: str | None = None
+    imbalance_penalty: float | None = None
 
 
 @dataclass
@@ -49,29 +95,41 @@ class Effect:
     minimum_total: float | None = None  # Φ̲_k  [unit]
     maximum_per_hour: TimeSeries | None = None  # Φ̄_{k,t}  [unit]
     minimum_per_hour: TimeSeries | None = None  # Φ̲_{k,t}  [unit]
+    contribution_from: dict[str, float] = field(default_factory=dict)
+    contribution_from_per_hour: dict[str, TimeSeries] = field(default_factory=dict)
 
 
 @dataclass
 class Storage:
-    """Energy storage with charge dynamics.
+    """Energy storage with level dynamics.
 
-    Charge balance:
-        E_{s,t+1} = E_{s,t} (1 - δ Δt) + P^c η^c Δt - P^d / η^d Δt
+    Flow ids are qualified as ``storage(flow)``. When both flows connect
+    to the same bus, they are renamed to ``charge`` / ``discharge``::
+
+        Storage('bat', Flow(bus='elec'), Flow(bus='elec'))  # bat(charge), bat(discharge)
+        Storage('bat', Flow(bus='elec'), Flow(bus='heat'))  # bat(elec), bat(heat)
+
+    Level balance::
+
+        E_{s,t+1} = E_{s,t} (1 - δ)^Δt + P^c η^c Δt - P^d / η^d Δt
     """
 
     id: str
     charging: Flow
     discharging: Flow
-    capacity: float | None = None  # Ē_s  [MWh]
+    capacity: float | Sizing | None = None  # Ē_s  [MWh]
     eta_charge: TimeSeries = 1.0  # η^c_s  [-]
     eta_discharge: TimeSeries = 1.0  # η^d_s  [-]
     relative_loss_per_hour: TimeSeries = 0.0  # δ_s  [1/h]
-    initial_charge_state: float | str | None = 0.0  # E_{s,0}  [MWh]
-    relative_minimum_charge_state: TimeSeries = 0.0  # e̲_s  [-]
-    relative_maximum_charge_state: TimeSeries = 1.0  # ē_s  [-]
+    prior_level: float | None = None  # E_{s,0}  [MWh]
+    cyclic: bool = True  # E_{s,first} == E_{s,last}
+    relative_minimum_level: TimeSeries = 0.0  # e̲_s  [-]
+    relative_maximum_level: TimeSeries = 1.0  # ē_s  [-]
 
     def __post_init__(self) -> None:
-        self.charging.id = f'{self.id}({self.charging.id or "charge"})'
-        self.charging._is_input = True  # charging takes energy from the bus
-        self.discharging.id = f'{self.id}({self.discharging.id or "discharge"})'
-        self.discharging._is_input = False  # discharging puts energy to the bus
+        """Rename colliding flow ids and qualify with storage id."""
+        if self.charging.id == self.discharging.id:
+            self.charging.id = 'charge'
+            self.discharging.id = 'discharge'
+        self.charging.id = f'{self.id}({self.charging.id})'
+        self.discharging.id = f'{self.id}({self.discharging.id})'

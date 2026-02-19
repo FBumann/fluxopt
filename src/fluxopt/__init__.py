@@ -1,60 +1,71 @@
-import polars as pl
+from collections.abc import Callable
+from typing import Any
 
 from fluxopt.components import Converter, Port
-from fluxopt.elements import Bus, Effect, Flow, Storage
-from fluxopt.model import FlowSystemModel
-from fluxopt.results import SolvedModel
-from fluxopt.tables import (
-    BusesTable,
-    ConvertersTable,
-    EffectsTable,
-    FlowsTable,
-    ModelData,
-    StoragesTable,
-    build_model_data,
+from fluxopt.elements import PENALTY_EFFECT_ID, Bus, Effect, Flow, Sizing, Status, Storage
+from fluxopt.model import FlowSystem
+from fluxopt.model_data import ModelData
+from fluxopt.results import Result
+from fluxopt.types import (
+    IdList,
+    TimeSeries,
+    Timesteps,
+    as_dataarray,
+    compute_dt,
+    normalize_timesteps,
 )
-from fluxopt.types import IdList, TimeSeries, Timesteps, compute_dt, normalize_timesteps, to_polars_series
 
 
-def solve(
+def optimize(
     timesteps: Timesteps,
     buses: list[Bus],
     effects: list[Effect],
     ports: list[Port],
     converters: list[Converter] | None = None,
     storages: list[Storage] | None = None,
-    dt: float | list[float] | pl.Series | None = None,
+    dt: float | list[float] | None = None,
     solver: str = 'highs',
-    silent: bool = True,
-) -> SolvedModel:
-    """Convenience: build data, build model, solve, return results."""
-    data = build_model_data(timesteps, buses, effects, ports, converters, storages, dt)
-    model = FlowSystemModel(data, solver=solver)
-    model.build()
-    return model.solve(silent=silent)
+    customize: Callable[[FlowSystem], None] | None = None,
+    **kwargs: Any,
+) -> Result:
+    """Build data, build model, optimize, return results.
+
+    Args:
+        timesteps: Time index for the optimization horizon.
+        buses: Energy buses in the system.
+        effects: Effects to track (costs, emissions, etc.).
+        ports: System boundary ports with imports/exports.
+        converters: Linear converters between buses.
+        storages: Energy storages.
+        dt: Timestep duration in hours. Auto-derived if None.
+        solver: Solver backend name.
+        customize: Optional callback to modify the linopy model between build and solve.
+            Receives the built FlowSystem; use ``model.m`` to add variables/constraints.
+        **kwargs: Passed through to ``linopy.Model.solve()``.
+    """
+    data = ModelData.build(timesteps, buses, effects, ports, converters, storages, dt)
+    model = FlowSystem(data)
+    return model.optimize(customize=customize, solver=solver, **kwargs)
 
 
 __all__ = [
+    'PENALTY_EFFECT_ID',
     'Bus',
-    'BusesTable',
     'Converter',
-    'ConvertersTable',
     'Effect',
-    'EffectsTable',
     'Flow',
-    'FlowSystemModel',
-    'FlowsTable',
+    'FlowSystem',
     'IdList',
     'ModelData',
     'Port',
-    'SolvedModel',
+    'Result',
+    'Sizing',
+    'Status',
     'Storage',
-    'StoragesTable',
     'TimeSeries',
     'Timesteps',
-    'build_model_data',
+    'as_dataarray',
     'compute_dt',
     'normalize_timesteps',
-    'solve',
-    'to_polars_series',
+    'optimize',
 ]

@@ -50,6 +50,17 @@ P_{f,t} = \bar{P}_f \cdot \pi_{f,t} \quad \forall \, f, t
 
 This is implemented by setting both lower and upper bounds equal to the profile value.
 
+## Sizing (Investment)
+
+When `Flow.size` is a `Sizing` object, the fixed capacity is replaced by a
+decision variable. See [Sizing](sizing.md) for the full formulation.
+
+## Status (On/Off)
+
+When `Flow.status` is set, binary on/off behavior is added. The flow becomes
+semi-continuous: \(\{0\} \cup [\underline{P}, \bar{P}]\). See [Status](status.md)
+for the full formulation.
+
 ## Effect Contributions
 
 Each flow can contribute to tracked effects (cost, emissions, ...). The

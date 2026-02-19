@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from fluxopt import Bus, Converter, Effect, Flow, Port, solve
+from fluxopt import Bus, Converter, Effect, Flow, Port, optimize
 
 
 class TestBoiler:
@@ -16,7 +16,7 @@ class TestBoiler:
         fuel = Flow(bus='gas', size=200)
         heat = Flow(bus='heat', size=100)
 
-        result = solve(
+        result = optimize(
             timesteps=timesteps_3,
             buses=[Bus('gas'), Bus('heat')],
             effects=[Effect('cost', is_objective=True)],
@@ -27,7 +27,7 @@ class TestBoiler:
             converters=[Converter.boiler('boiler', eta, fuel, heat)],
         )
 
-        gas_rates = result.flow_rate('boiler(gas)')['solution'].to_list()
+        gas_rates = result.flow_rate('boiler(gas)').values
         for gas, h in zip(gas_rates, heat_demand, strict=False):
             assert gas == pytest.approx(h / eta, abs=1e-6)
 
@@ -40,7 +40,7 @@ class TestBoiler:
         fuel = Flow(bus='gas', size=200)
         heat = Flow(bus='heat', size=100)
 
-        result = solve(
+        result = optimize(
             timesteps=timesteps_3,
             buses=[Bus('gas'), Bus('heat')],
             effects=[Effect('cost', is_objective=True)],
@@ -52,7 +52,7 @@ class TestBoiler:
         )
 
         expected = (50 / eta + 80 / eta + 60 / eta) * 0.04
-        assert result.objective_value == pytest.approx(expected, abs=1e-6)
+        assert result.objective == pytest.approx(expected, abs=1e-6)
 
 
 class TestCHP:
@@ -68,7 +68,7 @@ class TestCHP:
         elec_demand = Flow(bus='elec', size=100, fixed_relative_profile=[0.3, 0.3, 0.3])
         heat_demand = Flow(bus='heat', size=100, fixed_relative_profile=[0.5, 0.5, 0.5])
 
-        result = solve(
+        result = optimize(
             timesteps=timesteps_3,
             buses=[Bus('gas'), Bus('elec'), Bus('heat')],
             effects=[Effect('cost', is_objective=True)],
@@ -80,9 +80,9 @@ class TestCHP:
             converters=[Converter.chp('chp', eta_el, eta_th, fuel_flow, elec_flow, heat_flow)],
         )
 
-        gas_rates = result.flow_rate('chp(gas)')['solution'].to_list()
-        elec_rates = result.flow_rate('chp(elec)')['solution'].to_list()
-        heat_rates = result.flow_rate('chp(heat)')['solution'].to_list()
+        gas_rates = result.flow_rate('chp(gas)').values
+        elec_rates = result.flow_rate('chp(elec)').values
+        heat_rates = result.flow_rate('chp(heat)').values
 
         for gas, elec, heat in zip(gas_rates, elec_rates, heat_rates, strict=False):
             assert elec == pytest.approx(gas * eta_el, abs=1e-6)

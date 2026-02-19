@@ -1,7 +1,7 @@
 # Getting Started
 
 This walkthrough builds a simple heat system end to end: define components,
-solve, and inspect results.
+optimize, and inspect results.
 
 ## The System
 
@@ -20,7 +20,7 @@ gas bus ──▶ [boiler η=0.9] ──▶ heat bus ──▶ demand
 
 ```python
 from datetime import datetime
-from fluxopt import Bus, Converter, Effect, Flow, Port, solve
+from fluxopt import Bus, Converter, Effect, Flow, Port, optimize
 
 timesteps = [datetime(2024, 1, 1, h) for h in range(4)]
 ```
@@ -77,10 +77,10 @@ converters = [
 ]
 ```
 
-### 6. Solve
+### 6. Optimize
 
 ```python
-result = solve(
+result = optimize(
     timesteps=timesteps,
     buses=buses,
     effects=effects,
@@ -93,7 +93,7 @@ result = solve(
 
 ```python
 # Objective value (total cost)
-print(result.objective_value)
+print(result.objective)
 
 # Flow rates for a specific flow
 print(result.flow_rate('boiler(gas)'))
@@ -102,13 +102,10 @@ print(result.flow_rate('boiler(gas)'))
 print(result.flow_rates)
 
 # Effect totals
-print(result.effects)
+print(result.effect_totals)
 
 # Per-timestep effects
-print(result.effects_per_timestep)
-
-# Per-source contributions (which flows contributed to which effects)
-print(result.contributions)
+print(result.effects_temporal)
 ```
 
 Flow ids are qualified as `{component}({bus_or_id})` — e.g., `boiler(gas)`,

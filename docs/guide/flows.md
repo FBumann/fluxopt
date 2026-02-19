@@ -101,8 +101,10 @@ Port('plant', imports=[f1, f2])
 |---|---|---|---|
 | `bus` | `str` | required | Bus this flow connects to |
 | `id` | `str` | `''` | Optional id (auto-qualified by parent) |
-| `size` | `float \| None` | `None` | Nominal capacity [MW] |
+| `size` | `float \| Sizing \| None` | `None` | Nominal capacity [MW] or [investment](sizing.md) |
 | `relative_minimum` | `TimeSeries` | `0.0` | Lower bound as fraction of size |
 | `relative_maximum` | `TimeSeries` | `1.0` | Upper bound as fraction of size |
 | `fixed_relative_profile` | `TimeSeries \| None` | `None` | Fixed profile as fraction of size |
 | `effects_per_flow_hour` | `dict[str, TimeSeries]` | `{}` | Effect coefficients per flow-hour |
+| `status` | `Status \| None` | `None` | [On/off behavior](status.md) (semi-continuous, startup costs, durations) |
+| `prior_rates` | `list[float] \| None` | `None` | Flow rates [MW] before the horizon (for [status](status.md#prior-historical-state) initial conditions) |

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from datetime import datetime
 
-import polars as pl
 import pytest
 
 from fluxopt import (
@@ -10,12 +9,12 @@ from fluxopt import (
     Converter,
     Effect,
     Flow,
+    ModelData,
     Port,
     Storage,
-    build_model_data,
-    solve,
+    optimize,
 )
-from fluxopt.model import FlowSystemModel
+from fluxopt.model import FlowSystem
 
 
 class TestEndToEnd:
@@ -30,7 +29,7 @@ class TestEndToEnd:
         fuel = Flow(bus='gas', size=300)
         heat = Flow(bus='heat', size=200)
 
-        result = solve(
+        result = optimize(
             timesteps=timesteps,
             buses=[Bus('gas'), Bus('heat')],
             effects=[Effect('cost', is_objective=True)],
@@ -42,14 +41,14 @@ class TestEndToEnd:
         )
 
         # Verify gas = heat / eta
-        for i, hd in enumerate(heat_demand):
-            gas_rate = result.flow_rate('boiler(gas)')['solution'][i]
-            assert gas_rate == pytest.approx(hd / eta, abs=1e-6)
+        gas_rates = result.flow_rate('boiler(gas)').values
+        for gas, hd in zip(gas_rates, heat_demand, strict=False):
+            assert gas == pytest.approx(hd / eta, abs=1e-6)
 
         # Verify cost
         total_gas = sum(h / eta for h in heat_demand)
         expected_cost = total_gas * 0.04
-        assert result.objective_value == pytest.approx(expected_cost, abs=1e-6)
+        assert result.objective == pytest.approx(expected_cost, abs=1e-6)
 
     def test_boiler_plus_storage(self):
         """Boiler + thermal storage: store heat in cheap hours."""
@@ -66,7 +65,7 @@ class TestEndToEnd:
         discharge_flow = Flow(bus='heat', size=100)
         storage = Storage('heat_store', charging=charge_flow, discharging=discharge_flow, capacity=200.0)
 
-        result = solve(
+        result = optimize(
             timesteps=timesteps,
             buses=[Bus('gas'), Bus('heat')],
             effects=[Effect('cost', is_objective=True)],
@@ -79,16 +78,15 @@ class TestEndToEnd:
         )
 
         # Verify the optimizer uses more gas in cheap hours
-        gas_t0 = result.flow_rate('grid(gas)')['solution'][0]
-        gas_t1 = result.flow_rate('grid(gas)')['solution'][1]
-        assert gas_t0 > gas_t1  # More gas bought in cheap hour
+        gas_rates = result.flow_rate('grid(gas)').values
+        assert gas_rates[0] > gas_rates[1]  # More gas bought in cheap hour
 
     def test_modified_data(self, timesteps_3):
         """Build data, modify bounds, solve -- verify modified result."""
         sink_flow = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.5, 0.5])
         source_flow = Flow(bus='elec', size=200, effects_per_flow_hour={'cost': 0.04})
 
-        data = build_model_data(
+        data = ModelData.build(
             timesteps_3,
             [Bus('elec')],
             [Effect('cost', is_objective=True)],
@@ -96,22 +94,22 @@ class TestEndToEnd:
         )
 
         # Change demand from 0.5 to 0.7 (relative); absolute = 0.7 * 100 = 70
-        data.flows.fixed = data.flows.fixed.with_columns(pl.lit(0.7).alias('value'))
+        data.flows.fixed_profile.loc[{'flow': 'demand(elec)'}] = 0.7
 
-        model = FlowSystemModel(data)
+        model = FlowSystem(data)
         model.build()
         result = model.solve()
 
-        source_rates = result.flow_rate('grid(elec)')['solution'].to_list()
+        source_rates = result.flow_rate('grid(elec)').values
         for rate in source_rates:
             assert rate == pytest.approx(70.0, abs=1e-6)
 
     def test_result_accessors(self, timesteps_3):
-        """Test SolvedModel accessor methods."""
+        """Test Result accessor methods."""
         sink_flow = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.8, 0.6])
         source_flow = Flow(bus='elec', size=200, effects_per_flow_hour={'cost': 0.04})
 
-        result = solve(
+        result = optimize(
             timesteps=timesteps_3,
             buses=[Bus('elec')],
             effects=[Effect('cost', is_objective=True)],
@@ -120,16 +118,18 @@ class TestEndToEnd:
 
         # flow_rate accessor
         sr = result.flow_rate('grid(elec)')
-        assert set(sr.columns) == {'time', 'solution'}
+        assert 'time' in sr.dims
         assert len(sr) == 3
 
-        # effects DataFrame
-        assert 'effect' in result.effects.columns
-        assert 'solution' in result.effects.columns
+        # effect_totals DataArray
+        assert 'effect' in result.effect_totals.dims
 
-        # effects_per_timestep
-        assert 'effect' in result.effects_per_timestep.columns
-        assert 'time' in result.effects_per_timestep.columns
+        # effects_temporal
+        assert 'effect' in result.effects_temporal.dims
+        assert 'time' in result.effects_temporal.dims
+
+        # effects_periodic
+        assert 'effect' in result.effects_periodic.dims
 
     def test_int_timesteps(self):
         """Smoke test: int timesteps work end-to-end."""
@@ -140,7 +140,7 @@ class TestEndToEnd:
         fuel = Flow(bus='gas', size=300)
         heat = Flow(bus='heat', size=200)
 
-        result = solve(
+        result = optimize(
             timesteps=timesteps,
             buses=[Bus('gas'), Bus('heat')],
             effects=[Effect('cost', is_objective=True)],
@@ -151,7 +151,7 @@ class TestEndToEnd:
             converters=[Converter.boiler('boiler', 0.9, fuel, heat)],
         )
 
-        assert result.objective_value > 0
+        assert result.objective > 0
         sr = result.flow_rate('boiler(gas)')
-        assert sr['time'].dtype == pl.Int64
+        assert sr.dims == ('time',)
         assert len(sr) == 4

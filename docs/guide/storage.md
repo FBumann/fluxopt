@@ -58,34 +58,33 @@ battery = Storage(
 )
 ```
 
-### Initial Charge State
+### Prior Level and Cyclic Constraint
 
-`initial_charge_state` sets the energy level at the start of the horizon:
+`prior_level` sets the energy level at the start of the horizon as an absolute
+value in MWh. `cyclic` enforces that the storage ends at the same level it
+started:
 
 ```python
-# Fixed initial state (absolute MWh)
-battery = Storage(..., initial_charge_state=50.0)
+# Fixed initial level (absolute MWh), no cyclic constraint
+battery = Storage(..., prior_level=50.0, cyclic=False)
 
-# Fraction of capacity (values <= 1 are interpreted as fractions)
-battery = Storage(..., initial_charge_state=0.5)  # 50% of capacity
-
-# Cyclic: end state must equal start state
-battery = Storage(..., initial_charge_state='cyclic')
+# Unconstrained initial level (optimizer chooses), cyclic (default)
+battery = Storage(..., prior_level=None, cyclic=True)
 ```
 
-The default is `0.0` (empty).
+The default is `prior_level=None` (unconstrained) and `cyclic=True`.
 
-### Charge State Bounds
+### Level Bounds
 
-`relative_minimum_charge_state` and `relative_maximum_charge_state` limit the
-SOC as fractions of capacity:
+`relative_minimum_level` and `relative_maximum_level` limit the SOC as
+fractions of capacity:
 
 ```python
 battery = Storage(
     'battery', charging=charge, discharging=discharge,
     capacity=100.0,
-    relative_minimum_charge_state=0.2,  # never below 20%
-    relative_maximum_charge_state=0.9,  # never above 90%
+    relative_minimum_level=0.2,  # never below 20%
+    relative_maximum_level=0.9,  # never above 90%
 )
 ```
 
@@ -95,7 +94,7 @@ Battery arbitrage — charge in cheap hours, discharge in expensive hours:
 
 ```python
 from datetime import datetime
-from fluxopt import Bus, Effect, Flow, Port, Storage, solve
+from fluxopt import Bus, Effect, Flow, Port, Storage, optimize
 
 timesteps = [datetime(2024, 1, 1, h) for h in range(4)]
 prices = [0.02, 0.08, 0.02, 0.08]
@@ -107,7 +106,7 @@ charge = Flow(bus='elec', size=50)
 discharge = Flow(bus='elec', size=50)
 battery = Storage('battery', charging=charge, discharging=discharge, capacity=100.0)
 
-result = solve(
+result = optimize(
     timesteps=timesteps,
     buses=[Bus('elec')],
     effects=[Effect('cost', is_objective=True)],
@@ -117,7 +116,7 @@ result = solve(
 
 print(result.flow_rate('battery(charge)'))
 print(result.flow_rate('battery(discharge)'))
-print(result.charge_state('battery'))
+print(result.storage_level('battery'))
 ```
 
 ## Parameters Summary
@@ -127,10 +126,11 @@ print(result.charge_state('battery'))
 | `id` | `str` | required | Storage identifier |
 | `charging` | `Flow` | required | Charging flow |
 | `discharging` | `Flow` | required | Discharging flow |
-| `capacity` | `float \| None` | `None` | Maximum stored energy [MWh] |
+| `capacity` | `float \| Sizing \| None` | `None` | Maximum stored energy [MWh] or [investment](sizing.md) |
 | `eta_charge` | `TimeSeries` | `1.0` | Charging efficiency |
 | `eta_discharge` | `TimeSeries` | `1.0` | Discharging efficiency |
 | `relative_loss_per_hour` | `TimeSeries` | `0.0` | Self-discharge rate [1/h] |
-| `initial_charge_state` | `float \| str \| None` | `0.0` | Initial energy or `'cyclic'` |
-| `relative_minimum_charge_state` | `TimeSeries` | `0.0` | Min SOC as fraction of capacity |
-| `relative_maximum_charge_state` | `TimeSeries` | `1.0` | Max SOC as fraction of capacity |
+| `prior_level` | `float \| None` | `None` | Initial energy level [MWh], None = unconstrained |
+| `cyclic` | `bool` | `True` | End level must equal start level |
+| `relative_minimum_level` | `TimeSeries` | `0.0` | Min SOC as fraction of capacity |
+| `relative_maximum_level` | `TimeSeries` | `1.0` | Max SOC as fraction of capacity |
