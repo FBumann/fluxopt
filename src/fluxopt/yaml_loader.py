@@ -472,8 +472,15 @@ def _build_converter_shorthand(raw: dict[str, Any], namespace: dict[str, Any]) -
     if ctype == 'heat_pump':
         cop = _resolve_timeseries(raw['cop'], namespace)
         electrical_flow = _build_flow(raw['electrical'], namespace, f'{context}, electrical flow')
+        source_flow = _build_flow(raw['source'], namespace, f'{context}, source flow')
         thermal_flow = _build_flow(raw['thermal'], namespace, f'{context}, thermal flow')
-        return Converter.heat_pump(cid, cop, electrical_flow, thermal_flow)
+        return Converter.heat_pump(cid, cop, electrical_flow, source_flow, thermal_flow)
+
+    if ctype == 'power2heat':
+        eta = _resolve_timeseries(raw['efficiency'], namespace)
+        electrical_flow = _build_flow(raw['electrical'], namespace, f'{context}, electrical flow')
+        thermal_flow = _build_flow(raw['thermal'], namespace, f'{context}, thermal flow')
+        return Converter.power2heat(cid, eta, electrical_flow, thermal_flow)
 
     if ctype == 'chp':
         eta_el = _resolve_timeseries(raw['eta_el'], namespace)

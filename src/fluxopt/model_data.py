@@ -13,7 +13,7 @@ from fluxopt.types import as_dataarray, fast_concat, normalize_timesteps
 if TYPE_CHECKING:
     from fluxopt.components import Converter, Port
     from fluxopt.elements import Bus, Effect, Flow, Sizing, Status, Storage
-    from fluxopt.types import Timesteps
+    from fluxopt.types import TimeIndex, Timesteps
 
 _NC_GROUPS = {
     'flows': 'model/flows',
@@ -167,9 +167,9 @@ class _StatusArrays:
         cls,
         items: list[tuple[str, Status]],
         effect_ids: list[str],
-        time: pd.Index,
+        time: TimeIndex,
         dim: str,
-        prior_map: dict[str, list[float]] | None = None,
+        prior_rates_map: dict[str, list[float]] | None = None,
         dt: float = 1.0,
     ) -> Self:
         """Validate Status objects and collect into DataArrays.
@@ -179,7 +179,7 @@ class _StatusArrays:
             effect_ids: Known effect ids for validation.
             time: Time index for effect arrays.
             dim: Dimension name for the resulting arrays.
-            prior_map: Flow id to prior flow rates (MW) before horizon.
+            prior_rates_map: Flow id to prior flow rates (MW) before horizon.
             dt: Scalar timestep duration in hours for prior duration computation.
         """
         from fluxopt.constraints.status import compute_previous_duration
@@ -187,7 +187,7 @@ class _StatusArrays:
         if not items:
             return cls()
 
-        prior_map = prior_map or {}
+        prior_rates_map = prior_rates_map or {}
         effect_set = set(effect_ids)
         n_effects = len(effect_ids)
         n_time = len(time)
@@ -210,7 +210,7 @@ class _StatusArrays:
             min_downs.append(s.min_downtime if s.min_downtime is not None else np.nan)
             max_downs.append(s.max_downtime if s.max_downtime is not None else np.nan)
 
-            prior = prior_map.get(item_id)
+            prior = prior_rates_map.get(item_id)
             if prior is not None:
                 initials.append(1.0 if prior[-1] > 0 else 0.0)
                 prior_da = xr.DataArray(prior, dims=['_prior_t'])
@@ -317,7 +317,7 @@ class FlowsData:
         return cls(**kwargs)
 
     @classmethod
-    def build(cls, flows: list[Flow], time: pd.Index, effects: list[Effect], dt: float = 1.0) -> Self:
+    def build(cls, flows: list[Flow], time: TimeIndex, effects: list[Effect], dt: float = 1.0) -> Self:
         """Build FlowsData from element objects.
 
         Args:
@@ -330,6 +330,7 @@ class FlowsData:
 
         flow_ids = [f.id for f in flows]
         effect_ids = [e.id for e in effects]
+        effect_set = set(effect_ids)
         n_time = len(time)
         n_effects = len(effect_ids)
 
@@ -341,7 +342,7 @@ class FlowsData:
         effect_coeffs: list[xr.DataArray] = []
         sizing_items: list[tuple[str, Sizing]] = []
         status_items: list[tuple[str, Status]] = []
-        prior_map: dict[str, list[float]] = {}
+        prior_rates_map: dict[str, list[float]] = {}
 
         nan_time = xr.DataArray(np.full(n_time, np.nan), dims=['time'], coords={'time': time})
 
@@ -371,19 +372,22 @@ class FlowsData:
                 coords={'effect': effect_ids, 'time': time},
             )
             for effect_label, factor in f.effects_per_flow_hour.items():
-                if effect_label in effect_ids:
-                    ec.loc[effect_label] = as_dataarray(factor, {'time': time})
+                if effect_label not in effect_set:
+                    raise ValueError(f'Unknown effect {effect_label!r} in Flow.effects_per_flow_hour on {f.id!r}')
+                ec.loc[effect_label] = as_dataarray(factor, {'time': time})
             effect_coeffs.append(ec)
 
             if f.status is not None:
                 status_items.append((f.id, f.status))
 
-            if f.prior is not None:
-                prior_map[f.id] = f.prior
+            if f.prior_rates is not None:
+                prior_rates_map[f.id] = f.prior_rates
 
         flow_idx = pd.Index(flow_ids, name='flow')
         sz = _SizingArrays.build(sizing_items, effect_ids, dim='sizing_flow')
-        st = _StatusArrays.build(status_items, effect_ids, time, dim='status_flow', prior_map=prior_map, dt=dt)
+        st = _StatusArrays.build(
+            status_items, effect_ids, time, dim='status_flow', prior_rates_map=prior_rates_map, dt=dt
+        )
 
         return cls(
             bound_type=xr.DataArray(bound_type, dims=['flow'], coords={'flow': flow_ids}),
@@ -412,6 +416,7 @@ class FlowsData:
 @dataclass
 class BusesData:
     flow_coeff: xr.DataArray  # (bus, flow)
+    imbalance_penalty: xr.DataArray  # (bus,) — NaN = hard balance
 
     def to_dataset(self) -> xr.Dataset:
         """Serialize to xr.Dataset."""
@@ -424,7 +429,7 @@ class BusesData:
         Args:
             ds: Dataset with ``flow_coeff`` variable.
         """
-        return cls(flow_coeff=ds['flow_coeff'])
+        return cls(flow_coeff=ds['flow_coeff'], imbalance_penalty=ds['imbalance_penalty'])
 
     @classmethod
     def build(cls, buses: list[Bus], flows: list[Flow], bus_coeff: dict[str, float]) -> Self:
@@ -445,8 +450,11 @@ class BusesData:
                 fi = flow_ids.index(f.id)
                 coeff[bi, fi] = bus_coeff[f.id]
 
+        penalty_vals = np.array([b.imbalance_penalty if b.imbalance_penalty is not None else np.nan for b in buses])
+
         return cls(
             flow_coeff=xr.DataArray(coeff, dims=['bus', 'flow'], coords={'bus': bus_ids, 'flow': flow_ids}),
+            imbalance_penalty=xr.DataArray(penalty_vals, dims=['bus'], coords={'bus': bus_ids}),
         )
 
 
@@ -495,7 +503,7 @@ class ConvertersData:
         )
 
     @classmethod
-    def build(cls, converters: list[Converter], time: pd.Index) -> Self | None:
+    def build(cls, converters: list[Converter], time: TimeIndex) -> Self | None:
         """Build ConvertersData with sparse pair-based conversion coefficients.
 
         Args:
@@ -621,7 +629,7 @@ class EffectsData:
         return cls(**kwargs)  # type: ignore[arg-type]
 
     @classmethod
-    def build(cls, effects: list[Effect], time: pd.Index) -> Self:
+    def build(cls, effects: list[Effect], time: TimeIndex) -> Self:
         """Build EffectsData from element objects.
 
         Args:
@@ -632,7 +640,12 @@ class EffectsData:
         effect_set = set(effect_ids)
         n = len(effects)
         n_time = len(time)
-        objective_effect = next(e.id for e in effects if e.is_objective)
+        objective_effect = next(
+            (e.id for e in effects if e.is_objective),
+            None,
+        )
+        if objective_effect is None:
+            raise ValueError('No objective effect found. Include an Effect with is_objective=True.')
 
         min_total = np.full(n, np.nan)
         max_total = np.full(n, np.nan)
@@ -672,6 +685,8 @@ class EffectsData:
             adjacency: dict[str, list[str]] = {eid: [] for eid in effect_ids}
             for e in effects:
                 for src_id in {*e.contribution_from, *e.contribution_from_per_hour}:
+                    if src_id not in effect_set:
+                        raise ValueError(f'Unknown effect {src_id!r} in contribution_from on {e.id!r}')
                     adjacency[e.id].append(src_id)
             cycle = _detect_contribution_cycle(adjacency)
             if cycle is not None:
@@ -707,8 +722,8 @@ class EffectsData:
         return cls(
             min_total=xr.DataArray(min_total, dims=['effect'], coords={'effect': effect_ids}),
             max_total=xr.DataArray(max_total, dims=['effect'], coords={'effect': effect_ids}),
-            min_per_hour=xr.concat(min_per_hours, dim=effect_idx),
-            max_per_hour=xr.concat(max_per_hours, dim=effect_idx),
+            min_per_hour=fast_concat(min_per_hours, effect_idx),
+            max_per_hour=fast_concat(max_per_hours, effect_idx),
             is_objective=xr.DataArray(is_objective, dims=['effect'], coords={'effect': effect_ids}),
             objective_effect=objective_effect,
             cf_periodic=cf_periodic,
@@ -747,9 +762,9 @@ class StoragesData:
         bad_eta_d = ((self.eta_d <= 0) | (self.eta_d > 1)).any('time')
         if bad_eta_d.any():
             raise ValueError(f'eta_discharge must be in (0, 1] on storages: {list(s[bad_eta_d].values)}')
-        bad_loss = (self.loss < 0).any('time')
+        bad_loss = ((self.loss < 0) | (self.loss > 1)).any('time')
         if bad_loss.any():
-            raise ValueError(f'Negative relative_loss_per_hour on storages: {list(s[bad_loss].values)}')
+            raise ValueError(f'relative_loss_per_hour must be in [0, 1] on storages: {list(s[bad_loss].values)}')
 
     def to_dataset(self) -> xr.Dataset:
         """Serialize to xr.Dataset."""
@@ -769,7 +784,7 @@ class StoragesData:
     def build(
         cls,
         storages: list[Storage],
-        time: pd.Index,
+        time: TimeIndex,
         dt: xr.DataArray,
         effects: list[Effect] | None = None,
     ) -> Self | None:
@@ -853,7 +868,7 @@ class ModelData:
     storages: StoragesData | None  # None when no storages
     dt: xr.DataArray  # (time,)
     weights: xr.DataArray  # (time,)
-    time: pd.Index = field(repr=False)
+    time: TimeIndex = field(repr=False)
 
     def to_netcdf(self, path: str | Path, *, mode: Literal['w', 'a'] = 'a') -> None:
         """Write model data as NetCDF groups under ``/model/``.
@@ -890,14 +905,14 @@ class ModelData:
         """
         p = Path(path)
         try:
-            meta = xr.open_dataset(p, group='model/meta', engine='netcdf4')
+            meta = xr.load_dataset(p, group='model/meta', engine='netcdf4')
         except OSError:
             return None
 
         datasets: dict[str, xr.Dataset] = {}
         for name, group in _NC_GROUPS.items():
             try:
-                datasets[name] = xr.open_dataset(p, group=group, engine='netcdf4')
+                datasets[name] = xr.load_dataset(p, group=group, engine='netcdf4')
             except OSError:
                 datasets[name] = xr.Dataset()
 
@@ -943,12 +958,16 @@ class ModelData:
             storages: Energy storages.
             dt: Timestep duration in hours. Auto-derived if None.
         """
+        from fluxopt.elements import PENALTY_EFFECT_ID, Effect
         from fluxopt.types import compute_dt as _compute_dt
 
         converters = converters or []
         stor_list = storages or []
         time = normalize_timesteps(timesteps)
         dt_da = _compute_dt(time, dt)
+
+        if not any(e.id == PENALTY_EFFECT_ID for e in effects):
+            effects = [*effects, Effect(PENALTY_EFFECT_ID)]
 
         flows, bus_coeff = _collect_flows(ports, converters, stor_list)
         _validate_system(buses, effects, ports, converters, stor_list, flows)

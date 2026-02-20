@@ -10,11 +10,6 @@ import xarray as xr
 from fluxopt.types import as_dataarray, compute_dt, normalize_timesteps
 
 
-@pytest.fixture
-def ts():
-    return pd.DatetimeIndex([datetime(2024, 1, 1, h) for h in range(3)])
-
-
 class TestNormalizeTimesteps:
     def test_datetime_list(self):
         dts = [datetime(2024, 1, 1, h) for h in range(3)]
@@ -31,16 +26,43 @@ class TestNormalizeTimesteps:
         with pytest.raises(TypeError, match='Use datetime or int'):
             normalize_timesteps(['t0', 't1', 't2'])
 
+    def test_float_list_rejected(self):
+        with pytest.raises(TypeError, match='Use datetime or int'):
+            normalize_timesteps([1.0, 2.0, 3.0])
+
+    def test_bool_list_rejected(self):
+        with pytest.raises(TypeError, match='Use datetime or int'):
+            normalize_timesteps([False, True])
+
+    def test_mixed_int_float_rejected(self):
+        with pytest.raises(TypeError, match='non-integer'):
+            normalize_timesteps([1, 2.0, 3])
+
     def test_pandas_datetimeindex(self):
         idx = pd.DatetimeIndex([datetime(2024, 1, 1, h) for h in range(3)])
         result = normalize_timesteps(idx)
         assert isinstance(result, pd.DatetimeIndex)
         assert len(result) == 3
 
-    def test_empty_list(self):
-        result = normalize_timesteps([])
-        assert isinstance(result, pd.DatetimeIndex)
-        assert len(result) == 0
+    def test_empty_list_rejected(self):
+        with pytest.raises(ValueError, match='must not be empty'):
+            normalize_timesteps([])
+
+    def test_non_monotonic_datetimes_rejected(self):
+        with pytest.raises(ValueError, match='monotonically increasing'):
+            normalize_timesteps([datetime(2024, 1, 1, 2), datetime(2024, 1, 1, 0)])
+
+    def test_non_monotonic_ints_rejected(self):
+        with pytest.raises(ValueError, match='monotonically increasing'):
+            normalize_timesteps([3, 1, 2])
+
+    def test_duplicate_datetimes_rejected(self):
+        with pytest.raises(ValueError, match='duplicates'):
+            normalize_timesteps([datetime(2024, 1, 1), datetime(2024, 1, 1)])
+
+    def test_duplicate_ints_rejected(self):
+        with pytest.raises(ValueError, match='duplicates'):
+            normalize_timesteps([1, 1, 2])
 
 
 class TestComputeDt:

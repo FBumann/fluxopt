@@ -57,21 +57,31 @@ class Result:
         """Per-period (investment) effect values as (effect,) DataArray."""
         return self.solution['effect--periodic']
 
-    def flow_rate(self, id: str) -> xr.DataArray:
+    @property
+    def bus_surplus(self) -> xr.DataArray:
+        """Bus surplus slack (bus, time) — overproduction absorbed by penalty."""
+        return self.solution['bus--surplus'] if 'bus--surplus' in self.solution else xr.DataArray()
+
+    @property
+    def bus_shortage(self) -> xr.DataArray:
+        """Bus shortage slack (bus, time) — deficit covered by penalty."""
+        return self.solution['bus--shortage'] if 'bus--shortage' in self.solution else xr.DataArray()
+
+    def flow_rate(self, flow_id: str) -> xr.DataArray:
         """Get flow rate time series for a single flow.
 
         Args:
-            id: Qualified flow id.
+            flow_id: Qualified flow id.
         """
-        return self.flow_rates.sel(flow=id)
+        return self.flow_rates.sel(flow=flow_id)
 
-    def storage_level(self, id: str) -> xr.DataArray:
+    def storage_level(self, storage_id: str) -> xr.DataArray:
         """Get charge state time series for a single storage.
 
         Args:
-            id: Storage id.
+            storage_id: Storage id.
         """
-        return self.storage_levels.sel(storage=id)
+        return self.storage_levels.sel(storage=storage_id)
 
     def effect_contributions(self) -> xr.Dataset:
         """Per-contributor breakdown of effect contributions.
@@ -117,7 +127,7 @@ class Result:
         from fluxopt.model_data import ModelData
 
         p = Path(path)
-        solution = xr.open_dataset(p, engine='netcdf4')
+        solution = xr.load_dataset(p, engine='netcdf4')
         data = ModelData.from_netcdf(p)
         return cls(solution=solution, data=data)
 
@@ -151,14 +161,17 @@ class Result:
             sol_vars['flow--startup'] = model.flow_startup.solution
         if model.flow_shutdown is not None:
             sol_vars['flow--shutdown'] = model.flow_shutdown.solution
+        if hasattr(model, 'bus_surplus'):
+            sol_vars['bus--surplus'] = model.bus_surplus.solution
+        if hasattr(model, 'bus_shortage'):
+            sol_vars['bus--shortage'] = model.bus_shortage.solution
 
         # Include custom variables added after build()
         for var_name in model.m.variables:
             if var_name not in model._builtin_var_names and var_name not in sol_vars:
                 sol_vars[var_name] = model.m.variables[var_name].solution
 
-        obj_effect = model.data.effects.objective_effect
-        obj_val = float(sol_vars['effect--total'].sel(effect=obj_effect).values)
+        obj_val = float(model.m.objective.value)
 
         solution = xr.Dataset(sol_vars, attrs={'objective': obj_val})
         return cls(solution=solution, data=model.data)

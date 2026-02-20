@@ -40,35 +40,52 @@ Single input (fuel), single output (heat), with thermal efficiency:
 This creates the conversion equation: `0.9 * P_gas - P_heat = 0`,
 so 10 MW gas input produces 9 MW heat.
 
-### Heat Pump
+### Power-to-Heat
 
-Single input (electricity), single output (heat), with COP:
+Electric resistance heater — single input (electricity), single output (heat):
 
 === "Python"
 
     ```python
     el = Flow(bus='elec', size=50)
-    th = Flow(bus='heat', size=200)
+    th = Flow(bus='heat', size=50)
 
-    hp = Converter.heat_pump('hp', cop=3.5, electrical_flow=el, thermal_flow=th)
+    p2h = Converter.power2heat('p2h', efficiency=0.99, electrical_flow=el, thermal_flow=th)
     ```
 
 === "YAML"
 
     ```yaml
     converters:
-      - id: hp
-        type: heat_pump
-        cop: 3.5
+      - id: p2h
+        type: power2heat
+        efficiency: 0.99
         electrical:
           bus: elec
           size: 50
         thermal:
           bus: heat
-          size: 200
+          size: 50
     ```
 
-Conversion equation: `3.5 * P_el - P_heat = 0`.
+Conversion equation: `0.99 * P_el - P_heat = 0`.
+
+### Heat Pump
+
+Two inputs (electricity + environmental source), single output (heat), with COP:
+
+```python
+el = Flow(bus='elec', size=50)
+src = Flow(bus='env', size=200)
+th = Flow(bus='heat', size=200)
+
+hp = Converter.heat_pump('hp', cop=3.5, electrical_flow=el, source_flow=src, thermal_flow=th)
+```
+
+Two conversion equations:
+
+- `3.5 * P_el - P_heat = 0` (COP definition)
+- `P_el + P_env - P_heat = 0` (energy balance)
 
 ### CHP (Combined Heat and Power)
 
@@ -166,7 +183,7 @@ COP):
 
     ```python
     cop_profile = [3.2, 3.5, 3.8, 3.1]  # one value per timestep
-    hp = Converter.heat_pump('hp', cop=cop_profile, electrical_flow=el, thermal_flow=th)
+    hp = Converter.heat_pump('hp', cop=cop_profile, electrical_flow=el, source_flow=src, thermal_flow=th)
     ```
 
 === "YAML"
@@ -195,7 +212,6 @@ Gas boiler serving a heat demand:
     from fluxopt import Bus, Converter, Effect, Flow, Port, optimize
 
     timesteps = [datetime(2024, 1, 1, h) for h in range(4)]
-    demand = [40.0, 70.0, 50.0, 60.0]
 
     gas_source = Flow(bus='gas', size=500, effects_per_flow_hour={'cost': 0.04})
     fuel = Flow(bus='gas', size=300)

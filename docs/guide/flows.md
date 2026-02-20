@@ -107,4 +107,4 @@ Port('plant', imports=[f1, f2])
 | `fixed_relative_profile` | `TimeSeries \| None` | `None` | Fixed profile as fraction of size |
 | `effects_per_flow_hour` | `dict[str, TimeSeries]` | `{}` | Effect coefficients per flow-hour |
 | `status` | `Status \| None` | `None` | [On/off behavior](status.md) (semi-continuous, startup costs, durations) |
-| `prior` | `list[float] \| None` | `None` | Flow rates [MW] before the horizon (for [status](status.md#prior-historical-state) initial conditions) |
+| `prior_rates` | `list[float] \| None` | `None` | Flow rates [MW] before the horizon (for [status](status.md#prior-historical-state) initial conditions) |

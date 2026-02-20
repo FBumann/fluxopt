@@ -71,13 +71,15 @@ def sparse_weighted_sum(
     pair_sum_ids = [sum_ids[s] for s in sum_idx]
     pair_group_ids = [group_ids[g] for g in group_idx]
 
-    # Extract per-pair coefficients via fancy indexing
-    fancy_idx: list[slice | np.ndarray] = [slice(None)] * coeffs_values.ndim
-    fancy_idx[group_axis] = group_idx
-    fancy_idx[sum_axis] = sum_idx
-    pair_coeffs_data = coeffs_values[tuple(fancy_idx)]
-
+    # Transpose coeffs so (group, sum, ...) are the leading axes,
+    # ensuring NumPy advanced indexing places the pair axis first.
     remaining_dims = [d for d in coeffs.dims if d not in (group_dim, sum_dim)]
+    ordered = coeffs.transpose(group_dim, sum_dim, *remaining_dims)
+    ordered_values = ordered.values
+
+    # Extract per-pair coefficients — advanced indexing on axes 0, 1
+    pair_coeffs_data = ordered_values[group_idx, sum_idx]  # (pair, *remaining)
+
     remaining_coords = {d: coeffs.coords[d] for d in remaining_dims if d in coeffs.coords}
     pair_coeffs = xr.DataArray(
         pair_coeffs_data,

@@ -10,8 +10,12 @@ import xarray as xr
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator, Mapping
 
+# -- User input types --------------------------------------------------
 type TimeSeries = float | int | list[float] | np.ndarray | pd.Series | xr.DataArray
-type Timesteps = list[datetime] | list[int] | pd.DatetimeIndex | np.ndarray
+type Timesteps = list[datetime] | list[int] | pd.DatetimeIndex | pd.Index
+
+# -- Internal types (after normalization) ------------------------------
+type TimeIndex = pd.DatetimeIndex | pd.Index
 
 
 @runtime_checkable
@@ -81,14 +85,18 @@ def fast_concat(arrays: list[xr.DataArray], dim: pd.Index) -> xr.DataArray:
         dim: Index for the new leading dimension.
 
     Raises:
-        AssertionError: If any slice has a different shape or dims than the first.
+        ValueError: If *arrays* is empty or any slice has a different shape or dims than the first.
     """
+    if not arrays:
+        raise ValueError("fast_concat: 'arrays' must not be empty")
     first = arrays[0]
     expected_shape = first.shape
     expected_dims = first.dims
     for i, a in enumerate(arrays[1:], 1):
-        assert a.shape == expected_shape, f'fast_concat: slice {i} shape {a.shape} != expected {expected_shape}'
-        assert a.dims == expected_dims, f'fast_concat: slice {i} dims {a.dims} != expected {expected_dims}'
+        if a.shape != expected_shape:
+            raise ValueError(f'fast_concat: slice {i} shape {a.shape} != expected {expected_shape}')
+        if a.dims != expected_dims:
+            raise ValueError(f'fast_concat: slice {i} dims {a.dims} != expected {expected_dims}')
     data = np.array([a.values for a in arrays])
     name = str(dim.name)
     dims = [name, *expected_dims]
@@ -175,39 +183,53 @@ def as_dataarray(
     return da
 
 
-def normalize_timesteps(timesteps: Timesteps) -> pd.Index:
-    """Convert any Timesteps input to a pd.Index.
+def normalize_timesteps(timesteps: Timesteps) -> TimeIndex:
+    """Normalize user-provided timesteps to an internal time index.
 
     Args:
-        timesteps: Datetime or integer timesteps.
+        timesteps: Datetime objects, integers, or a DatetimeIndex.
+
+    Returns:
+        A datetime index for datetime inputs, or an integer index for integer inputs.
+
+    Raises:
+        ValueError: If timesteps are not strictly monotonically increasing.
     """
-    if isinstance(timesteps, pd.DatetimeIndex):
-        return timesteps
-
-    if isinstance(timesteps, np.ndarray):
-        if np.issubdtype(timesteps.dtype, np.datetime64):
-            return pd.DatetimeIndex(timesteps)
-        return pd.Index(timesteps)
-
-    # list[datetime] or list[int]
-    if not isinstance(timesteps, list):
-        raise TypeError(f'Unsupported Timesteps type: {type(timesteps)}')
-
     if len(timesteps) == 0:
-        return pd.DatetimeIndex([])
+        raise ValueError('Timesteps must not be empty')
 
-    if isinstance(timesteps[0], datetime):
-        return pd.DatetimeIndex(timesteps)
-    if isinstance(timesteps[0], int):
-        return pd.Index(timesteps, dtype=np.int64)
-    raise TypeError(f'Unsupported timestep element type: {type(timesteps[0])}. Use datetime or int.')
+    if isinstance(timesteps, pd.DatetimeIndex):
+        idx: TimeIndex = timesteps
+    elif isinstance(timesteps, pd.Index):
+        if isinstance(timesteps, pd.RangeIndex) or pd.api.types.is_integer_dtype(timesteps.dtype):
+            idx = timesteps
+        elif pd.api.types.is_datetime64_any_dtype(timesteps.dtype):
+            idx = pd.DatetimeIndex(timesteps)
+        else:
+            raise TypeError(f'Unsupported pd.Index dtype: {timesteps.dtype}. Use datetime or integer index.')
+    elif not isinstance(timesteps, list):
+        raise TypeError(f'Unsupported Timesteps type: {type(timesteps)}')
+    elif isinstance(timesteps[0], datetime):
+        idx = pd.DatetimeIndex(timesteps)
+    elif type(timesteps[0]) is int:
+        idx = pd.Index(timesteps)
+        if not pd.api.types.is_integer_dtype(idx.dtype):
+            raise TypeError('Integer timesteps contain non-integer values')
+    else:
+        raise TypeError(f'Unsupported timestep element type: {type(timesteps[0])}. Use datetime or int.')
+
+    if len(idx) > 1 and not idx.is_monotonic_increasing:
+        raise ValueError('Timesteps must be strictly monotonically increasing')
+    if not idx.is_unique:
+        raise ValueError('Timesteps contain duplicates')
+    return idx
 
 
-def compute_dt(timesteps: pd.Index, dt: float | list[float] | None) -> xr.DataArray:
+def compute_dt(timesteps: TimeIndex, dt: float | list[float] | None) -> xr.DataArray:
     """Compute dt (hours) for each timestep as a DataArray.
 
     When dt is None, auto-derives from timesteps:
-    - Datetime: consecutive differences in hours; last = second-to-last.
+    - Datetime: consecutive differences in hours; first = second (forward-looking).
     - Integer: 1.0 for all.
     - Single timestep: 1.0.
 

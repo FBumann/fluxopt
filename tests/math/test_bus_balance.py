@@ -1,19 +1,20 @@
 from __future__ import annotations
 
 import pytest
+from conftest import ts
 
 from fluxopt import Bus, Effect, Flow, Port, optimize
 
 
 class TestBusBalance:
-    def test_source_matches_fixed_demand(self, timesteps_3):
+    def test_source_matches_fixed_demand(self):
         """Source flow must match fixed demand through bus balance."""
         demand = [50.0, 80.0, 60.0]
         sink_flow = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.8, 0.6])
         source_flow = Flow(bus='elec', size=200, effects_per_flow_hour={'cost': 0.04})
 
         result = optimize(
-            timesteps=timesteps_3,
+            timesteps=ts(3),
             buses=[Bus('elec')],
             effects=[Effect('cost', is_objective=True)],
             ports=[Port('grid', imports=[source_flow]), Port('demand', exports=[sink_flow])],
@@ -23,13 +24,13 @@ class TestBusBalance:
         for actual, expected in zip(source_rates, demand, strict=False):
             assert actual == pytest.approx(expected, abs=1e-6)
 
-    def test_cost_tracking(self, timesteps_3):
+    def test_cost_tracking(self):
         """Total cost = sum(flow_rate * cost_per_hour * dt)."""
         sink_flow = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.8, 0.6])
         source_flow = Flow(bus='elec', size=200, effects_per_flow_hour={'cost': 0.04})
 
         result = optimize(
-            timesteps=timesteps_3,
+            timesteps=ts(3),
             buses=[Bus('elec')],
             effects=[Effect('cost', is_objective=True)],
             ports=[Port('grid', imports=[source_flow]), Port('demand', exports=[sink_flow])],
@@ -38,14 +39,14 @@ class TestBusBalance:
         expected_cost = (50 + 80 + 60) * 0.04
         assert result.objective == pytest.approx(expected_cost, abs=1e-6)
 
-    def test_two_sources_one_bus(self, timesteps_3):
+    def test_two_sources_one_bus(self):
         """Optimizer picks cheaper source."""
         demand_flow = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.5, 0.5])
         cheap_flow = Flow(bus='elec', size=200, effects_per_flow_hour={'cost': 0.02})
         expensive_flow = Flow(bus='elec', size=200, effects_per_flow_hour={'cost': 0.10})
 
         result = optimize(
-            timesteps=timesteps_3,
+            timesteps=ts(3),
             buses=[Bus('elec')],
             effects=[Effect('cost', is_objective=True)],
             ports=[

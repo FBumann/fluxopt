@@ -6,7 +6,7 @@ from numpy.testing import assert_allclose
 
 from fluxopt import Bus, Converter, Effect, Flow, Port
 
-from .conftest import _waste, ts
+from .conftest import ts, waste
 
 
 class TestFlowConstraints:
@@ -37,7 +37,7 @@ class TestFlowConstraints:
                         Flow(bus='Gas', effects_per_flow_hour={'cost': 1}),
                     ],
                 ),
-                _waste('Heat'),
+                waste('Heat'),
             ],
             converters=[
                 Converter.boiler(
@@ -108,25 +108,7 @@ class TestFlowConstraints:
         Sensitivity: Without flow_hours_max, all from CheapSrc → cost=60.
         With flow_hours_max=30, CheapSrc limited to 30, ExpensiveSrc covers 30 → cost=180.
         """
-        import flixopt as fx
-
-        from .conftest import make_flow_system
-
-        fs = make_flow_system(3)
-        fs.add(
-            fx.Bus('Heat'),
-            fx.Effect('costs', '€', is_standard=True, is_objective=True),
-            fx.Port(
-                'Demand',
-                exports=[fx.Flow(bus='Heat', flow_id='heat', size=1, fixed_relative_profile=np.array([20, 20, 20]))],
-            ),
-            fx.Port(
-                'CheapSrc', imports=[fx.Flow(bus='Heat', flow_id='heat', flow_hours_max=30, effects_per_flow_hour=1)]
-            ),
-            fx.Port('ExpensiveSrc', imports=[fx.Flow(bus='Heat', flow_id='heat', effects_per_flow_hour=5)]),
-        )
-        fs = optimize(fs)
-        assert_allclose(fs.solution['costs'].item(), 180.0, rtol=1e-5)
+        raise NotImplementedError  # TODO: implement flow_hours constraint
 
     @pytest.mark.skip(reason='flow_hours constraint not supported in fluxopt')
     def test_flow_hours_min(self, optimize):
@@ -138,26 +120,7 @@ class TestFlowConstraints:
         Sensitivity: Without flow_hours_min, all from CheapSrc → cost=60.
         With flow_hours_min=40, ExpensiveSrc forced to produce 40 → cost=220.
         """
-        import flixopt as fx
-
-        from .conftest import make_flow_system
-
-        fs = make_flow_system(2)
-        fs.add(
-            fx.Bus('Heat'),
-            fx.Effect('costs', '€', is_standard=True, is_objective=True),
-            fx.Port(
-                'Demand',
-                exports=[fx.Flow(bus='Heat', flow_id='heat', size=1, fixed_relative_profile=np.array([30, 30]))],
-            ),
-            fx.Port('CheapSrc', imports=[fx.Flow(bus='Heat', flow_id='heat', effects_per_flow_hour=1)]),
-            fx.Port(
-                'ExpensiveSrc',
-                imports=[fx.Flow(bus='Heat', flow_id='heat', flow_hours_min=40, effects_per_flow_hour=5)],
-            ),
-        )
-        fs = optimize(fs)
-        assert_allclose(fs.solution['costs'].item(), 220.0, rtol=1e-5)
+        raise NotImplementedError  # TODO: implement flow_hours constraint
 
     @pytest.mark.skip(reason='load_factor not supported in fluxopt')
     def test_load_factor_max(self, optimize):
@@ -169,26 +132,7 @@ class TestFlowConstraints:
         Sensitivity: Without load_factor_max, CheapSrc covers 80 → cost=80.
         With load_factor_max=0.5, CheapSrc limited to 50, ExpensiveSrc covers 30 → cost=200.
         """
-        import flixopt as fx
-
-        from .conftest import make_flow_system
-
-        fs = make_flow_system(2)
-        fs.add(
-            fx.Bus('Heat'),
-            fx.Effect('costs', '€', is_standard=True, is_objective=True),
-            fx.Port(
-                'Demand',
-                exports=[fx.Flow(bus='Heat', flow_id='heat', size=1, fixed_relative_profile=np.array([40, 40]))],
-            ),
-            fx.Port(
-                'CheapSrc',
-                imports=[fx.Flow(bus='Heat', flow_id='heat', size=50, load_factor_max=0.5, effects_per_flow_hour=1)],
-            ),
-            fx.Port('ExpensiveSrc', imports=[fx.Flow(bus='Heat', flow_id='heat', effects_per_flow_hour=5)]),
-        )
-        fs = optimize(fs)
-        assert_allclose(fs.solution['costs'].item(), 200.0, rtol=1e-5)
+        raise NotImplementedError  # TODO: implement load_factor constraint
 
     @pytest.mark.skip(reason='load_factor not supported in fluxopt')
     def test_load_factor_min(self, optimize):
@@ -200,23 +144,4 @@ class TestFlowConstraints:
         Sensitivity: Without load_factor_min, all from CheapSrc → cost=60.
         With load_factor_min=0.3, ExpensiveSrc forced to produce 60 → cost=300.
         """
-        import flixopt as fx
-
-        from .conftest import make_flow_system
-
-        fs = make_flow_system(2)
-        fs.add(
-            fx.Bus('Heat', imbalance_penalty_per_flow_hour=0),
-            fx.Effect('costs', '€', is_standard=True, is_objective=True),
-            fx.Port(
-                'Demand',
-                exports=[fx.Flow(bus='Heat', flow_id='heat', size=1, fixed_relative_profile=np.array([30, 30]))],
-            ),
-            fx.Port('CheapSrc', imports=[fx.Flow(bus='Heat', flow_id='heat', effects_per_flow_hour=1)]),
-            fx.Port(
-                'ExpensiveSrc',
-                imports=[fx.Flow(bus='Heat', flow_id='heat', size=100, load_factor_min=0.3, effects_per_flow_hour=5)],
-            ),
-        )
-        fs = optimize(fs)
-        assert_allclose(fs.solution['costs'].item(), 300.0, rtol=1e-5)
+        raise NotImplementedError  # TODO: implement load_factor constraint

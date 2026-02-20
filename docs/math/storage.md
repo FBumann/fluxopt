@@ -6,7 +6,7 @@ The stored energy evolves over time according to charging, discharging, and
 self-discharge losses:
 
 \[
-E_{s,t+1} = E_{s,t} \left(1 - \delta_s \, \Delta t_t \right) + P^{\text{c}}_{s,t} \, \eta^{\text{c}}_s \, \Delta t_t - \frac{P^{\text{d}}_{s,t}}{\eta^{\text{d}}_s} \, \Delta t_t
+E_{s,t+1} = E_{s,t} \left(1 - \delta_s\right)^{\Delta t_t} + P^{\text{c}}_{s,t} \, \eta^{\text{c}}_s \, \Delta t_t - \frac{P^{\text{d}}_{s,t}}{\eta^{\text{d}}_s} \, \Delta t_t
 \]
 
 where:
@@ -16,7 +16,7 @@ where:
 - \(P^{\text{d}}_{s,t}\) — discharging flow rate (energy leaving the storage)
 - \(\eta^{\text{c}}_s\) — charging efficiency (losses during charging)
 - \(\eta^{\text{d}}_s\) — discharging efficiency (losses during discharging)
-- \(\delta_s\) — self-discharge rate per hour
+- \(\delta_s \in [0, 1]\) — self-discharge rate per hour
 - \(\Delta t_t\) — timestep duration in hours
 
 The charge state has \(|\mathcal{T}| + 1\) values (one before each timestep plus one
@@ -74,5 +74,5 @@ A battery with \(\bar{E} = 10\) MWh, \(\eta^{\text{c}} = 0.95\),
 Starting at \(E_0 = 5\) MWh, charging at \(P^{\text{c}} = 2\) MW:
 
 \[
-E_1 = 5 \times (1 - 0.001 \times 1) + 2 \times 0.95 \times 1 = 4.995 + 1.9 = 6.895 \; \text{MWh}
+E_1 = 5 \times (1 - 0.001)^{1} + 2 \times 0.95 \times 1 = 4.995 + 1.9 = 6.895 \; \text{MWh}
 \]

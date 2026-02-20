@@ -117,24 +117,24 @@ a `min_uptime=2` means the unit must stay on for 4 consecutive timesteps.
 
 ## Prior (Historical State)
 
-`Flow.prior` provides the flow rates from timesteps **before** the optimization
+`Flow.prior_rates` provides the flow rates from timesteps **before** the optimization
 horizon. This lets the solver know the initial on/off state and how long the
 unit has been running or idle:
 
 ```python
 # Unit was running at 80 MW in the previous timestep
-Flow(bus='heat', size=100, status=Status(min_uptime=3), prior=[80])
+Flow(bus='heat', size=100, status=Status(min_uptime=3), prior_rates=[80])
 
 # Unit was off in the previous 2 timesteps
-Flow(bus='heat', size=100, status=Status(min_downtime=2), prior=[0, 0])
+Flow(bus='heat', size=100, status=Status(min_downtime=2), prior_rates=[0, 0])
 
 # Unit was running for the last 4 timesteps
-Flow(bus='heat', size=100, status=Status(min_uptime=3), prior=[50, 60, 70, 80])
+Flow(bus='heat', size=100, status=Status(min_uptime=3), prior_rates=[50, 60, 70, 80])
 ```
 
-Without `prior`, the initial state is free (solver decides).
+Without `prior_rates`, the initial state is free (solver decides).
 
-The prior is used to:
+The prior rates are used to:
 
 1. **Set initial on/off state**: last value > 0 means on, = 0 means off
 2. **Compute previous uptime/downtime**: consecutive hours in the current state
@@ -210,8 +210,8 @@ result = optimize(
 | `effects_per_running_hour` | `dict[str, TimeSeries]` | `{}` | Effect cost per running hour |
 | `effects_per_startup` | `dict[str, TimeSeries]` | `{}` | Effect cost per startup event |
 
-### Flow.prior
+### Flow.prior_rates
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `prior` | `list[float] \| None` | `None` | Flow rates [MW] before the horizon |
+| `prior_rates` | `list[float] \| None` | `None` | Flow rates [MW] before the horizon |

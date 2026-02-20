@@ -2,12 +2,13 @@ from collections.abc import Callable
 from typing import Any
 
 from fluxopt.components import Converter, Port
-from fluxopt.elements import Bus, Effect, Flow, Sizing, Status, Storage
+from fluxopt.elements import PENALTY_EFFECT_ID, Bus, Effect, Flow, Sizing, Status, Storage
 from fluxopt.model import FlowSystem
 from fluxopt.model_data import ModelData
 from fluxopt.results import Result
 from fluxopt.types import (
     IdList,
+    TimeIndex,
     TimeSeries,
     Timesteps,
     as_dataarray,
@@ -50,6 +51,7 @@ def optimize(
 
 
 __all__ = [
+    'PENALTY_EFFECT_ID',
     'Bus',
     'Converter',
     'Effect',
@@ -62,6 +64,7 @@ __all__ = [
     'Sizing',
     'Status',
     'Storage',
+    'TimeIndex',
     'TimeSeries',
     'Timesteps',
     'as_dataarray',

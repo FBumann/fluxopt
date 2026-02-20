@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import pytest
+from conftest import ts
 
 from fluxopt import Bus, Converter, Effect, Flow, Port, optimize
 
 
 class TestBoiler:
-    def test_gas_equals_heat_over_efficiency(self, timesteps_3):
+    def test_gas_equals_heat_over_efficiency(self):
         """Boiler: gas_rate = heat_rate / eta."""
         eta = 0.9
         heat_demand = [50.0, 80.0, 60.0]
@@ -17,7 +18,7 @@ class TestBoiler:
         heat = Flow(bus='heat', size=100)
 
         result = optimize(
-            timesteps=timesteps_3,
+            timesteps=ts(3),
             buses=[Bus('gas'), Bus('heat')],
             effects=[Effect('cost', is_objective=True)],
             ports=[
@@ -31,7 +32,7 @@ class TestBoiler:
         for gas, h in zip(gas_rates, heat_demand, strict=False):
             assert gas == pytest.approx(h / eta, abs=1e-6)
 
-    def test_cost_with_boiler(self, timesteps_3):
+    def test_cost_with_boiler(self):
         """Total cost = sum(gas_rate * cost * dt)."""
         eta = 0.9
 
@@ -41,7 +42,7 @@ class TestBoiler:
         heat = Flow(bus='heat', size=100)
 
         result = optimize(
-            timesteps=timesteps_3,
+            timesteps=ts(3),
             buses=[Bus('gas'), Bus('heat')],
             effects=[Effect('cost', is_objective=True)],
             ports=[
@@ -56,7 +57,7 @@ class TestBoiler:
 
 
 class TestCHP:
-    def test_chp_conversion(self, timesteps_3):
+    def test_chp_conversion(self):
         """CHP: fuel * eta_el = elec, fuel * eta_th = heat."""
         eta_el, eta_th = 0.3, 0.5
 
@@ -69,7 +70,7 @@ class TestCHP:
         heat_demand = Flow(bus='heat', size=100, fixed_relative_profile=[0.5, 0.5, 0.5])
 
         result = optimize(
-            timesteps=timesteps_3,
+            timesteps=ts(3),
             buses=[Bus('gas'), Bus('elec'), Bus('heat')],
             effects=[Effect('cost', is_objective=True)],
             ports=[

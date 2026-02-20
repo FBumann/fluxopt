@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime
-
 import pytest
+from conftest import ts
 
 from fluxopt import (
     Bus,
@@ -20,7 +19,6 @@ from fluxopt.model import FlowSystem
 class TestEndToEnd:
     def test_full_system(self):
         """Full system: gas source -> boiler -> heat bus <- demand, with cost tracking."""
-        timesteps = [datetime(2024, 1, 1, h) for h in range(4)]
         eta = 0.9
         heat_demand = [40.0, 70.0, 50.0, 60.0]
 
@@ -30,7 +28,7 @@ class TestEndToEnd:
         heat = Flow(bus='heat', size=200)
 
         result = optimize(
-            timesteps=timesteps,
+            timesteps=ts(4),
             buses=[Bus('gas'), Bus('heat')],
             effects=[Effect('cost', is_objective=True)],
             ports=[
@@ -52,7 +50,6 @@ class TestEndToEnd:
 
     def test_boiler_plus_storage(self):
         """Boiler + thermal storage: store heat in cheap hours."""
-        timesteps = [datetime(2024, 1, 1, h) for h in range(4)]
         eta = 0.9
         gas_prices = [0.02, 0.08, 0.02, 0.08]
 
@@ -66,7 +63,7 @@ class TestEndToEnd:
         storage = Storage('heat_store', charging=charge_flow, discharging=discharge_flow, capacity=200.0)
 
         result = optimize(
-            timesteps=timesteps,
+            timesteps=ts(4),
             buses=[Bus('gas'), Bus('heat')],
             effects=[Effect('cost', is_objective=True)],
             ports=[
@@ -81,13 +78,13 @@ class TestEndToEnd:
         gas_rates = result.flow_rate('grid(gas)').values
         assert gas_rates[0] > gas_rates[1]  # More gas bought in cheap hour
 
-    def test_modified_data(self, timesteps_3):
+    def test_modified_data(self):
         """Build data, modify bounds, solve -- verify modified result."""
         sink_flow = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.5, 0.5])
         source_flow = Flow(bus='elec', size=200, effects_per_flow_hour={'cost': 0.04})
 
         data = ModelData.build(
-            timesteps_3,
+            ts(3),
             [Bus('elec')],
             [Effect('cost', is_objective=True)],
             ports=[Port('grid', imports=[source_flow]), Port('demand', exports=[sink_flow])],
@@ -104,13 +101,13 @@ class TestEndToEnd:
         for rate in source_rates:
             assert rate == pytest.approx(70.0, abs=1e-6)
 
-    def test_result_accessors(self, timesteps_3):
+    def test_result_accessors(self):
         """Test Result accessor methods."""
         sink_flow = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.8, 0.6])
         source_flow = Flow(bus='elec', size=200, effects_per_flow_hour={'cost': 0.04})
 
         result = optimize(
-            timesteps=timesteps_3,
+            timesteps=ts(3),
             buses=[Bus('elec')],
             effects=[Effect('cost', is_objective=True)],
             ports=[Port('grid', imports=[source_flow]), Port('demand', exports=[sink_flow])],
@@ -151,7 +148,7 @@ class TestEndToEnd:
             converters=[Converter.boiler('boiler', 0.9, fuel, heat)],
         )
 
-        assert result.objective > 0
+        assert result.objective == pytest.approx(sum([40, 70, 50, 60]) / 0.9 * 0.04, abs=1e-6)
         sr = result.flow_rate('boiler(gas)')
         assert sr.dims == ('time',)
         assert len(sr) == 4
