@@ -8,11 +8,10 @@ from fluxopt.model_data import ModelData
 from fluxopt.results import Result
 from fluxopt.types import (
     IdList,
+    TimeIndex,
     TimeSeries,
     Timesteps,
     as_dataarray,
-    compute_dt,
-    normalize_timesteps,
 )
 
 
@@ -62,10 +61,9 @@ __all__ = [
     'Sizing',
     'Status',
     'Storage',
+    'TimeIndex',
     'TimeSeries',
     'Timesteps',
     'as_dataarray',
-    'compute_dt',
-    'normalize_timesteps',
     'optimize',
 ]

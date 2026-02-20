@@ -53,6 +53,21 @@ uv run mypy src/         # Type check
 - **linopy**: use concise, vectorized syntax — no loops over coordinates
 - **xr.DataArray** is the primary data container; prefer broadcasting over iteration
 
+## Commit & PR Conventions
+
+Use [Conventional Commits](https://www.conventionalcommits.org/) for **all** commit messages and PR titles:
+
+```
+<type>: <short summary>
+```
+
+Types: `feat`, `fix`, `refac`, `test`, `docs`, `chore`, `ci`, `perf`.
+Optional scope: `feat(storage): add cyclic constraint`.
+
+- **Commit messages**: `feat: add TimeIndex alias` (imperative, lowercase after colon)
+- **PR titles**: same format — `refac: clarify timestep input vs internal types`
+- No period at end, max ~70 chars
+
 ## Math Documentation
 
 Hybrid approach — plain-text formulas in code, full LaTeX in docs.
