@@ -190,7 +190,7 @@ def normalize_timesteps(timesteps: Timesteps) -> TimeIndex:
         timesteps: Datetime objects, integers, or a DatetimeIndex.
 
     Returns:
-        pd.DatetimeIndex for datetime inputs, pd.Index (int64) for integer inputs.
+        A datetime index for datetime inputs, or an integer index for integer inputs.
     """
     if isinstance(timesteps, pd.DatetimeIndex):
         return timesteps
