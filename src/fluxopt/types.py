@@ -10,8 +10,12 @@ import xarray as xr
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator, Mapping
 
+# -- User input types --------------------------------------------------
 type TimeSeries = float | int | list[float] | np.ndarray | pd.Series | xr.DataArray
-type Timesteps = list[datetime] | list[int] | pd.DatetimeIndex | np.ndarray
+type Timesteps = list[datetime] | list[int] | pd.DatetimeIndex
+
+# -- Internal types (after normalization) ------------------------------
+type TimeIndex = pd.DatetimeIndex | pd.Index
 
 
 @runtime_checkable
@@ -179,19 +183,17 @@ def as_dataarray(
     return da
 
 
-def normalize_timesteps(timesteps: Timesteps) -> pd.Index:
-    """Convert any Timesteps input to a pd.Index.
+def normalize_timesteps(timesteps: Timesteps) -> TimeIndex:
+    """Normalize user-provided timesteps to an internal time index.
 
     Args:
-        timesteps: Datetime or integer timesteps.
+        timesteps: Datetime objects, integers, or a DatetimeIndex.
+
+    Returns:
+        pd.DatetimeIndex for datetime inputs, pd.Index (int64) for integer inputs.
     """
     if isinstance(timesteps, pd.DatetimeIndex):
         return timesteps
-
-    if isinstance(timesteps, np.ndarray):
-        if np.issubdtype(timesteps.dtype, np.datetime64):
-            return pd.DatetimeIndex(timesteps)
-        return pd.Index(timesteps)
 
     # list[datetime] or list[int]
     if not isinstance(timesteps, list):
@@ -207,7 +209,7 @@ def normalize_timesteps(timesteps: Timesteps) -> pd.Index:
     raise TypeError(f'Unsupported timestep element type: {type(timesteps[0])}. Use datetime or int.')
 
 
-def compute_dt(timesteps: pd.Index, dt: float | list[float] | None) -> xr.DataArray:
+def compute_dt(timesteps: TimeIndex, dt: float | list[float] | None) -> xr.DataArray:
     """Compute dt (hours) for each timestep as a DataArray.
 
     When dt is None, auto-derives from timesteps:

@@ -13,7 +13,7 @@ from fluxopt.types import as_dataarray, fast_concat, normalize_timesteps
 if TYPE_CHECKING:
     from fluxopt.components import Converter, Port
     from fluxopt.elements import Bus, Effect, Flow, Sizing, Status, Storage
-    from fluxopt.types import Timesteps
+    from fluxopt.types import TimeIndex, Timesteps
 
 _NC_GROUPS = {
     'flows': 'model/flows',
@@ -167,7 +167,7 @@ class _StatusArrays:
         cls,
         items: list[tuple[str, Status]],
         effect_ids: list[str],
-        time: pd.Index,
+        time: TimeIndex,
         dim: str,
         prior_rates_map: dict[str, list[float]] | None = None,
         dt: float = 1.0,
@@ -317,7 +317,7 @@ class FlowsData:
         return cls(**kwargs)
 
     @classmethod
-    def build(cls, flows: list[Flow], time: pd.Index, effects: list[Effect], dt: float = 1.0) -> Self:
+    def build(cls, flows: list[Flow], time: TimeIndex, effects: list[Effect], dt: float = 1.0) -> Self:
         """Build FlowsData from element objects.
 
         Args:
@@ -503,7 +503,7 @@ class ConvertersData:
         )
 
     @classmethod
-    def build(cls, converters: list[Converter], time: pd.Index) -> Self | None:
+    def build(cls, converters: list[Converter], time: TimeIndex) -> Self | None:
         """Build ConvertersData with sparse pair-based conversion coefficients.
 
         Args:
@@ -629,7 +629,7 @@ class EffectsData:
         return cls(**kwargs)  # type: ignore[arg-type]
 
     @classmethod
-    def build(cls, effects: list[Effect], time: pd.Index) -> Self:
+    def build(cls, effects: list[Effect], time: TimeIndex) -> Self:
         """Build EffectsData from element objects.
 
         Args:
@@ -784,7 +784,7 @@ class StoragesData:
     def build(
         cls,
         storages: list[Storage],
-        time: pd.Index,
+        time: TimeIndex,
         dt: xr.DataArray,
         effects: list[Effect] | None = None,
     ) -> Self | None:
@@ -868,7 +868,7 @@ class ModelData:
     storages: StoragesData | None  # None when no storages
     dt: xr.DataArray  # (time,)
     weights: xr.DataArray  # (time,)
-    time: pd.Index = field(repr=False)
+    time: TimeIndex = field(repr=False)
 
     def to_netcdf(self, path: str | Path, *, mode: Literal['w', 'a'] = 'a') -> None:
         """Write model data as NetCDF groups under ``/model/``.
