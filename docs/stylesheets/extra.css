@@ -1,0 +1,13 @@
+/* Compact plotly chart spacing */
+.js-plotly-plot {
+  margin: 0.25em 0 !important;
+}
+
+/* Tighter spacing around code blocks in notebook pages */
+.md-typeset pre {
+  margin: 0.4em 0;
+}
+
+.md-typeset .highlight {
+  margin: 0.4em 0;
+}
