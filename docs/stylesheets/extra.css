@@ -1,13 +1,69 @@
+/* --- Notebook styling (inspired by nbsphinx / PyData theme) --- */
+
+/* Hide prompts — code vs output distinguished by background.
+   !important needed to override mkdocs-jupyter's inline high-specificity rule. */
+.jp-InputPrompt,
+.jp-OutputPrompt {
+  display: none !important;
+}
+
+/* Code input area: light gray background */
+.jp-Cell-inputWrapper {
+  display: flex;
+}
+
+.jp-InputArea {
+  display: flex;
+  width: 100%;
+}
+
+.jp-InputArea-editor {
+  flex: 1;
+  min-width: 0;
+}
+
+.jp-CodeCell .highlight-ipynb {
+  background: #f7f7f7;
+  border: 1px solid #e0e0e0;
+  border-radius: 3px;
+  margin: 0;
+}
+
+/* Output area: no background */
+.jp-Cell-outputWrapper {
+  display: flex;
+}
+
+.jp-OutputArea {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Text output */
+.jp-RenderedText pre {
+  background: none;
+  border: none;
+  padding: 0.4em 0.75em;
+  margin: 0;
+}
+
+/* Hide collapsers — not functional in static docs */
+.jp-Collapser {
+  display: none;
+}
+
+/* Cell spacing */
+.jp-Cell {
+  margin-bottom: 1em;
+}
+
 /* Compact plotly chart spacing */
 .js-plotly-plot {
   margin: 0.25em 0 !important;
 }
 
-/* Tighter spacing around code blocks in notebook pages */
-.md-typeset pre {
-  margin: 0.4em 0;
-}
-
-.md-typeset .highlight {
-  margin: 0.4em 0;
+/* Dark mode overrides */
+[data-md-color-scheme="slate"] .jp-CodeCell .highlight-ipynb {
+  background: #2b2b2b;
+  border-color: #404040;
 }
