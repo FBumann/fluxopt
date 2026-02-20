@@ -51,6 +51,8 @@ class TestSemiContinuous:
                 waste('Heat'),
             ],
         )
+        assert_allclose(result.objective, 110.0, atol=1e-5)
+
         rates = result.flow_rate('Src(Heat)').values
         on = result.solution['flow--on'].sel(flow='Src(Heat)').values
 
