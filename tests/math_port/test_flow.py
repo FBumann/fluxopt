@@ -6,7 +6,7 @@ from numpy.testing import assert_allclose
 
 from fluxopt import Bus, Converter, Effect, Flow, Port
 
-from .conftest import _waste, ts
+from .conftest import ts, waste
 
 
 class TestFlowConstraints:
@@ -37,7 +37,7 @@ class TestFlowConstraints:
                         Flow(bus='Gas', effects_per_flow_hour={'cost': 1}),
                     ],
                 ),
-                _waste('Heat'),
+                waste('Heat'),
             ],
             converters=[
                 Converter.boiler(

@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime
-
 import pytest
+from conftest import ts
 
 from fluxopt import Bus, Effect, Flow, ModelData, Port, optimize
 from fluxopt.model import FlowSystem
@@ -14,9 +13,8 @@ class TestCustomize:
     @pytest.fixture
     def simple_system(self):
         """Single-bus system: grid source (size=100) feeding a fixed 50 MW demand."""
-        timesteps = [datetime(2024, 1, 1, h) for h in range(3)]
         return {
-            'timesteps': timesteps,
+            'timesteps': ts(3),
             'buses': [Bus('elec')],
             'effects': [Effect('cost', is_objective=True)],
             'ports': [
@@ -69,7 +67,7 @@ class TestCustomize:
     def test_no_customize_works(self, simple_system):
         """optimize() without customize callback works as before."""
         result = optimize(**simple_system)
-        assert result.objective > 0
+        assert result.objective == pytest.approx(150.0, abs=1e-6)
         rates = result.flow_rate('grid(elec)').values
         for rate in rates:
             assert rate == pytest.approx(50.0, abs=1e-6)

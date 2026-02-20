@@ -10,11 +10,6 @@ import xarray as xr
 from fluxopt.types import as_dataarray, compute_dt, normalize_timesteps
 
 
-@pytest.fixture
-def ts():
-    return pd.DatetimeIndex([datetime(2024, 1, 1, h) for h in range(3)])
-
-
 class TestNormalizeTimesteps:
     def test_datetime_list(self):
         dts = [datetime(2024, 1, 1, h) for h in range(3)]

@@ -6,16 +6,10 @@ that the solver chooses the correct capacity.
 
 from __future__ import annotations
 
-from datetime import datetime
-
+from conftest import ts
 from numpy.testing import assert_allclose
 
 from fluxopt import Bus, Effect, Flow, Port, Sizing, Storage, optimize
-
-
-def _ts(n: int) -> list[datetime]:
-    """Create n hourly timesteps starting 2020-01-01."""
-    return [datetime(2020, 1, 1, h) for h in range(n)]
 
 
 class TestFlowSizing:
@@ -26,7 +20,7 @@ class TestFlowSizing:
         Operational cost = 50 * 1€/MWh * 2h = 100.
         """
         result = optimize(
-            _ts(2),
+            ts(2),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
             ports=[
@@ -45,7 +39,7 @@ class TestFlowSizing:
         )
         assert_allclose(result.objective, 100.0, rtol=1e-5)
         size = float(result.sizes.sel(flow='Src(Heat)').values)
-        assert size >= 50.0 - 1e-5
+        assert size >= 50.0 - 1e-5  # No per-size cost, so size not uniquely determined
 
     def test_optional_sizing_with_fixed_cost(self):
         """Optional invest with fixed cost.
@@ -58,7 +52,7 @@ class TestFlowSizing:
         With invest: fixed=200 + operational=50*1*2=100 → total=300. Cheaper → invest.
         """
         result = optimize(
-            _ts(2),
+            ts(2),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
             ports=[
@@ -89,7 +83,7 @@ class TestFlowSizing:
         Should invest → size=80, cost=110.
         """
         result = optimize(
-            _ts(2),
+            ts(2),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
             ports=[
@@ -120,7 +114,7 @@ class TestFlowSizing:
         Total = 5*50 + 100 = 350.
         """
         result = optimize(
-            _ts(2),
+            ts(2),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
             ports=[
@@ -148,7 +142,7 @@ class TestFlowSizing:
         Need size=50 (from t1: 50/1.0). t0: 0.5*50=25. Total cost=75.
         """
         result = optimize(
-            _ts(2),
+            ts(2),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
             ports=[
@@ -179,7 +173,7 @@ class TestFlowSizing:
         Per-size cost incentivizes minimal size.
         """
         result = optimize(
-            _ts(2),
+            ts(2),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
             ports=[
@@ -222,7 +216,7 @@ class TestStorageSizing:
         Capacity ≥ 50.
         """
         result = optimize(
-            _ts(3),
+            ts(3),
             buses=[Bus('Elec')],
             effects=[Effect('costs', is_objective=True)],
             ports=[
@@ -245,4 +239,4 @@ class TestStorageSizing:
         )
         assert_allclose(result.objective, 50.0, rtol=1e-5)
         cap = float(result.storage_capacities.sel(storage='Battery').values)
-        assert cap >= 50.0 - 1e-5
+        assert cap >= 50.0 - 1e-5  # No per-size cost, so capacity not uniquely determined

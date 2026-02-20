@@ -145,6 +145,7 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 addopts = "-n auto"
+pythonpath = ["tests"]
 markers = [
     "slow: marks tests as slow",
 ]

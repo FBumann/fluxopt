@@ -2,19 +2,20 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from conftest import ts
 
 from fluxopt import Bus, Effect, Flow, Port, optimize
 
 
 class TestBusPenaltyShortage:
-    def test_shortage_produces_penalty(self, timesteps_3):
+    def test_shortage_produces_penalty(self):
         """Demand exceeds supply capacity → shortage slack > 0, penalty in objective."""
         # Source can only provide 30 MW, demand is 50 MW → 20 MW shortage each step
         source = Flow(bus='elec', size=30, effects_per_flow_hour={'cost': 1})
         sink = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.5, 0.5])
 
         result = optimize(
-            timesteps=timesteps_3,
+            timesteps=ts(3),
             buses=[Bus('elec', imbalance_penalty=1000)],
             effects=[Effect('cost', is_objective=True)],
             ports=[Port('src', imports=[source]), Port('demand', exports=[sink])],
@@ -33,14 +34,14 @@ class TestBusPenaltyShortage:
 
 
 class TestBusPenaltySurplus:
-    def test_surplus_produces_penalty(self, timesteps_3):
+    def test_surplus_produces_penalty(self):
         """Fixed supply exceeds demand → surplus slack > 0."""
         # Source is fixed at 80 MW, demand is 50 MW → 30 MW surplus each step
         source = Flow(bus='elec', size=80, fixed_relative_profile=[1.0, 1.0, 1.0])
         sink = Flow(bus='elec', size=50, effects_per_flow_hour={'cost': 0})
 
         result = optimize(
-            timesteps=timesteps_3,
+            timesteps=ts(3),
             buses=[Bus('elec', imbalance_penalty=500)],
             effects=[Effect('cost', is_objective=True)],
             ports=[Port('src', imports=[source]), Port('demand', exports=[sink])],
@@ -58,13 +59,13 @@ class TestBusPenaltySurplus:
 
 
 class TestBusPenaltyBalanced:
-    def test_balanced_zero_penalty(self, timesteps_3):
+    def test_balanced_zero_penalty(self):
         """When supply matches demand, slacks are zero and penalty is zero."""
         source = Flow(bus='elec', size=100, effects_per_flow_hour={'cost': 0.04})
         sink = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.8, 0.6])
 
         result = optimize(
-            timesteps=timesteps_3,
+            timesteps=ts(3),
             buses=[Bus('elec', imbalance_penalty=1000)],
             effects=[Effect('cost', is_objective=True)],
             ports=[Port('src', imports=[source]), Port('demand', exports=[sink])],
@@ -82,7 +83,7 @@ class TestBusPenaltyBalanced:
 
 
 class TestBusPenaltyMixed:
-    def test_mixed_hard_and_soft_buses(self, timesteps_3):
+    def test_mixed_hard_and_soft_buses(self):
         """One bus penalized, one hard-balanced. Hard bus still enforces strict balance."""
         # Electricity bus: hard balanced, supply matches demand
         elec_source = Flow(bus='elec', size=200, effects_per_flow_hour={'cost': 0.04})
@@ -93,7 +94,7 @@ class TestBusPenaltyMixed:
         heat_sink = Flow(bus='heat', size=100, fixed_relative_profile=[0.5, 0.5, 0.5])
 
         result = optimize(
-            timesteps=timesteps_3,
+            timesteps=ts(3),
             buses=[Bus('elec'), Bus('heat', imbalance_penalty=500)],
             effects=[Effect('cost', is_objective=True)],
             ports=[
@@ -116,13 +117,13 @@ class TestBusPenaltyMixed:
 
 
 class TestPenaltyEffectAutoCreation:
-    def test_auto_creates_penalty_effect(self, timesteps_3):
+    def test_auto_creates_penalty_effect(self):
         """Penalty effect is auto-created when not in user effect list."""
         source = Flow(bus='elec', size=30, effects_per_flow_hour={'cost': 1})
         sink = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.5, 0.5])
 
         result = optimize(
-            timesteps=timesteps_3,
+            timesteps=ts(3),
             buses=[Bus('elec', imbalance_penalty=100)],
             effects=[Effect('cost', is_objective=True)],
             ports=[Port('src', imports=[source]), Port('demand', exports=[sink])],
@@ -131,7 +132,7 @@ class TestPenaltyEffectAutoCreation:
         # Penalty effect should exist in results
         assert 'penalty' in result.effect_totals.coords['effect'].values
 
-    def test_user_defined_penalty_effect_bounds(self, timesteps_3):
+    def test_user_defined_penalty_effect_bounds(self):
         """User-defined Effect('penalty', maximum_total=X) → bounds respected.
 
         Source cost=100 is expensive, penalty=10 is cheap. Without cap the
@@ -142,7 +143,7 @@ class TestPenaltyEffectAutoCreation:
 
         # Uncapped penalty would be 50*10*3 = 1500, but cap at 1000
         result = optimize(
-            timesteps=timesteps_3,
+            timesteps=ts(3),
             buses=[Bus('elec', imbalance_penalty=10)],
             effects=[Effect('cost', is_objective=True), Effect('penalty', maximum_total=1000)],
             ports=[Port('src', imports=[source]), Port('demand', exports=[sink])],
@@ -153,13 +154,13 @@ class TestPenaltyEffectAutoCreation:
 
 
 class TestPenaltyAsRegularEffect:
-    def test_effects_per_flow_hour_with_penalty(self, timesteps_3):
+    def test_effects_per_flow_hour_with_penalty(self):
         """Penalty effect can be used in effects_per_flow_hour like any other effect."""
         source = Flow(bus='elec', size=200, effects_per_flow_hour={'cost': 0.04, 'penalty': 50})
         sink = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.5, 0.5])
 
         result = optimize(
-            timesteps=timesteps_3,
+            timesteps=ts(3),
             buses=[Bus('elec', imbalance_penalty=1000)],
             effects=[Effect('cost', is_objective=True)],
             ports=[Port('src', imports=[source]), Port('demand', exports=[sink])],
@@ -172,13 +173,13 @@ class TestPenaltyAsRegularEffect:
 
 
 class TestNoPenalty:
-    def test_no_penalty_buses_unchanged(self, timesteps_3):
+    def test_no_penalty_buses_unchanged(self):
         """Without imbalance_penalty, behavior is unchanged from before."""
         source = Flow(bus='elec', size=200, effects_per_flow_hour={'cost': 0.04})
         sink = Flow(bus='elec', size=100, fixed_relative_profile=[0.5, 0.8, 0.6])
 
         result = optimize(
-            timesteps=timesteps_3,
+            timesteps=ts(3),
             buses=[Bus('elec')],
             effects=[Effect('cost', is_objective=True)],
             ports=[Port('src', imports=[source]), Port('demand', exports=[sink])],

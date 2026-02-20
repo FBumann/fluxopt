@@ -16,26 +16,10 @@ API mapping (flixopt → fluxopt):
 
 from __future__ import annotations
 
-from datetime import datetime
-
+from conftest import ts, waste
 from numpy.testing import assert_allclose
 
 from fluxopt import Bus, Converter, Effect, Flow, Port, Storage, optimize
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _ts(n: int) -> list[datetime]:
-    """Create n hourly timesteps starting 2020-01-01."""
-    return [datetime(2020, 1, 1, h) for h in range(n)]
-
-
-def _waste(bus: str) -> Port:
-    """Free-disposal port: absorbs excess on *bus* at zero cost."""
-    return Port('waste', exports=[Flow(bus=bus)])
-
 
 # ---------------------------------------------------------------------------
 # Bus balance & dispatch
@@ -51,7 +35,7 @@ class TestBusBalance:
         Only correct bus balance with merit order yields cost=80.
         """
         result = optimize(
-            _ts(2),
+            ts(2),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
             ports=[
@@ -81,7 +65,7 @@ class TestConversionEfficiency:
         fuel = Flow(bus='Gas')
         thermal = Flow(bus='Heat')
         result = optimize(
-            _ts(3),
+            ts(3),
             buses=[Bus('Heat'), Bus('Gas')],
             effects=[Effect('costs', is_objective=True)],
             ports=[
@@ -100,7 +84,7 @@ class TestConversionEfficiency:
         fuel = Flow(bus='Gas')
         thermal = Flow(bus='Heat')
         result = optimize(
-            _ts(2),
+            ts(2),
             buses=[Bus('Heat'), Bus('Gas')],
             effects=[Effect('costs', is_objective=True)],
             ports=[
@@ -121,7 +105,7 @@ class TestConversionEfficiency:
         thermal = Flow(bus='Heat')
         electrical = Flow(bus='Elec')
         result = optimize(
-            _ts(2),
+            ts(2),
             buses=[Bus('Heat'), Bus('Elec'), Bus('Gas')],
             effects=[Effect('costs', is_objective=True)],
             ports=[
@@ -147,7 +131,7 @@ class TestEffects:
         Sensitivity: If only one effect applied, the other would be wrong.
         """
         result = optimize(
-            _ts(2),
+            ts(2),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True), Effect('CO2')],
             ports=[
@@ -166,7 +150,7 @@ class TestEffects:
         Sensitivity: Without CO2 cap, all Dirty → cost=20.
         """
         result = optimize(
-            _ts(2),
+            ts(2),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True), Effect('CO2', maximum_total=15)],
             ports=[
@@ -186,14 +170,14 @@ class TestEffects:
         Sensitivity: Without minimum_total, Dirty=20 → cost=20.
         """
         result = optimize(
-            _ts(2),
+            ts(2),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True), Effect('CO2', minimum_total=25)],
             ports=[
                 Port('Demand', exports=[Flow(bus='Heat', size=1, fixed_relative_profile=[10, 10])]),
                 Port('Dirty', imports=[Flow(bus='Heat', effects_per_flow_hour={'costs': 1, 'CO2': 1})]),
                 Port('Clean', imports=[Flow(bus='Heat', effects_per_flow_hour={'costs': 1, 'CO2': 0})]),
-                _waste('Heat'),
+                waste('Heat'),
             ],
         )
         co2 = float(result.effect_totals.sel(effect='CO2').values)
@@ -208,7 +192,7 @@ class TestEffects:
         Sensitivity: Without max_per_hour, all Dirty → cost=20.
         """
         result = optimize(
-            _ts(2),
+            ts(2),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True), Effect('CO2', maximum_per_hour=8)],
             ports=[
@@ -227,13 +211,13 @@ class TestEffects:
         Sensitivity: Without min_per_hour, Dirty=5/ts → cost=10.
         """
         result = optimize(
-            _ts(2),
+            ts(2),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True), Effect('CO2', minimum_per_hour=10)],
             ports=[
                 Port('Demand', exports=[Flow(bus='Heat', size=1, fixed_relative_profile=[5, 5])]),
                 Port('Dirty', imports=[Flow(bus='Heat', effects_per_flow_hour={'costs': 1, 'CO2': 1})]),
-                _waste('Heat'),
+                waste('Heat'),
             ],
         )
         assert_allclose(result.objective, 20.0, rtol=1e-5)
@@ -248,7 +232,7 @@ class TestEffects:
         Sensitivity: Without cap, all Dirty → cost=20.
         """
         result = optimize(
-            _ts(2),
+            ts(2),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True), Effect('CO2', maximum_total=12)],
             ports=[
@@ -268,13 +252,13 @@ class TestEffects:
         Sensitivity: Without floor, Dirty=20 → cost=20.
         """
         result = optimize(
-            _ts(2),
+            ts(2),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True), Effect('CO2', minimum_total=25)],
             ports=[
                 Port('Demand', exports=[Flow(bus='Heat', size=1, fixed_relative_profile=[10, 10])]),
                 Port('Dirty', imports=[Flow(bus='Heat', effects_per_flow_hour={'costs': 1, 'CO2': 1})]),
-                _waste('Heat'),
+                waste('Heat'),
             ],
         )
         co2 = float(result.effect_totals.sel(effect='CO2').values)
@@ -297,13 +281,13 @@ class TestFlowConstraints:
         fuel = Flow(bus='Gas')
         thermal = Flow(bus='Heat', size=100, relative_minimum=0.4)
         result = optimize(
-            _ts(2),
+            ts(2),
             buses=[Bus('Heat'), Bus('Gas')],
             effects=[Effect('costs', is_objective=True)],
             ports=[
                 Port('Demand', exports=[Flow(bus='Heat', size=1, fixed_relative_profile=[30, 30])]),
                 Port('GasSrc', imports=[Flow(bus='Gas', effects_per_flow_hour={'costs': 1})]),
-                _waste('Heat'),
+                waste('Heat'),
             ],
             converters=[Converter.boiler('Boiler', 1.0, fuel, thermal)],
         )
@@ -318,7 +302,7 @@ class TestFlowConstraints:
         Sensitivity: Without relative_maximum, all from CheapSrc → cost=120.
         """
         result = optimize(
-            _ts(2),
+            ts(2),
             buses=[Bus('Heat')],
             effects=[Effect('costs', is_objective=True)],
             ports=[
@@ -348,7 +332,7 @@ class TestStorage:
         Sensitivity: Without storage, buy at t=2 @10€ → cost=200.
         """
         result = optimize(
-            _ts(3),
+            ts(3),
             buses=[Bus('Elec')],
             effects=[Effect('costs', is_objective=True)],
             ports=[
@@ -378,7 +362,7 @@ class TestStorage:
         Sensitivity: Without losses, charge only 90 → cost=90.
         """
         result = optimize(
-            _ts(2),
+            ts(2),
             buses=[Bus('Elec')],
             effects=[Effect('costs', is_objective=True)],
             ports=[
@@ -409,7 +393,7 @@ class TestStorage:
         Both broken → cost=72. Only both correct yields 100.
         """
         result = optimize(
-            _ts(2),
+            ts(2),
             buses=[Bus('Elec')],
             effects=[Effect('costs', is_objective=True)],
             ports=[
@@ -439,7 +423,7 @@ class TestStorage:
         Sensitivity: Without SOC bound, store 60 → cost=60.
         """
         result = optimize(
-            _ts(2),
+            ts(2),
             buses=[Bus('Elec')],
             effects=[Effect('costs', is_objective=True)],
             ports=[
@@ -470,7 +454,7 @@ class TestStorage:
         Sensitivity: Without cyclic, start full (free energy) → cost=0.
         """
         result = optimize(
-            _ts(2),
+            ts(2),
             buses=[Bus('Elec')],
             effects=[Effect('costs', is_objective=True)],
             ports=[
@@ -500,7 +484,7 @@ class TestStorage:
         Sensitivity: Without min level, discharge all → no grid → cost=50 less.
         """
         result = optimize(
-            _ts(3),
+            ts(3),
             buses=[Bus('Elec')],
             effects=[Effect('costs', is_objective=True)],
             ports=[
