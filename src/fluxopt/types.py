@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 
 # -- User input types --------------------------------------------------
 type TimeSeries = float | int | list[float] | np.ndarray | pd.Series | xr.DataArray
-type Timesteps = list[datetime] | list[int] | pd.DatetimeIndex
+type Timesteps = list[datetime] | list[int] | pd.DatetimeIndex | pd.Index
 
 # -- Internal types (after normalization) ------------------------------
 type TimeIndex = pd.DatetimeIndex | pd.Index
@@ -191,22 +191,38 @@ def normalize_timesteps(timesteps: Timesteps) -> TimeIndex:
 
     Returns:
         A datetime index for datetime inputs, or an integer index for integer inputs.
+
+    Raises:
+        ValueError: If timesteps are not strictly monotonically increasing.
     """
-    if isinstance(timesteps, pd.DatetimeIndex):
-        return timesteps
-
-    # list[datetime] or list[int]
-    if not isinstance(timesteps, list):
-        raise TypeError(f'Unsupported Timesteps type: {type(timesteps)}')
-
     if len(timesteps) == 0:
-        return pd.DatetimeIndex([])
+        raise ValueError('Timesteps must not be empty')
 
-    if isinstance(timesteps[0], datetime):
-        return pd.DatetimeIndex(timesteps)
-    if isinstance(timesteps[0], int):
-        return pd.Index(timesteps, dtype=np.int64)
-    raise TypeError(f'Unsupported timestep element type: {type(timesteps[0])}. Use datetime or int.')
+    if isinstance(timesteps, pd.DatetimeIndex):
+        idx: TimeIndex = timesteps
+    elif isinstance(timesteps, pd.Index):
+        if isinstance(timesteps, pd.RangeIndex) or pd.api.types.is_integer_dtype(timesteps.dtype):
+            idx = timesteps
+        elif pd.api.types.is_datetime64_any_dtype(timesteps.dtype):
+            idx = pd.DatetimeIndex(timesteps)
+        else:
+            raise TypeError(f'Unsupported pd.Index dtype: {timesteps.dtype}. Use datetime or integer index.')
+    elif not isinstance(timesteps, list):
+        raise TypeError(f'Unsupported Timesteps type: {type(timesteps)}')
+    elif isinstance(timesteps[0], datetime):
+        idx = pd.DatetimeIndex(timesteps)
+    elif type(timesteps[0]) is int:
+        idx = pd.Index(timesteps)
+        if not pd.api.types.is_integer_dtype(idx.dtype):
+            raise TypeError('Integer timesteps contain non-integer values')
+    else:
+        raise TypeError(f'Unsupported timestep element type: {type(timesteps[0])}. Use datetime or int.')
+
+    if len(idx) > 1 and not idx.is_monotonic_increasing:
+        raise ValueError('Timesteps must be strictly monotonically increasing')
+    if not idx.is_unique:
+        raise ValueError('Timesteps contain duplicates')
+    return idx
 
 
 def compute_dt(timesteps: TimeIndex, dt: float | list[float] | None) -> xr.DataArray:
