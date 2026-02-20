@@ -19,16 +19,16 @@ Includes the [HiGHS](https://highs.dev/) solver out of the box.
 ```python
 import fluxopt as fx
 
-result = fx.solve(
+result = fx.optimize(
     timesteps=["t0", "t1", "t2"],
     buses=[fx.Bus("electricity")],
     effects=[fx.Effect("cost", is_objective=True)],
     components=[
-        fx.Source("grid", outputs=[
-            fx.Flow("elec", bus="electricity", size=200, effects_per_flow_hour={"cost": 0.04}),
+        fx.Port("grid", outputs=[
+            fx.Flow(bus="electricity", size=200, effects_per_flow_hour={"cost": 0.04}),
         ]),
-        fx.Sink("demand", inputs=[
-            fx.Flow("elec", bus="electricity", size=100, fixed_relative_profile=[0.5, 0.8, 0.6]),
+        fx.Port("demand", inputs=[
+            fx.Flow(bus="electricity", size=100, fixed_relative_profile=[0.5, 0.8, 0.6]),
         ]),
     ],
 )
