@@ -31,6 +31,8 @@ dependencies = [
     "netcdf4>=1.6.0",
     "numpy>=1.26",
     "pandas>=2.1",
+    "plotly>=6.5.2",
+    "pyyaml>=6.0",
     "xarray>=2024.1.0",
 ]
 
@@ -137,9 +139,12 @@ warn_unused_configs = true
 
 [[tool.mypy.overrides]]
 module = [
+    "pyoptinterface.*",
+    "highsbox.*",
     "linopy.*",
     "netCDF4.*",
     "xarray.*",
+    "yaml.*",
 ]
 ignore_missing_imports = true
 

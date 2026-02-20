@@ -210,7 +210,7 @@ result = optimize(
 | `effects_per_running_hour` | `dict[str, TimeSeries]` | `{}` | Effect cost per running hour |
 | `effects_per_startup` | `dict[str, TimeSeries]` | `{}` | Effect cost per startup event |
 
-### Flow.prior
+### Flow.prior_rates
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|

@@ -70,6 +70,7 @@ Optional scope: `feat(storage): add cyclic constraint`.
 
 ## Math Documentation
 
+
 Hybrid approach — plain-text formulas in code, full LaTeX in docs.
 
 - **Docstrings**: one-line formulas in Unicode notation (P⁺, P⁻, η, δ), plus `See: docs/math/...` link

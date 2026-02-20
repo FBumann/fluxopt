@@ -12,7 +12,10 @@ from fluxopt.types import (
     TimeSeries,
     Timesteps,
     as_dataarray,
+    compute_dt,
+    normalize_timesteps,
 )
+from fluxopt.yaml_loader import load_yaml, solve_yaml
 
 
 def optimize(
@@ -65,5 +68,9 @@ __all__ = [
     'TimeSeries',
     'Timesteps',
     'as_dataarray',
+    'compute_dt',
+    'load_yaml',
+    'normalize_timesteps',
     'optimize',
+    'solve_yaml',
 ]
