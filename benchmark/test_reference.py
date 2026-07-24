@@ -35,16 +35,18 @@ def test_reference_build(benchmark: object, reference_system: str) -> None:
     if extra_info is not None and isinstance(row, dict):
         # Element-layer labels + measured model size; keys absent on older
         # fluxopt versions are skipped so cross-ref comparisons keep working.
-        for key in (
-            'time',
-            'periods',
-            'components',
-            'flows',
-            'effects',
-            'series',
-            'variables',
-            'binaries',
-            'constraints',
+        # The row's 'time' (length of the time axis) is recorded as
+        # 'timesteps' so an `extra:` column never shadows the time metric.
+        for key, label in (
+            ('time', 'timesteps'),
+            ('periods', 'periods'),
+            ('components', 'components'),
+            ('flows', 'flows'),
+            ('effects', 'effects'),
+            ('series', 'series'),
+            ('variables', 'variables'),
+            ('binaries', 'binaries'),
+            ('constraints', 'constraints'),
         ):
             if key in row:
-                extra_info[key] = row[key]
+                extra_info[label] = row[key]
