@@ -33,5 +33,18 @@ def test_reference_build(benchmark: object, reference_system: str) -> None:
     row = benchmark(fx_benchmark.measure, reference_system, QUARTER_YEAR)  # type: ignore[operator]
     extra_info = getattr(benchmark, 'extra_info', None)
     if extra_info is not None and isinstance(row, dict):
-        extra_info['variables'] = row['variables']
-        extra_info['constraints'] = row['constraints']
+        # Element-layer labels + measured model size; keys absent on older
+        # fluxopt versions are skipped so cross-ref comparisons keep working.
+        for key in (
+            'time',
+            'periods',
+            'components',
+            'flows',
+            'effects',
+            'series',
+            'variables',
+            'binaries',
+            'constraints',
+        ):
+            if key in row:
+                extra_info[key] = row[key]

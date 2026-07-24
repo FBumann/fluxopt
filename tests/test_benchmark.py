@@ -18,6 +18,13 @@ def test_reference_system_builds(name):
     assert row['model'] == name
     assert row['variables'] > 0
     assert row['constraints'] > 0
+    assert row['binaries'] >= 0
+    assert row['components'] > 0
+    assert row['flows'] > 0
+    assert row['effects'] > 0
+    assert row['series'] > 0
+    assert row['time'] > 0
+    assert row['periods'] >= 1
     assert all(row[key] >= 0 for key in ('elements_s', 'data_s', 'build_s'))
     assert 'solve_s' not in row
 
