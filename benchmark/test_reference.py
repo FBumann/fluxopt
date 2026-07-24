@@ -20,9 +20,12 @@ fx_benchmark = pytest.importorskip('fluxopt.benchmark')
 QUARTER_YEAR = 2190
 
 
-@pytest.fixture(params=['district_heating', 'industry_park', 'green_city', 'energy_transition'])
+@pytest.fixture(params=['district_heating', 'industry_park', 'green_city', 'energy_transition', 'stress'])
 def reference_system(request: pytest.FixtureRequest) -> str:
-    return request.param
+    name = request.param
+    if name not in fx_benchmark.SYSTEMS:
+        pytest.skip(f'{name!r} is not in this fluxopt version')
+    return name
 
 
 def test_reference_build(benchmark: object, reference_system: str) -> None:
