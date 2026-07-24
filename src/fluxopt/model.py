@@ -10,7 +10,7 @@ from fluxopt.constraints.sparse import sparse_weighted_sum
 from fluxopt.constraints.status import add_duration_tracking, add_switch_transitions
 from fluxopt.constraints.storage import add_accumulation_constraints
 from fluxopt.contract import BoundType, Dim, Var
-from fluxopt.contributions import _leontief
+from fluxopt.contributions import _apply_leontief, _leontief
 from fluxopt.effect_terms import effect_terms
 from fluxopt.results import Result
 from fluxopt.types import as_dataarray
@@ -1325,6 +1325,37 @@ class FlowSystemModel:
             var = var.sel({term.entity_dim: list(term.select)})
         return var
 
+    def _temporal_effect_rhs(self, terms: list[EffectTerm]) -> Any:
+        """Sum of all temporal effect contributions, folded into effect--total.
+
+        Builds one expression per declared temporal term,
+        ``sum_entity(coeff * var [* dt])`` — no per-timestep variables.
+
+        Cross-effect chains ``E = D + C·E`` are resolved via the closed form
+        ``E = (I - C)^{-1}·D``, contracting the Leontief inverse into each
+        term's numeric coefficient array: the fold is linear in the terms,
+        while multiplying the assembled linopy expression instead would fan
+        every term out across all source effects.
+
+        Returns ``0`` when no temporal terms are declared.
+        """
+        d = self.data
+        cf = d.effects.cf_temporal
+        leontief = _leontief(cf) if cf is not None else None
+
+        rhs: Any = 0
+        for term in (t for t in terms if t.domain == 'temporal'):
+            var = self._term_variable(term)
+            coeff = term.coeff * d.dims.dt if term.scale_dt else term.coeff
+            if leontief is not None:
+                coeff = _apply_leontief(leontief, coeff)
+            if term.sparse:
+                expr = sparse_weighted_sum(var, coeff, sum_dim=term.entity_dim, group_dim='effect')
+            else:
+                expr = (coeff * var).sum(term.entity_dim)
+            rhs = rhs + expr
+        return rhs
+
     def _create_effects(self) -> None:
         """Effect tracking: temporal and lump domains.
 
@@ -1340,27 +1371,8 @@ class FlowSystemModel:
         if len(effect_ids) == 0:
             return
 
-        # --- Temporal domain: expressions folded into effect--total (no per-timestep variables) ---
-        # One expression per declared term: sum_entity(coeff * var [* dt]).
         terms = effect_terms(d)
-
-        temporal_rhs: Any = 0
-        for term in (t for t in terms if t.domain == 'temporal'):
-            var = self._term_variable(term)
-            coeff = term.coeff * d.dims.dt if term.scale_dt else term.coeff
-            if term.sparse:
-                expr = sparse_weighted_sum(var, coeff, sum_dim=term.entity_dim, group_dim='effect')
-            else:
-                expr = (coeff * var).sum(term.entity_dim)
-            temporal_rhs = temporal_rhs + expr
-
-        # Cross-effect temporal chains: E = D + C·E has the closed form
-        # E = (I - C)^{-1}·D, so apply the numeric Leontief inverse inline
-        # instead of coupling per-timestep variables.
-        if ds.cf_temporal is not None and not isinstance(temporal_rhs, int):
-            leontief = _leontief(ds.cf_temporal)  # (effect, source_effect, time[, period])
-            source_t = temporal_rhs.rename({'effect': 'source_effect'})
-            temporal_rhs = (source_t * leontief).sum('source_effect')
+        temporal_rhs = self._temporal_effect_rhs(terms)
 
         # --- Lump domain: effect_lump[effect(, period)] ---
         # Combines all non-temporal contributions (sizing, investment recurring, investment at-build)
