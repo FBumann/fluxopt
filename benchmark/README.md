@@ -88,6 +88,15 @@ Both flows run the whole suite — archetypes, IO, and the realistic reference
 systems. On PRs, the `benchmark-hint` workflow runs `test_reference.py` the
 same way and posts the numbers as a sticky comment.
 
+## Comparison with flixopt
+
+`flixopt_stress.py` is a 1:1 port of the packaged `stress` reference system
+to [flixopt](https://github.com/flixOpt/flixopt) — same fixed-seed
+parameters, identical binary counts. It is standalone (flixopt is not a
+dependency of this env); run it via
+`uv run --no-project --with 'flixopt==7.2.3' python benchmark/flixopt_stress.py`.
+Measured numbers and methodology: `docs/benchmark.md`.
+
 ## Local memory profiling — pytest-benchmem
 
 Peak-memory number next to the timings, plus a flamegraph of where it goes:
