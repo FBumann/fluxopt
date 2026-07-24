@@ -28,14 +28,13 @@ reflect real workloads and the builders double as examples:
 - ``energy_transition`` — ``green_city`` planned over eight five-year
   investment periods: growing demand, a decarbonizing grid, a rising carbon
   price, and the battery as a multi-period ``Investment`` (15-year lifetime,
-  capex learning curve, recurring O&M); ~2 million variables at the default
-  horizon.
+  capex learning curve, recurring O&M).
 - ``stress`` — the exception to realistic and readable: an abstract,
   structure-only stress workload with neutral ids and fixed-seed random
   parameters. ~190 flows over 16 investment periods, a 30-effect graph,
   optional ``Sizing`` in bulk, multi-node balances and
   piecewise/status/storage features; its ``--timesteps`` budget is split
-  across the periods (~2 million variables at the default horizon).
+  across the periods.
 
 All data is deterministic (any randomness is drawn from fixed seeds), and
 each system is built in a fresh subprocess so peak memory is attributed per
@@ -60,6 +59,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 import pandas as pd
 import xarray as xr
+from pydantic import BaseModel
 
 from fluxopt import (
     Carrier,
@@ -1225,12 +1225,71 @@ SYSTEMS: dict[str, Callable[[int], Elements]] = {
 }
 
 
+def _count_time_series(value: Any, n_time: int) -> int:
+    """Number of time-varying data arrays inside one element parameter value.
+
+    Counts every array-valued leaf whose leading dimension is the time axis —
+    xarray objects by their ``time`` dim, plain arrays/lists/pandas objects by
+    length. Scalars, breakpoint lists and per-period arrays don't count.
+    """
+    if isinstance(value, xr.DataArray):
+        return int('time' in value.dims)
+    if isinstance(value, (pd.Series, pd.DataFrame)):
+        return int(len(value) == n_time)
+    if isinstance(value, np.ndarray):
+        return int(bool(value.shape) and value.shape[0] == n_time)
+    if isinstance(value, list):
+        if value and all(isinstance(v, (int, float)) for v in value):
+            return int(len(value) == n_time)
+        return sum(_count_time_series(v, n_time) for v in value)
+    if isinstance(value, dict):
+        return sum(_count_time_series(v, n_time) for v in value.values())
+    if isinstance(value, BaseModel):
+        return sum(_count_time_series(getattr(value, name), n_time) for name in type(value).model_fields)
+    return 0
+
+
+def _system_stats(elements: Elements) -> dict[str, Any]:
+    """Element-layer size labels for one system.
+
+    Stable properties of the system definition (component, flow, effect and
+    time-series counts, temporal grid) — unlike variable/constraint counts,
+    which are formulation output and belong to the measured row.
+    """
+    ports: list[Port] = elements['ports']
+    converters: list[Converter] = elements.get('converters') or []
+    storages: list[Storage] = elements.get('storages') or []
+    flows = (
+        sum(len(p.imports) + len(p.exports) for p in ports)
+        + sum(len(c.inputs) + len(c.outputs) for c in converters)
+        + 2 * len(storages)
+    )
+    n_time = len(elements['timesteps'])
+    groups = (elements['carriers'], elements['effects'], ports, converters, storages)
+    periods = elements.get('periods')
+    return {
+        'time': n_time,
+        'periods': len(periods) if periods else 1,
+        'components': len(ports) + len(converters) + len(storages),
+        'flows': flows,
+        'effects': len(elements['effects']),
+        'series': sum(_count_time_series(element, n_time) for group in groups for element in group),
+    }
+
+
 def measure(model: str, timesteps: int = HOURS_PER_YEAR, solve: bool = False) -> dict[str, Any]:
-    """Build one reference system and return stage timings, model size and peak memory."""
+    """Build one reference system and return its size labels, stage timings and peak memory.
+
+    The row mixes two kinds of size: element-layer stats from
+    :func:`_system_stats` (stable labels of the system definition) and the
+    measured solver-model size (``variables``, ``binaries``, ``constraints``),
+    which changes with the formulation and is re-measured every run.
+    """
     builder = SYSTEMS[model]
     start = perf_counter()
     elements = builder(timesteps)
     elements_s = perf_counter() - start
+    stats = _system_stats(elements)
     start = perf_counter()
     data = ModelData.build(**elements)
     data_s = perf_counter() - start
@@ -1241,7 +1300,9 @@ def measure(model: str, timesteps: int = HOURS_PER_YEAR, solve: bool = False) ->
     row: dict[str, Any] = {
         'model': model,
         'timesteps': timesteps,
+        **stats,
         'variables': fsm.m.nvars,
+        'binaries': fsm.m.binaries.nvars,
         'constraints': fsm.m.ncons,
         'elements_s': elements_s,
         'data_s': data_s,
@@ -1321,7 +1382,13 @@ def _print_report(rows: list[dict[str, Any]], timesteps: int, solve: bool) -> No
     print()
     headers = [
         'model',
+        'grid',
+        'comps',
+        'flows',
+        'effects',
+        'series',
         'variables',
+        'binary',
         'constraints',
         'elements',
         'data',
@@ -1332,7 +1399,13 @@ def _print_report(rows: list[dict[str, Any]], timesteps: int, solve: bool) -> No
     table_rows = [
         [
             row['model'],
+            f'{row["time"]}x{row["periods"]}',
+            str(row['components']),
+            str(row['flows']),
+            str(row['effects']),
+            str(row['series']),
             _fmt_count(row['variables']),
+            _fmt_count(row['binaries']),
             _fmt_count(row['constraints']),
             _fmt_seconds(row['elements_s']),
             _fmt_seconds(row['data_s']),
