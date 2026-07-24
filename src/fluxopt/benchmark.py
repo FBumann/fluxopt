@@ -28,13 +28,19 @@ reflect real workloads and the builders double as examples:
 - ``energy_transition`` — ``green_city`` planned over eight five-year
   investment periods: growing demand, a decarbonizing grid, a rising carbon
   price, and the battery as a multi-period ``Investment`` (15-year lifetime,
-  capex learning curve, recurring O&M); ~2 million variables at the default
-  horizon.
+  capex learning curve, recurring O&M).
+- ``stress`` — the exception to realistic and readable: an abstract,
+  structure-only stress workload with neutral ids and fixed-seed random
+  parameters. ~190 flows over 16 investment periods, a 30-effect graph,
+  optional ``Sizing`` in bulk, multi-node balances and
+  piecewise/status/storage features; its ``--timesteps`` budget is split
+  across the periods.
 
-All data is deterministic (no randomness), and each system is built in a
-fresh subprocess so peak memory is attributed per model. Memory is
-whole-process peak RSS — the number that has to fit in your RAM; for
-allocator-level profiles use pytest-benchmem on ``benchmark/test_reference.py``.
+All data is deterministic (any randomness is drawn from fixed seeds), and
+each system is built in a fresh subprocess so peak memory is attributed per
+model. Memory is whole-process peak RSS — the number that has to fit in your
+RAM; for allocator-level profiles use pytest-benchmem on
+``benchmark/test_reference.py``.
 """
 
 from __future__ import annotations
@@ -53,6 +59,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 import pandas as pd
 import xarray as xr
+from pydantic import BaseModel
 
 from fluxopt import (
     Carrier,
@@ -558,20 +565,731 @@ def energy_transition(timesteps: int = HOURS_PER_YEAR) -> Elements:
     return elements
 
 
+STRESS_PERIODS = 16
+"""Investment periods of ``stress``; its ``timesteps`` budget is split across them."""
+
+_STRESS_GAPS = (2, 1, 2, 2, 1, 3)
+"""Yearly spacing between consecutive ``stress`` periods (irregular, like a staged plan)."""
+
+
+def _stress_years(n: int, start: int = 2025) -> list[int]:
+    """``n`` irregularly spaced investment years."""
+    years = [start]
+    for i in range(n - 1):
+        years.append(years[-1] + _STRESS_GAPS[i % len(_STRESS_GAPS)])
+    return years
+
+
+def stress(timesteps: int = HOURS_PER_YEAR) -> Elements:
+    """Abstract, structure-only stress workload for the model build.
+
+    All ids are neutral (k*/conv_*/gen_*/leaf_*) and all parameters are
+    rng-drawn from a fixed seed. The system concentrates the drivers that
+    dominate build time and memory in large multi-period MILPs:
+
+    - ~190 flows over (time, period); rate variables dominate the model
+    - (time, period) coefficient arrays on most flows, per-period lump arrays
+      on sizings
+    - optional ``Sizing`` in bulk (capacity-charge sizings on inputs, range
+      sizings on the per-period build fleets) -> the binary population
+    - a 30-effect graph at ~1.2 effect entries per flow: weighted aggregation
+      chains, one negative cross-effect factor, per-effect period weights,
+      periodic bounds, two lifetime budget effects with unit period weights
+    - multi-node carriers (12 carrier:node balance rows)
+    - one piecewise converter with Status + availability (SOS2), one status
+      flow with running-hour effects, a storage fleet with time-varying level
+      caps, one load-factor bound, a fixed-profile sink
+
+    Not exercised (unsupported in current fluxopt): period-varying conversion
+    factors and period-varying storage level bounds. ``contribution_from``
+    factors are binary-exact scalars (0.0625, 0.25, ...) on purpose — the
+    time-variance check on the coefficient tensor is bit-exact, so a factor
+    that picks up any float noise counts as time-varying and is rejected into
+    lump-bearing source effects.
+
+    ``timesteps`` is the total temporal budget, split across the 16 periods
+    (the default full year gives 547 hourly steps per period).
+    """
+    n_timesteps = max(24, timesteps // STRESS_PERIODS)
+    n_periods = STRESS_PERIODS
+    rng = np.random.default_rng(7)
+    time_index = pd.DatetimeIndex(_hourly_index(n_timesteps), name='time')
+    years = _stress_years(n_periods)
+    periods = pd.Index(years, name='period')
+    period_weights = [float(w) for w in np.diff(years)] + [4.0]
+
+    # -- generated data --------------------------------------------------------------------
+    hours = np.arange(n_timesteps)
+    seasonal = 0.5 + 0.4 * np.cos(2 * np.pi * hours / 8760)
+    daily = 0.1 * np.sin(2 * np.pi * hours / 24)
+    escalation = xr.DataArray([1.025 ** (y - years[0]) for y in years], coords=(periods,))
+    npv = [float(1 / 1.035 ** (y - years[0])) for y in years]
+
+    def tprofile(base: float, amp: float = 0.2) -> xr.DataArray:
+        vals = base * (1 + amp * (seasonal - 0.5) + daily + 0.05 * rng.standard_normal(n_timesteps))
+        return xr.DataArray(vals, coords=(time_index,))
+
+    def tp_price(lo: float = 20, hi: float = 100) -> xr.DataArray:
+        return tprofile(float(rng.uniform(lo, hi))) * escalation  # (time, period)
+
+    def availability(floor: float = 0.05) -> xr.DataArray:
+        return xr.DataArray(
+            np.clip(0.4 + seasonal + 0.02 * rng.standard_normal(n_timesteps), floor, 1.0), coords=(time_index,)
+        )
+
+    def tp_coeff() -> xr.DataArray:
+        return xr.DataArray(np.clip(tprofile(float(rng.uniform(1.5, 4.0)), 0.4).values, 1.2, 6.0), coords=(time_index,))
+
+    demand = xr.DataArray(
+        np.clip(seasonal + daily + 0.03 * rng.standard_normal(n_timesteps), 0.05, 1.0), coords=(time_index,)
+    ) * xr.DataArray([0.985**i for i in range(n_periods)], coords=(periods,))
+    peak = float(rng.uniform(400, 600))
+    level_cap = xr.DataArray(np.clip(0.6 + 0.4 * seasonal, 0.3, 1.0), coords=(time_index,))
+
+    def window(y0: int, y1: int) -> xr.DataArray:
+        return xr.DataArray([1.0 if y0 <= y <= y1 else 0.0 for y in years], coords=(periods,))
+
+    def lump_effects(y0: int) -> dict[str, xr.DataArray]:
+        """Per-period lump arrays on a sizing: annualized + one-shot accounting pair,
+        capacity credit and a small footprint term."""
+        cost = float(rng.uniform(3e4, 3e6))
+        funding = float(rng.uniform(0.2, 0.45))
+        amort = int(rng.integers(10, 25))
+        rate = 0.04
+        af = rate * (1 + rate) ** amort / ((1 + rate) ** amort - 1)
+        ann = window(y0, y0 + amort - 1) * cost * af
+        one = xr.DataArray([cost if y == y0 else 0.0 for y in years], coords=(periods,))
+        return {
+            'leaf_ba': ann,
+            'leaf_ga': ann * funding,
+            'leaf_fi': ann * 0.08,
+            'leaf_bt': one,
+            'leaf_gt': one * funding,
+            'cap_min': window(y0, y0 + amort + 4),
+            'leaf_l': window(y0, y0 + amort + 4) * 0.02,
+        }
+
+    def cap_charge_input(carrier: str, node: str | None, sid: str, extra: dict[str, Any] | None = None) -> Flow:
+        """Input flow with a (time, period) price and an optional capacity-charge sizing."""
+        effects = {'leaf_f' if carrier in ('k2', 'k3') else 'leaf_p': tp_price(), **(extra or {})}
+        return Flow(
+            short_id=sid,
+            carrier=carrier,
+            node=node,
+            effects_per_flow_hour=effects,
+            size=Sizing(
+                size_min=0,
+                size_max=1000,
+                mandatory=False,
+                effects_per_size={'leaf_om': float(rng.uniform(2e4, 1e5)) * escalation},
+            ),
+        )
+
+    # -- carriers: 12 balance rows ------------------------------------------------------------
+    sites = ['n1', 'n2', 'n3']
+    carriers = [
+        Carrier(id='k0', unit='MW'),
+        Carrier(id='k1', nodes=['m0', 'm1'], unit='MW'),
+        Carrier(id='k2', nodes=['m0', *sites], unit='MW'),
+        Carrier(id='k3', nodes=['m0', *sites], unit='MW'),
+        Carrier(id='k4', unit='MW'),
+        Carrier(id='k5', unit='MW'),
+        Carrier(id='k6', unit='MW'),
+        Carrier(id='k7', unit='MW'),
+    ]
+
+    # -- 30 effects: weighted chains, one negative cross factor, bounds, budgets ---------------
+    annual_demand = float(demand.isel(period=0).sum('time')) * peak
+    effects = [
+        Effect(
+            id='cost',
+            unit='u',
+            period_weights=npv,
+            contribution_from={'agg_fix': 1, 'agg_op': 1, 'agg_env': 0.0625},
+        ),
+        Effect(
+            id='agg_op',
+            unit='u',
+            contribution_from={'leaf_f': 1, 'leaf_p': 1, 'leaf_m': 1, 'leaf_r': -1, 'leaf_s': -1},
+        ),
+        Effect(id='leaf_f', unit='u'),
+        Effect(id='leaf_p', unit='u'),
+        Effect(id='leaf_m', unit='u'),
+        Effect(id='leaf_r', unit='u'),
+        Effect(id='leaf_s', unit='u'),
+        Effect(
+            id='agg_fix',
+            unit='u',
+            contribution_from={'leaf_ba': 1, 'leaf_om': 1, 'leaf_fi': 1, 'leaf_ga': -1},
+        ),
+        Effect(id='leaf_ba', unit='u'),
+        Effect(id='leaf_om', unit='u'),
+        Effect(id='leaf_fi', unit='u'),
+        Effect(id='leaf_ga', unit='u'),
+        Effect(
+            id='agg_cap',
+            unit='u',
+            contribution_from={'leaf_bt': 1, 'leaf_gt': -1, 'agg_net': 1},
+        ),
+        Effect(id='leaf_bt', unit='u'),
+        Effect(id='leaf_gt', unit='u'),
+        Effect(id='agg_net', unit='u', contribution_from={'leaf_nc': 1, 'leaf_ng': -1}),
+        Effect(id='leaf_nc', unit='u'),
+        Effect(id='leaf_ng', unit='u'),
+        Effect(
+            id='agg_env',
+            unit='u',
+            contribution_from={'net_x': 1.0, 'leaf_w': 0.25, 'leaf_l': 0.125},
+        ),
+        Effect(id='leaf_xs', unit='u'),
+        Effect(
+            id='net_x',
+            unit='u',
+            periodic_max=xr.DataArray([999_999.0] * n_periods, coords=(periods,)),
+            contribution_from={'leaf_x': 1, 'leaf_xs': -1},
+        ),
+        Effect(id='leaf_x', unit='u'),
+        Effect(id='leaf_w', unit='u'),
+        Effect(id='leaf_l', unit='u'),
+        Effect(
+            id='cap_min',
+            unit='MW',
+            periodic_min=xr.DataArray([peak * 1.05 * 0.985**i for i in range(n_periods)], coords=(periods,)),
+        ),
+        Effect(
+            id='share_min',
+            unit='MWh',
+            periodic_min=xr.DataArray(
+                [annual_demand * min(0.6, 0.05 + 0.04 * i) * 0.1 for i in range(n_periods)], coords=(periods,)
+            ),
+        ),
+        Effect(id='zone_max', unit='MW', periodic_max=8.0),
+        Effect(
+            id='quota_a',
+            unit='h',
+            periodic_max=xr.DataArray([3000.0] * n_periods, coords=(periods,)),
+            total_max=20_000.0,
+            period_weights=[1.0] * n_periods,
+        ),
+        Effect(
+            id='quota_b',
+            unit='h',
+            periodic_max=xr.DataArray([3000.0] * n_periods, coords=(periods,)),
+            total_max=10_000.0,
+            period_weights=[1.0] * n_periods,
+        ),
+        Effect(id='pair_limit', unit='', periodic_min=-0.15, periodic_max=0.15),
+    ]
+
+    # -- boundary ports --------------------------------------------------------------------
+    ports = [
+        Port(
+            id='sink_0',
+            exports=[Flow(short_id='load', carrier='k0', size=peak, fixed_relative_profile=demand)],
+        ),
+        Port(id='src_k2', imports=[Flow(short_id='buy', carrier='k2', node='m0', size=12_000)]),
+        Port(
+            id='src_k3',
+            imports=[
+                Flow(
+                    short_id='buy',
+                    carrier='k3',
+                    node='m0',
+                    size=Sizing(size_min=4000, size_max=4000, mandatory=False),
+                )
+            ],
+        ),
+        Port(
+            id='hub_k1',
+            imports=[Flow(short_id='buy', carrier='k1', node='m0', size=6000)],
+            exports=[
+                Flow(
+                    short_id='sell',
+                    carrier='k1',
+                    node='m0',
+                    size=6000,
+                    effects_per_flow_hour={'leaf_r': tp_price()},
+                )
+            ],
+        ),
+        Port(id='src_k7', imports=[Flow(short_id='buy', carrier='k7', size=6000)]),
+    ]
+
+    converters: list[Converter] = []
+    storages: list[Storage] = []
+
+    # -- node bridges: 2-in/2-out with optional fixed-size sizing ------------------------------
+    converters.extend(
+        Converter(
+            id=f'bridge_{site}',
+            inputs=[
+                Flow(short_id='a_in', carrier='k2', node='m0'),
+                Flow(short_id='b_in', carrier='k3', node='m0'),
+            ],
+            outputs=[
+                Flow(
+                    short_id='a_out',
+                    carrier='k2',
+                    node=site,
+                    size=Sizing(size_min=8_000, size_max=8_000, mandatory=False),
+                ),
+                Flow(
+                    short_id='b_out',
+                    carrier='k3',
+                    node=site,
+                    size=Sizing(size_min=8_000, size_max=8_000, mandatory=False),
+                ),
+            ],
+            conversion_factors=[{'a_in': 1, 'a_out': -1}, {'b_in': 1, 'b_out': -1}],
+        )
+        for site in sites
+    )
+
+    # -- fixed 1-in/1-out fleet (mandatory sizing, scalar coefficient) --------------------------
+    for i in range(5):
+        eff = float(rng.uniform(0.75, 0.95))
+        converters.append(
+            Converter(
+                id=f'conv_a{i}',
+                inputs=[cap_charge_input('k2', sites[i % len(sites)], 'fuel', extra={'leaf_x': 0.2})],
+                outputs=[
+                    Flow(
+                        short_id='out',
+                        carrier='k0',
+                        size=Sizing(
+                            size_min=0,
+                            size_max=float(rng.uniform(80, 260)),
+                            mandatory=True,
+                            effects_per_size={
+                                'leaf_om': float(rng.uniform(3e3, 3e4)) * escalation,
+                                **lump_effects(years[0]),
+                            },
+                        ),
+                    )
+                ],
+                conversion_factors=[{'fuel': eff, 'out': -1}],
+            )
+        )
+
+    # -- two 2-equation units with a split output feeding a lifetime quota ----------------------
+    for name, budget, site in (('conv_b0', 'quota_a', 'n1'), ('conv_b1', 'quota_b', 'n2')):
+        converters.append(
+            Converter(
+                id=name,
+                conversion_factors=[
+                    {'fuel': 0.5, 'out': -1},
+                    {'fuel': 0.4, 'aux': -1, 'aux_q': -1},
+                ],
+                inputs=[cap_charge_input('k2', site, 'fuel', extra={'leaf_x': 0.4})],
+                outputs=[
+                    Flow(
+                        short_id='out',
+                        carrier='k0',
+                        size=Sizing(
+                            size_min=0,
+                            size_max=float(rng.uniform(60, 120)),
+                            mandatory=True,
+                            effects_per_size={
+                                'leaf_om': float(rng.uniform(1e4, 5e4)) * escalation,
+                                **lump_effects(years[0]),
+                            },
+                        ),
+                    ),
+                    Flow(
+                        short_id='aux',
+                        carrier='k1',
+                        node='m0',
+                        effects_per_flow_hour={'leaf_r': tp_price(), 'leaf_xs': 0.4},
+                    ),
+                    Flow(
+                        short_id='aux_q',
+                        carrier='k1',
+                        node='m0',
+                        effects_per_flow_hour={
+                            'leaf_r': tp_price(),
+                            'leaf_s': 30.0 * escalation,
+                            budget: 1 / 100,
+                            'leaf_xs': 0.4,
+                        },
+                    ),
+                ],
+            )
+        )
+
+    # -- one 2-eq unit on the second network carrier, optional ----------------------------------
+    converters.append(
+        Converter(
+            id='conv_b2',
+            conversion_factors=[{'fuel': 0.5, 'aux': -1}, {'fuel': 0.4, 'out': -1}],
+            inputs=[cap_charge_input('k3', 'n1', 'fuel')],
+            outputs=[
+                Flow(short_id='aux', carrier='k1', node='m0', effects_per_flow_hour={'leaf_r': tp_price()}),
+                Flow(
+                    short_id='out',
+                    carrier='k0',
+                    effects_per_flow_hour={'share_min': 1},
+                    size=Sizing(
+                        size_min=0,
+                        size_max=80,
+                        mandatory=False,
+                        effects_per_size=lump_effects(years[min(4, n_periods - 1)]),
+                    ),
+                ),
+            ],
+        )
+    )
+
+    # -- one high-ratio unit with a load-factor bound -------------------------------------------
+    converters.append(
+        Converter(
+            id='conv_d',
+            inputs=[cap_charge_input('k1', 'm0', 'drive')],
+            outputs=[
+                Flow(
+                    short_id='out',
+                    carrier='k0',
+                    effects_per_flow_hour={'share_min': 1},
+                    load_factor_max=0.9,
+                    size=Sizing(
+                        size_min=0,
+                        size_max=70,
+                        mandatory=False,
+                        effects_per_size=lump_effects(years[min(6, n_periods - 1)]),
+                    ),
+                )
+            ],
+            conversion_factors=[{'drive': 30, 'out': -1}],
+        )
+    )
+
+    # -- piecewise unit with component status + maintenance availability -------------------------
+    avail = np.ones(n_timesteps)
+    for block_start in range(0, n_timesteps, max(1, n_timesteps // 5)):
+        avail[block_start : block_start + max(1, n_timesteps // 50)] = 0.0
+    converters.append(
+        Converter(
+            id='pw_unit',
+            inputs=[Flow(short_id='fuel', carrier='k7', size=Sizing(size_min=0, size_max=50, mandatory=True))],
+            outputs=[
+                Flow(
+                    short_id='aux',
+                    carrier='k1',
+                    node='m0',
+                    size=6.0,
+                    effects_per_flow_hour={'leaf_r': tp_price()},
+                ),
+                Flow(
+                    short_id='out',
+                    carrier='k0',
+                    effects_per_flow_hour={'share_min': 1},
+                    size=Sizing(size_min=0, size_max=43, mandatory=True),
+                ),
+            ],
+            conversion=PiecewiseConversion(
+                points={'fuel': [50, 50], 'aux': [6.0, 0.5], 'out': [37, 43]},
+                status=Status(),
+                availability=xr.DataArray(avail, coords=(time_index,)),
+            ),
+        )
+    )
+
+    # -- a paired unit with a status-gated second stage (pair_limit coupling) ---------------------
+    converters.append(
+        Converter(
+            id='pair_unit',
+            inputs=[cap_charge_input('k1', 'm0', 'drive'), cap_charge_input('k1', 'm0', 'drive_2')],
+            outputs=[
+                Flow(
+                    short_id='out',
+                    carrier='k0',
+                    effects_per_flow_hour={'share_min': 1, 'pair_limit': 1},
+                    size=Sizing(
+                        size_min=0,
+                        size_max=8.0,
+                        mandatory=True,
+                        effects_per_size=lump_effects(years[1]),
+                        effects_fixed={'pair_limit': window(years[0], years[-1])},
+                    ),
+                ),
+                Flow(
+                    short_id='out_2',
+                    carrier='k0',
+                    effects_per_flow_hour={'share_min': 1},
+                    relative_rate_min=0.02,
+                    status=Status(effects_per_running_hour={'pair_limit': 4.0}),
+                    size=Sizing(
+                        size_min=2.5,
+                        size_max=2.5,
+                        mandatory=False,
+                        effects_fixed={'pair_limit': -window(years[0], years[-1])},
+                    ),
+                ),
+            ],
+            conversion_factors=[
+                {'drive': 3.0, 'out': -1},
+                {'drive_2': tp_coeff(), 'out_2': -1},
+            ],
+        )
+    )
+
+    # -- fixed fleet with time-varying coefficients and availability ------------------------------
+    for i in range(7):
+        coeff = tp_coeff()
+        converters.append(
+            Converter(
+                id=f'conv_e{i}',
+                inputs=[cap_charge_input('k1', 'm0', 'drive', extra={'leaf_s': tp_price(10, 40)})],
+                outputs=[
+                    Flow(
+                        short_id='out',
+                        carrier='k0',
+                        effects_per_flow_hour={'share_min': 1, 'leaf_m': 4 * (coeff - 1) / coeff * escalation},
+                        relative_rate_max=availability(),
+                        size=Sizing(
+                            size_min=0,
+                            size_max=float(rng.uniform(10, 60)),
+                            mandatory=(i % 2 == 0),
+                            effects_per_size={
+                                'leaf_om': float(rng.uniform(2e4, 6e4)) * escalation,
+                                'zone_max': 0.5 if i >= 4 else 0.0,
+                                **lump_effects(years[min(i, n_periods - 1)]),
+                            },
+                        ),
+                    )
+                ],
+                conversion_factors=[{'drive': coeff, 'out': -1}],
+            )
+        )
+
+    # -- per-period build fleets (the bulk of the unit count) --------------------------------------
+    coeff_fleet = tp_coeff()
+    for pi, y in enumerate(years):
+        site = sites[pi % len(sites)]
+        if pi >= 2:
+            converters.append(
+                Converter(
+                    id=f'gen_a{y}',
+                    conversion_factors=[
+                        {'b_in': 0.9, 'out_b': -1},
+                        {'a_in': 0.9, 'out_a': -1},
+                    ],
+                    inputs=[
+                        cap_charge_input('k2', site, 'a_in', extra={'leaf_x': 0.2}),
+                        cap_charge_input('k3', site, 'b_in'),
+                    ],
+                    outputs=[
+                        Flow(
+                            short_id='out_b',
+                            carrier='k0',
+                            effects_per_flow_hour={'share_min': 1},
+                            size=Sizing(
+                                size_min=5,
+                                size_max=120,
+                                mandatory=False,
+                                effects_per_size={
+                                    'leaf_om': float(rng.uniform(2e3, 5e3)) * escalation,
+                                    **lump_effects(y),
+                                },
+                            ),
+                        ),
+                        Flow(
+                            short_id='out_a',
+                            carrier='k0',
+                            size=Sizing(size_min=0, size_max=120, mandatory=False),
+                        ),
+                    ],
+                )
+            )
+            converters.append(
+                Converter(
+                    id=f'gen_b{y}',
+                    inputs=[cap_charge_input('k1', 'm0', 'drive', extra={'leaf_s': tp_price(10, 40)})],
+                    outputs=[
+                        Flow(
+                            short_id='out',
+                            carrier='k0',
+                            effects_per_flow_hour={'share_min': 1},
+                            relative_rate_max=availability(),
+                            size=Sizing(
+                                size_min=5,
+                                size_max=60,
+                                mandatory=False,
+                                effects_per_size={
+                                    'leaf_om': float(rng.uniform(3e4, 6e4)) * escalation,
+                                    **lump_effects(y),
+                                },
+                            ),
+                        )
+                    ],
+                    conversion_factors=[{'drive': coeff_fleet, 'out': -1}],
+                )
+            )
+        if pi >= 1:
+            converters.append(
+                Converter(
+                    id=f'gen_c{y}',
+                    inputs=[cap_charge_input('k1', 'm0', 'drive', extra={'leaf_s': tp_price(10, 40)})],
+                    outputs=[
+                        Flow(
+                            short_id='out',
+                            carrier='k0',
+                            effects_per_flow_hour={'share_min': 1},
+                            relative_rate_max=availability(),
+                            size=Sizing(
+                                size_min=2,
+                                size_max=20,
+                                mandatory=False,
+                                effects_per_size={
+                                    'leaf_om': float(rng.uniform(2e4, 5e4)) * escalation,
+                                    'zone_max': 1.0,
+                                    **lump_effects(y),
+                                },
+                            ),
+                        )
+                    ],
+                    conversion_factors=[{'drive': coeff_fleet, 'out': -1}],
+                )
+            )
+
+    # -- storages: two fixed + a per-period optional fleet -------------------------------------------
+    def storage_flow(sid: str, cap: Sizing | float) -> Flow:
+        effects: dict[str, Any] = {'leaf_p': tp_price(1, 5)}
+        if sid == 'discharging':
+            effects['leaf_w'] = 0.05
+        return Flow(
+            short_id=sid,
+            carrier='k0',
+            size=cap,
+            relative_rate_max=level_cap,
+            effects_per_flow_hour=effects,
+        )
+
+    for i, (cap, rate) in enumerate(((1000, 100), (3000, 150))):
+        storages.append(
+            Storage(
+                id=f'store_fixed_{i}',
+                eta_charge=float(rng.uniform(0.95, 0.99)),
+                eta_discharge=float(rng.uniform(0.95, 0.99)),
+                relative_loss_per_hour=float(rng.uniform(2e-4, 6e-4)),
+                relative_level_max=level_cap,
+                capacity=Sizing(
+                    size_min=0,
+                    size_max=float(cap),
+                    mandatory=True,
+                    effects_per_size=lump_effects(years[min(i, n_periods - 1)]) if i else {},
+                ),
+                charging=storage_flow('charging', Sizing(size_min=0, size_max=float(rate), mandatory=True)),
+                discharging=storage_flow('discharging', Sizing(size_min=0, size_max=float(rate * 1.1), mandatory=True)),
+            )
+        )
+    for pi, y in enumerate(years):
+        if pi < 4:
+            continue
+        storages.append(
+            Storage(
+                id=f'store_{y}',
+                eta_charge=0.99,
+                eta_discharge=0.99,
+                relative_loss_per_hour=0.00025,
+                relative_level_max=level_cap,
+                capacity=Sizing(
+                    size_min=600,
+                    size_max=40_000,
+                    mandatory=False,
+                    effects_per_size=lump_effects(y),
+                    effects_fixed={'leaf_om': float(rng.uniform(2e5, 5e5)) * escalation * window(y, y + 29)},
+                ),
+                charging=storage_flow('charging', Sizing(size_min=25, size_max=800, mandatory=False)),
+                discharging=storage_flow('discharging', Sizing(size_min=25, size_max=800, mandatory=False)),
+            )
+        )
+
+    return {
+        'timesteps': time_index,
+        'carriers': carriers,
+        'effects': effects,
+        'ports': ports,
+        'converters': converters,
+        'storages': storages,
+        'periods': years,
+        'period_weights': period_weights,
+    }
+
+
 SYSTEMS: dict[str, Callable[[int], Elements]] = {
     'district_heating': district_heating,
     'industry_park': industry_park,
     'green_city': green_city,
     'energy_transition': energy_transition,
+    'stress': stress,
 }
 
 
+def _count_time_series(value: Any, n_time: int) -> int:
+    """Number of time-varying data arrays inside one element parameter value.
+
+    Counts every array-valued leaf whose leading dimension is the time axis —
+    xarray objects by their ``time`` dim, plain arrays/lists/pandas objects by
+    length. Scalars, breakpoint lists and per-period arrays don't count.
+    """
+    if isinstance(value, xr.DataArray):
+        return int('time' in value.dims)
+    if isinstance(value, (pd.Series, pd.DataFrame)):
+        return int(len(value) == n_time)
+    if isinstance(value, np.ndarray):
+        return int(bool(value.shape) and value.shape[0] == n_time)
+    if isinstance(value, list):
+        if value and all(isinstance(v, (int, float)) for v in value):
+            return int(len(value) == n_time)
+        return sum(_count_time_series(v, n_time) for v in value)
+    if isinstance(value, dict):
+        return sum(_count_time_series(v, n_time) for v in value.values())
+    if isinstance(value, BaseModel):
+        return sum(_count_time_series(getattr(value, name), n_time) for name in type(value).model_fields)
+    return 0
+
+
+def _system_stats(elements: Elements) -> dict[str, Any]:
+    """Element-layer size labels for one system.
+
+    Stable properties of the system definition (component, flow, effect and
+    time-series counts, temporal grid) — unlike variable/constraint counts,
+    which are formulation output and belong to the measured row.
+    """
+    ports: list[Port] = elements['ports']
+    converters: list[Converter] = elements.get('converters') or []
+    storages: list[Storage] = elements.get('storages') or []
+    flows = (
+        sum(len(p.imports) + len(p.exports) for p in ports)
+        + sum(len(c.inputs) + len(c.outputs) for c in converters)
+        + 2 * len(storages)
+    )
+    n_time = len(elements['timesteps'])
+    groups = (elements['carriers'], elements['effects'], ports, converters, storages)
+    periods = elements.get('periods')
+    return {
+        'time': n_time,
+        'periods': len(periods) if periods else 1,
+        'components': len(ports) + len(converters) + len(storages),
+        'flows': flows,
+        'effects': len(elements['effects']),
+        'series': sum(_count_time_series(element, n_time) for group in groups for element in group),
+    }
+
+
 def measure(model: str, timesteps: int = HOURS_PER_YEAR, solve: bool = False) -> dict[str, Any]:
-    """Build one reference system and return stage timings, model size and peak memory."""
+    """Build one reference system and return its size labels, stage timings and peak memory.
+
+    The row mixes two kinds of size: element-layer stats from
+    :func:`_system_stats` (stable labels of the system definition) and the
+    measured solver-model size (``variables``, ``binaries``, ``constraints``),
+    which changes with the formulation and is re-measured every run.
+    """
     builder = SYSTEMS[model]
     start = perf_counter()
     elements = builder(timesteps)
     elements_s = perf_counter() - start
+    stats = _system_stats(elements)
     start = perf_counter()
     data = ModelData.build(**elements)
     data_s = perf_counter() - start
@@ -582,7 +1300,9 @@ def measure(model: str, timesteps: int = HOURS_PER_YEAR, solve: bool = False) ->
     row: dict[str, Any] = {
         'model': model,
         'timesteps': timesteps,
+        **stats,
         'variables': fsm.m.nvars,
+        'binaries': fsm.m.binaries.nvars,
         'constraints': fsm.m.ncons,
         'elements_s': elements_s,
         'data_s': data_s,
@@ -662,7 +1382,13 @@ def _print_report(rows: list[dict[str, Any]], timesteps: int, solve: bool) -> No
     print()
     headers = [
         'model',
+        'grid',
+        'comps',
+        'flows',
+        'effects',
+        'series',
         'variables',
+        'binary',
         'constraints',
         'elements',
         'data',
@@ -673,7 +1399,13 @@ def _print_report(rows: list[dict[str, Any]], timesteps: int, solve: bool) -> No
     table_rows = [
         [
             row['model'],
+            f'{row["time"]}x{row["periods"]}',
+            str(row['components']),
+            str(row['flows']),
+            str(row['effects']),
+            str(row['series']),
             _fmt_count(row['variables']),
+            _fmt_count(row['binaries']),
             _fmt_count(row['constraints']),
             _fmt_seconds(row['elements_s']),
             _fmt_seconds(row['data_s']),

@@ -20,9 +20,12 @@ fx_benchmark = pytest.importorskip('fluxopt.benchmark')
 QUARTER_YEAR = 2190
 
 
-@pytest.fixture(params=['district_heating', 'industry_park', 'green_city', 'energy_transition'])
+@pytest.fixture(params=['district_heating', 'industry_park', 'green_city', 'energy_transition', 'stress'])
 def reference_system(request: pytest.FixtureRequest) -> str:
-    return request.param
+    name = request.param
+    if name not in fx_benchmark.SYSTEMS:
+        pytest.skip(f'{name!r} is not in this fluxopt version')
+    return name
 
 
 def test_reference_build(benchmark: object, reference_system: str) -> None:
@@ -30,5 +33,20 @@ def test_reference_build(benchmark: object, reference_system: str) -> None:
     row = benchmark(fx_benchmark.measure, reference_system, QUARTER_YEAR)  # type: ignore[operator]
     extra_info = getattr(benchmark, 'extra_info', None)
     if extra_info is not None and isinstance(row, dict):
-        extra_info['variables'] = row['variables']
-        extra_info['constraints'] = row['constraints']
+        # Element-layer labels + measured model size; keys absent on older
+        # fluxopt versions are skipped so cross-ref comparisons keep working.
+        # The row's 'time' (length of the time axis) is recorded as
+        # 'timesteps' so an `extra:` column never shadows the time metric.
+        for key, label in (
+            ('time', 'timesteps'),
+            ('periods', 'periods'),
+            ('components', 'components'),
+            ('flows', 'flows'),
+            ('effects', 'effects'),
+            ('series', 'series'),
+            ('variables', 'variables'),
+            ('binaries', 'binaries'),
+            ('constraints', 'constraints'),
+        ):
+            if key in row:
+                extra_info[label] = row[key]
