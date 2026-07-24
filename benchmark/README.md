@@ -51,18 +51,16 @@ ref — without touching your checkout (a dirty tree is fine). From the repo
 root:
 
 ```bash
-uvx --from 'git+https://github.com/fluxopt/pytest-benchmem' benchmem sweep fluxopt \
+uvx --from 'pytest-benchmem[plot]' benchmem sweep fluxopt \
     git+https://github.com/fluxopt/fluxopt@main \
     git+https://github.com/fluxopt/fluxopt@my-branch \
     --suite benchmark/ --memory
-uvx --from 'git+https://github.com/fluxopt/pytest-benchmem' benchmem compare .benchmarks/sweep/*.json
+uvx --from 'pytest-benchmem[plot]' benchmem compare .benchmarks/sweep/*.json
 ```
 
-Once the next pytest-benchmem release ships, install plain
-`'pytest-benchmem[plot]'` from PyPI instead — the released 0.4.10 needs the
-`git+` source (and workaround flags) because of
-[pytest-benchmem#168–171](https://github.com/fluxopt/pytest-benchmem/issues/168),
-all fixed on its `main`.
+`compare` can also show the model-size labels the reference benchmarks record
+in `extra_info` — add e.g. `--columns time,peak,extra:flows,extra:variables`
+(pytest-benchmem >= 0.4.12).
 
 Sweep resolves one fresh venv per ref (no lockfile — it can't, the dependency
 set differs per ref); add `--as-of YYYY-MM-DD` for a date-pinned resolve or

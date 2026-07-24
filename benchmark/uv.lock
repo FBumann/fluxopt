@@ -255,7 +255,7 @@ dependencies = [
 requires-dist = [
     { name = "fluxopt", editable = "../" },
     { name = "pytest", specifier = "==9.1.1" },
-    { name = "pytest-benchmem", extras = ["plot"], specifier = "==0.4.10" },
+    { name = "pytest-benchmem", extras = ["plot"], specifier = "==0.4.12" },
     { name = "pytest-codspeed", specifier = "==5.0.3" },
 ]
 
@@ -323,7 +323,7 @@ name = "jinja2"
 version = "3.1.6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "markupsafe" },
+    { name = "markupsafe", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/df/bf/f7da0350254c0ed7c72f3e33cef02e048281fec7ecec5f032d4aac52226b/jinja2-3.1.6.tar.gz", hash = "sha256:0137fb05990d35f1275a587e9aee6d56da821fc83491a0fb838183be43f66d6d", size = 245115 }
 wheels = [
@@ -335,7 +335,7 @@ name = "linkify-it-py"
 version = "2.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "uc-micro-py" },
+    { name = "uc-micro-py", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/2e/c9/06ea13676ef354f0af6169587ae292d3e2406e212876a413bf9eece4eb23/linkify_it_py-2.1.0.tar.gz", hash = "sha256:43360231720999c10e9328dc3691160e27a718e280673d444c38d7d3aaa3b98b", size = 29158 }
 wheels = [
@@ -387,7 +387,7 @@ wheels = [
 
 [package.optional-dependencies]
 linkify = [
-    { name = "linkify-it-py" },
+    { name = "linkify-it-py", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
 ]
 
 [[package]]
@@ -443,7 +443,7 @@ name = "mdit-py-plugins"
 version = "0.6.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "markdown-it-py" },
+    { name = "markdown-it-py", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/59/fc/f8d0863f8862f25602c0404d75568e89fb6b4109804645e5cdfb1be5cf56/mdit_py_plugins-0.6.1.tar.gz", hash = "sha256:a2bca0f039f39dbd35fb74ae1b5f998608c437463371f0ff7f49a19a17a114d0", size = 56114 }
 wheels = [
@@ -464,9 +464,9 @@ name = "memray"
 version = "1.19.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "jinja2" },
-    { name = "rich" },
-    { name = "textual" },
+    { name = "jinja2", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "rich", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "textual", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/96/04/5b886a36df947599e0f37cd46e6e44e565299815f044e2303ab2ae9f8870/memray-1.19.3.tar.gz", hash = "sha256:4e0fb29ff0a50c0ec9dc84294d8f2c83419feba561a37628b304c2ae4fe73d03", size = 2417089 }
 wheels = [
@@ -902,24 +902,24 @@ wheels = [
 
 [[package]]
 name = "pytest-benchmem"
-version = "0.4.10"
+version = "0.4.12"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "memray", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "pytest" },
     { name = "pytest-benchmark" },
     { name = "rich" },
+    { name = "typer" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/76/da/9c1c15ff79731f4585315d8fd72adbc08c27fea61cbd85b419ff29ed58b6/pytest_benchmem-0.4.10.tar.gz", hash = "sha256:e825b885c0d4b572d0c43977099537619792d90f16f4f0ee983c699fdfcd5447", size = 425808 }
+sdist = { url = "https://files.pythonhosted.org/packages/2c/ef/562028752cf5d56f62305ec3f1ae05072c822ed947c454bc45c1f101a8e0/pytest_benchmem-0.4.12.tar.gz", hash = "sha256:6444f523ac390f7eed8661438be2c49cb79cecdd2502fa1497885fe46063061f", size = 457208 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/84/fd/d72659e77b0202856086ec6603ad19af2d0bb355a6d34d7536c0289a03aa/pytest_benchmem-0.4.10-py3-none-any.whl", hash = "sha256:d80eff0668333d7016a671e2115beb5388d1f64d94a27b7b7f17d52983a49468", size = 81415 },
+    { url = "https://files.pythonhosted.org/packages/b0/e9/fbd57f51c60dd004668c230f4bfba20bce037a86222467744e7f22e1ffc2/pytest_benchmem-0.4.12-py3-none-any.whl", hash = "sha256:4976f8b5fcf536a399958c2fd8872d85fdef874659675f3cc23dedd4f68c17b8", size = 84525 },
 ]
 
 [package.optional-dependencies]
 plot = [
     { name = "pandas" },
     { name = "plotly" },
-    { name = "typer" },
 ]
 
 [[package]]
@@ -1098,12 +1098,12 @@ name = "textual"
 version = "8.2.8"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "markdown-it-py", extra = ["linkify"] },
-    { name = "mdit-py-plugins" },
-    { name = "platformdirs" },
-    { name = "pygments" },
-    { name = "rich" },
-    { name = "typing-extensions" },
+    { name = "markdown-it-py", extra = ["linkify"], marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "mdit-py-plugins", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "platformdirs", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "pygments", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "rich", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "typing-extensions", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/00/21/39a76b01bd5eea82a04baaca7580e105d8c59450df03998345bb2cfb307b/textual-8.2.8.tar.gz", hash = "sha256:3f106a9fbc73e39dd266c9712432087de78a6d644084c7c241d6a25c3169115b", size = 1860502 }
 wheels = [

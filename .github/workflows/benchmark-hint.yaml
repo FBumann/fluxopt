@@ -41,20 +41,20 @@ jobs:
           {
             echo '### Benchmark hint'
             echo ''
-            echo '`benchmark/test_reference.py` under [pytest-benchmem](https://github.com/fluxopt/pytest-benchmem) — quarter-year horizon; peak = memray allocator high-water, as on CodSpeed. Shared-runner walltime is noisy: a hint, not a gate.'
+            echo '`benchmark/test_reference.py` under [pytest-benchmem](https://github.com/fluxopt/pytest-benchmem) — quarter-year horizon; peak = memray allocator high-water, as on CodSpeed. flows/variables label each model'\''s size. Shared-runner walltime is noisy: a hint, not a gate.'
             echo ''
             uv run --no-sync benchmem compare "$RUNNER_TEMP/run.json" \
-              --format md --columns time,peak --stat mean --group-by func
+              --format md --columns time,peak,extra:flows,extra:variables --stat mean --group-by func
             echo ''
             echo '<details>'
             echo '<summary>Replicate locally / compare against ${{ github.event.pull_request.base.ref }}</summary>'
             echo ''
             echo '```bash'
-            echo "uvx --from 'git+https://github.com/fluxopt/pytest-benchmem' benchmem sweep fluxopt \\"
+            echo "uvx --from 'pytest-benchmem[plot]' benchmem sweep fluxopt \\"
             echo '    git+https://github.com/${{ github.repository }}@${{ github.event.pull_request.base.ref }} \'
             echo '    git+https://github.com/${{ github.repository }}@${{ github.event.pull_request.head.ref }} \'
             echo '    --suite benchmark/ --memory'
-            echo "uvx --from 'git+https://github.com/fluxopt/pytest-benchmem' benchmem compare .benchmarks/sweep/*.json"
+            echo "uvx --from 'pytest-benchmem[plot]' benchmem compare .benchmarks/sweep/*.json"
             echo '```'
             echo ''
             echo 'One fresh venv per ref, checkout untouched; covers the archetype, IO and reference-system benchmarks. Alternative flows: benchmark/README.md.'
