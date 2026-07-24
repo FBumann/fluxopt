@@ -108,43 +108,57 @@ Solver-model size for the identical spec:
 
 | grid (t×p) | binaries (both) | flixopt vars / cons | fluxopt vars / cons |
 | :--- | ---: | ---: | ---: |
-| 24×16 | 5,200 | 232k / 348k | 94k / 213k |
+| 24×16 | 5,200 | 232k / 351k | 94k / 213k |
 | 136×16 | 15,952 | 1.21M / 1.87M | 499k / 1.17M |
 | 240×16 | 25,936 | 2.12M / 3.28M | 875k / 2.06M |
-| 547×16 | 55,408 | 4.80M / 7.44M | 1.99M / 4.69M |
+| 547×16 | 55,408 | 4.80M / 7.45M | 1.99M / 4.69M |
 | 730×16 | 72,976 | 6.40M / 9.93M | 2.65M / 6.26M |
 
 Build cost:
 
 | grid (t×p) | flixopt time | fluxopt time | flixopt peak RSS | fluxopt peak RSS |
 | :--- | ---: | ---: | ---: | ---: |
-| 24×16 | 20.9 s | 1.5 s | 0.26 GB | 0.39 GB |
-| 136×16 | 20.4 s | 3.6 s | 0.43 GB | 1.54 GB |
-| 240×16 | 21.5 s | 5.6 s | 0.58 GB | 2.60 GB |
-| 547×16 | 20.7 s | 10.2 s | 1.23 GB | 5.18 GB |
-| 730×16 | 20.5 s | 13.3 s | 1.51 GB | 6.22 GB |
+| 24×16 | 22.2 s | 1.5 s | 0.26 GB | 0.39 GB |
+| 136×16 | 22.4 s | 3.6 s | 0.43 GB | 1.54 GB |
+| 240×16 | 23.9 s | 5.6 s | 0.58 GB | 2.60 GB |
+| 547×16 | 22.7 s | 10.2 s | 1.23 GB | 5.18 GB |
+| 730×16 | 22.9 s | 13.3 s | 1.33 GB | 6.22 GB |
 
 What the numbers say:
 
 - **fluxopt emits a ~2.4× smaller solver model** for the same specification
   (2.65M vs 6.40M variables, 6.26M vs 9.93M constraints at 730×16, equal
   binaries). Every solver iteration afterwards works on the leaner model.
-- **fluxopt builds faster at every tested scale** — 14× on small models,
-  1.5× at 730×16. flixopt's build time is flat (~20.5 s) regardless of
+- **fluxopt builds faster at every tested scale** — ~15× on small models,
+  1.7× at 730×16. flixopt's build time is flat (~23 s) regardless of
   scale, dominated by per-element overhead; fluxopt's grows with the data
   but from a near-zero base, with the element-validation phase as its
   largest share.
-- **flixopt's build-time memory footprint is lower at scale** (1.5 GB vs
+- **flixopt's build-time memory footprint is lower at scale** (1.3 GB vs
   6.2 GB at 730×16). fluxopt's peak sits in the dense per-flow effect
   tensors of the data layer.
 
+The variable/constraint gap is bookkeeping, not physics: flixopt
+materializes per-timestep effect totals, one variable per edge of the
+effect-share graph, per-flow totals and explicit lower/upper bound rows —
+each with its defining constraint — where fluxopt keeps the same quantities
+as expressions and native variable bounds. The binary populations (the
+actual combinatorial content) are identical at every scale.
+
 Replica fidelity: the port keeps flixopt idiomatic (`Bus` per carrier:node,
 `share_from_temporal`/`share_from_periodic` for the effect graph,
-`InvestParameters`, `StatusParameters`). Known deviations, all minor: flixopt
-rejects a bus without flows, so the one unused node is dropped; the
-piecewise unit's availability is applied as `relative_maximum` instead of
-scaling the upper breakpoint; storage cycling uses
-`initial_charge_state='equals_final'`.
+`StatusParameters`, `InvestParameters` with `linked_periods` spanning the
+horizon — fluxopt's `Sizing` is one size decision for all periods, flixopt
+defaults to independent per-period sizes). Mapping notes, documented in the
+script: fluxopt's signed zero-sum conversion factors become flixopt's
+positive per-side coefficients; fluxopt's effect `periodic_*` bounds map to
+flixopt's `minimum/maximum_total` (combined domains) and `total_*` to
+`*_over_periods`; flixopt rejects buses without flows, so the one unused
+node is dropped; the piecewise unit's availability is applied as
+`relative_maximum`. One accounting convention differs and is left as-is:
+flixopt weights periodic-domain (investment) effect contributions by the
+period representation weights, fluxopt charges the per-period effect arrays
+as given.
 
 Reproduce (per-period steps × 16 periods; fluxopt's `--timesteps` budget is
 the product):

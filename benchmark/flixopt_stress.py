@@ -9,11 +9,16 @@ time-varying charge-state caps.
 Mapping (fluxopt -> flixopt):
     Carrier nodes          -> one Bus per carrier:node
     Effect.contribution_from -> share_from_temporal + share_from_periodic
-    periodic_min/max, total_max -> minimum/maximum_periodic, maximum_total
+    periodic_min/max, total_max -> minimum/maximum_total, maximum_over_periods
+                              (fluxopt periodic bounds cover the combined
+                              per-period total; flixopt "periodic" is the
+                              invest/lump domain alone)
     Sizing                 -> InvestParameters (fixed_size for min==max)
     Status                 -> StatusParameters
     Port                   -> Source / Sink
-    Converter              -> LinearConverter
+    Converter              -> LinearConverter (fluxopt's signed zero-sum
+                              factors become flixopt's positive per-side
+                              coefficients: outputs -1 -> +1)
     PiecewiseConversion    -> PiecewiseConversion(Piecewise([Piece..]))
     Storage                -> Storage (prevent_simultaneous off, cyclic via
                               initial_charge_state='equals_final')
@@ -113,13 +118,23 @@ def build_system(n_timesteps: int = 240, n_periods: int = 16) -> fx.FlowSystem:
         }
 
     def invest(size_min, size_max, mandatory, per_size=None, fixed=None) -> fx.InvestParameters:
-        """fluxopt Sizing -> InvestParameters; min==max & optional -> fixed_size."""
+        """fluxopt Sizing -> InvestParameters; min==max & optional -> fixed_size.
+
+        ``linked_periods`` spans the whole horizon: fluxopt's Sizing is one
+        size decision for all periods, while flixopt defaults to independent
+        per-period sizes. Remaining known convention difference (documented,
+        not cancelled): flixopt multiplies periodic-domain contributions by
+        the period representation weights (year gaps); fluxopt charges the
+        per-period effect arrays as given.
+        """
+        span = (years[0], years[-1])
         if size_min == size_max and not mandatory:
             return fx.InvestParameters(
                 fixed_size=size_min,
                 mandatory=False,
                 effects_of_investment_per_size=per_size,
                 effects_of_investment=fixed,
+                linked_periods=span,
             )
         return fx.InvestParameters(
             minimum_size=size_min,
@@ -127,6 +142,7 @@ def build_system(n_timesteps: int = 240, n_periods: int = 16) -> fx.FlowSystem:
             mandatory=mandatory,
             effects_of_investment_per_size=per_size,
             effects_of_investment=fixed,
+            linked_periods=span,
         )
 
     def cap_charge_input(bus: str, sid: str, kind: str, extra: dict | None = None) -> fx.Flow:
@@ -206,7 +222,7 @@ def build_system(n_timesteps: int = 240, n_periods: int = 16) -> fx.FlowSystem:
         fx.Effect(
             'net_x',
             'u',
-            maximum_periodic=per_period([999_999.0] * n_periods),
+            maximum_total=per_period([999_999.0] * n_periods),
             share_from_temporal={'leaf_x': 1, 'leaf_xs': -1},
             share_from_periodic={'leaf_x': 1, 'leaf_xs': -1},
         ),
@@ -216,29 +232,29 @@ def build_system(n_timesteps: int = 240, n_periods: int = 16) -> fx.FlowSystem:
         fx.Effect(
             'cap_min',
             'MW',
-            minimum_periodic=per_period([peak * 1.05 * 0.985**i for i in range(n_periods)]),
+            minimum_total=per_period([peak * 1.05 * 0.985**i for i in range(n_periods)]),
         ),
         fx.Effect(
             'share_min',
             'MWh',
-            minimum_periodic=per_period([annual_demand * min(0.6, 0.05 + 0.04 * i) * 0.1 for i in range(n_periods)]),
+            minimum_total=per_period([annual_demand * min(0.6, 0.05 + 0.04 * i) * 0.1 for i in range(n_periods)]),
         ),
-        fx.Effect('zone_max', 'MW', maximum_periodic=8.0),
+        fx.Effect('zone_max', 'MW', maximum_total=8.0),
         fx.Effect(
             'quota_a',
             'h',
-            maximum_periodic=per_period([3000.0] * n_periods),
-            maximum_total=20_000.0,
+            maximum_total=per_period([3000.0] * n_periods),
+            maximum_over_periods=20_000.0,
             period_weights=np.ones(n_periods),
         ),
         fx.Effect(
             'quota_b',
             'h',
-            maximum_periodic=per_period([3000.0] * n_periods),
-            maximum_total=10_000.0,
+            maximum_total=per_period([3000.0] * n_periods),
+            maximum_over_periods=10_000.0,
             period_weights=np.ones(n_periods),
         ),
-        fx.Effect('pair_limit', '', minimum_periodic=-0.15, maximum_periodic=0.15),
+        fx.Effect('pair_limit', '', minimum_total=-0.15, maximum_total=0.15),
     ]
 
     components: list = [
@@ -261,7 +277,7 @@ def build_system(n_timesteps: int = 240, n_periods: int = 16) -> fx.FlowSystem:
                 fx.Flow('a_out', bus=f'k2_{site}', size=invest(8_000, 8_000, False)),
                 fx.Flow('b_out', bus=f'k3_{site}', size=invest(8_000, 8_000, False)),
             ],
-            conversion_factors=[{'a_in': 1, 'a_out': -1}, {'b_in': 1, 'b_out': -1}],
+            conversion_factors=[{'a_in': 1, 'a_out': 1}, {'b_in': 1, 'b_out': 1}],
         )
         for site in sites
     )
@@ -284,7 +300,7 @@ def build_system(n_timesteps: int = 240, n_periods: int = 16) -> fx.FlowSystem:
                         ),
                     )
                 ],
-                conversion_factors=[{'fuel': eff, 'out': -1}],
+                conversion_factors=[{'fuel': eff, 'out': 1}],
             )
         )
 
@@ -293,8 +309,8 @@ def build_system(n_timesteps: int = 240, n_periods: int = 16) -> fx.FlowSystem:
             fx.LinearConverter(
                 name,
                 conversion_factors=[
-                    {'fuel': 0.5, 'out': -1},
-                    {'fuel': 0.4, 'aux': -1, 'aux_q': -1},
+                    {'fuel': 0.5, 'out': 1},
+                    {'fuel': 0.4, 'aux': 1, 'aux_q': 1},
                 ],
                 inputs=[cap_charge_input(f'k2_{site}', 'fuel', 'fuel', extra={'leaf_x': 0.4})],
                 outputs=[
@@ -326,7 +342,7 @@ def build_system(n_timesteps: int = 240, n_periods: int = 16) -> fx.FlowSystem:
     components.append(
         fx.LinearConverter(
             'conv_b2',
-            conversion_factors=[{'fuel': 0.5, 'aux': -1}, {'fuel': 0.4, 'out': -1}],
+            conversion_factors=[{'fuel': 0.5, 'aux': 1}, {'fuel': 0.4, 'out': 1}],
             inputs=[cap_charge_input('k3_n1', 'fuel', 'fuel')],
             outputs=[
                 fx.Flow('aux', bus='k1_m0', effects_per_flow_hour={'leaf_r': tp_price()}),
@@ -353,7 +369,7 @@ def build_system(n_timesteps: int = 240, n_periods: int = 16) -> fx.FlowSystem:
                     size=invest(0, 70, False, per_size=lump_effects(years[min(6, n_periods - 1)])),
                 )
             ],
-            conversion_factors=[{'drive': 30, 'out': -1}],
+            conversion_factors=[{'drive': 30, 'out': 1}],
         )
     )
 
@@ -415,8 +431,8 @@ def build_system(n_timesteps: int = 240, n_periods: int = 16) -> fx.FlowSystem:
                 ),
             ],
             conversion_factors=[
-                {'drive': 3.0, 'out': -1},
-                {'drive_2': tp_coeff(), 'out_2': -1},
+                {'drive': 3.0, 'out': 1},
+                {'drive_2': tp_coeff(), 'out_2': 1},
             ],
         )
     )
@@ -445,7 +461,7 @@ def build_system(n_timesteps: int = 240, n_periods: int = 16) -> fx.FlowSystem:
                         ),
                     )
                 ],
-                conversion_factors=[{'drive': coeff, 'out': -1}],
+                conversion_factors=[{'drive': coeff, 'out': 1}],
             )
         )
 
@@ -457,8 +473,8 @@ def build_system(n_timesteps: int = 240, n_periods: int = 16) -> fx.FlowSystem:
                 fx.LinearConverter(
                     f'gen_a{y}',
                     conversion_factors=[
-                        {'b_in': 0.9, 'out_b': -1},
-                        {'a_in': 0.9, 'out_a': -1},
+                        {'b_in': 0.9, 'out_b': 1},
+                        {'a_in': 0.9, 'out_a': 1},
                     ],
                     inputs=[
                         cap_charge_input(f'k2_{site}', 'a_in', 'fuel', extra={'leaf_x': 0.2}),
@@ -504,7 +520,7 @@ def build_system(n_timesteps: int = 240, n_periods: int = 16) -> fx.FlowSystem:
                             ),
                         )
                     ],
-                    conversion_factors=[{'drive': coeff_fleet, 'out': -1}],
+                    conversion_factors=[{'drive': coeff_fleet, 'out': 1}],
                 )
             )
         if pi >= 1:
@@ -530,7 +546,7 @@ def build_system(n_timesteps: int = 240, n_periods: int = 16) -> fx.FlowSystem:
                             ),
                         )
                     ],
-                    conversion_factors=[{'drive': coeff_fleet, 'out': -1}],
+                    conversion_factors=[{'drive': coeff_fleet, 'out': 1}],
                 )
             )
 
