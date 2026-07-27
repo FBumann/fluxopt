@@ -274,6 +274,31 @@ def test_effect_limit_binds() -> None:
     assert result.objective == pytest.approx(reference, rel=1e-9)
 
 
+def test_mandatory_storage_sizing_binds_the_right_dims() -> None:
+    """An absent lump term must still be keyed by its own entity dim.
+
+    A storage sized with `mandatory=True` has no build indicator, so the
+    `cap_ind_coeff` table is empty — and an empty table keyed by `flow`
+    instead of `storage` fails to bind. Regression for a real benchmark
+    system (`green_city`).
+    """
+    elements = _system(24)
+    elements['storages'] = [
+        Storage(
+            id='tank',
+            charging=Flow(carrier='heat', size=10.0),
+            discharging=Flow(carrier='heat', size=10.0),
+            capacity=Sizing(size_min=10.0, size_max=200.0, effects_per_size={'cost': 55.0}),
+            relative_loss_per_hour=0.003,
+        )
+    ]
+    data = ModelData.build(**elements)
+    reference = float(_linopy_optimum(data).m.objective.value)
+    result = solve(data, OBJECTIVE, solver_options=SOLVER_OPTIONS)
+
+    assert result.objective == pytest.approx(reference, rel=1e-9)
+
+
 def test_sparse_coefficients_are_not_materialised() -> None:
     """`effect_coeff` is declared dense but only live rows are emitted."""
     data = ModelData.build(**_system(48))

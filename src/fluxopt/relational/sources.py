@@ -174,7 +174,9 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
     sdim = ''
     has_sizing = xr.zeros_like(fds.size, dtype=bool)
     # Lump-domain accumulators, filled by the flow- and storage-sizing blocks.
-    lump_terms: list[tuple[str, xr.DataArray | None]] = []
+    # (parameter name, entity dim, coefficients) — the entity dim is carried so
+    # an absent term still emits a correctly keyed empty table.
+    lump_terms: list[tuple[str, str, xr.DataArray | None]] = []
     lump_consts: list[tuple[str, xr.DataArray]] = []
 
     # --- flow rate bounds: dense, they sit at the variable's own grid -----
@@ -288,8 +290,8 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
             sources['rel_level_ub'] = tidy(sds.rel_level_ub.sel(storage=cap_ids), drop_zero=True)
             cren = {cdim: 'storage'}
             lump_terms += [
-                ('cap_coeff', csz.effects_per_size.rename(cren)),
-                ('cap_ind_coeff', csz.effects_fixed.sel({cdim: copt}).rename(cren) if copt else None),
+                ('cap_coeff', 'storage', csz.effects_per_size.rename(cren)),
+                ('cap_ind_coeff', 'storage', csz.effects_fixed.sel({cdim: copt}).rename(cren) if copt else None),
             ]
             if cmand_ids:
                 cap_const = csz.effects_fixed.sel({cdim: cmand_ids}).rename(cren)
@@ -474,8 +476,8 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
             {'flow': [f for f, v in zip(sizing_ids, sz.min.values, strict=True) if float(v) > 0], 'value': True},
         )
         lump_terms += [
-            ('size_coeff', sz.effects_per_size.rename(zren)),
-            ('ind_coeff', sz.effects_fixed.sel({zdim: opt_ids}).rename(zren) if opt_ids else None),
+            ('size_coeff', 'flow', sz.effects_per_size.rename(zren)),
+            ('ind_coeff', 'flow', sz.effects_fixed.sel({zdim: opt_ids}).rename(zren) if opt_ids else None),
         ]
         if mand_ids:
             lump_consts.append(('flow', sz.effects_fixed.sel({zdim: mand_ids}).rename(zren)))
@@ -555,10 +557,10 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
             coords={'period': period_labels_inv, 'build_period': period_labels_inv},
         )
         lump_terms += [
-            ('sab_coeff', inv.effects_per_size_at_build.rename(iren).rename({'period': 'build_period'}) * eye),
-            ('build_coeff', inv.effects_fixed_at_build.rename(iren).rename({'period': 'build_period'}) * eye),
-            ('invest_recurring_size_coeff', inv.effects_per_size_recurring.rename(iren)),
-            ('invest_recurring_fixed_coeff', inv.effects_fixed_recurring.rename(iren)),
+            ('sab_coeff', 'flow', inv.effects_per_size_at_build.rename(iren).rename({'period': 'build_period'}) * eye),
+            ('build_coeff', 'flow', inv.effects_fixed_at_build.rename(iren).rename({'period': 'build_period'}) * eye),
+            ('invest_recurring_size_coeff', 'flow', inv.effects_per_size_recurring.rename(iren)),
+            ('invest_recurring_fixed_coeff', 'flow', inv.effects_fixed_recurring.rename(iren)),
         ]
     else:
         for name in (
@@ -613,11 +615,11 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         """Apply the lump-domain Leontief inverse, if there are cross-effects."""
         return arr if leo_lump is None else _apply_leontief(leo_lump, arr)
 
-    for name, arr in lump_terms:
+    for name, entity_dim, arr in lump_terms:
         sources[name] = (
             tidy(fold(arr), drop_zero=True)
             if arr is not None
-            else pd.DataFrame({'flow': [], 'effect': [], 'value': []})
+            else pd.DataFrame({entity_dim: [], 'effect': [], 'value': []})
         )
     for name in ('size_coeff', 'ind_coeff'):
         sources.setdefault(name, pd.DataFrame({'flow': [], 'effect': [], 'value': []}))
