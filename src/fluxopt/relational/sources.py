@@ -66,8 +66,18 @@ PERIOD_PARAMS = frozenset(
         'total_weight',
         'bigm_ub',
         'bigm_lb',
+        'size_ub',
+        'invest_window',
+        'invest_prior_active',
+        'invest_recurring_size_coeff',
+        'invest_recurring_fixed_coeff',
+        'sab_coeff',
+        'build_coeff',
     }
 )
+
+#: Parameters carrying the `build_period` axis; its labels map to ordinals too.
+BUILD_PERIOD_PARAMS = frozenset({'invest_window', 'sab_coeff', 'build_coeff'})
 
 
 def _size_upper(data: ModelData, fid: str) -> float:
@@ -111,12 +121,13 @@ def _tidy(da: xr.DataArray, *, drop_zero: bool, time_ord: dict[Any, int] | None 
 def _reject_unsupported(data: ModelData) -> None:
     fds = data.flows
     for name, obj in (
-        ('investment', fds.invest),
         ('component status', fds.cstatus),
         ('piecewise', data.piecewise),
     ):
         if obj is not None:
             raise UnsupportedFeatureError(f'{name} is not supported by the relational backend yet')
+    if fds.invest is not None and data.dims.period is None:
+        raise UnsupportedFeatureError('investment requires multi-period optimization (periods must be specified)')
     if fds.sizing is not None and fds.status is not None:
         sz = {str(v) for v in fds.sizing.min.coords[fds.sizing.min.dims[0]].values}
         stt = {str(v) for v in fds.status.uptime_min.coords[fds.status.uptime_min.dims[0]].values}
@@ -183,6 +194,19 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         )
         lb = xr.where(has_sizing, 0.0, lb)
         ub = xr.where(has_sizing, np.inf, ub)
+
+    inv = fds.invest
+    invest_ids: list[str] = []
+    idim = ''
+    has_invest = xr.zeros_like(fds.size, dtype=bool)
+    if inv is not None:
+        idim = inv.min.dims[0]
+        invest_ids = [str(v) for v in inv.min.coords[idim].values]
+        has_invest = xr.DataArray(
+            [f in set(invest_ids) for f in flow_ids], dims=['flow'], coords={'flow': fds.size.coords['flow']}
+        )
+        lb = xr.where(has_invest, 0.0, lb)
+        ub = xr.where(has_invest, np.inf, ub)
 
     st = fds.status
     if st is not None:
@@ -449,9 +473,6 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         sources['has_size_min_pos'] = pd.DataFrame(
             {'flow': [f for f, v in zip(sizing_ids, sz.min.values, strict=True) if float(v) > 0], 'value': True},
         )
-        sources['rel_lb_size'] = tidy(fds.rel_lb.sel(zsel), drop_zero=True)
-        sources['rel_ub_size'] = tidy(fds.rel_ub.sel(zsel), drop_zero=True)
-        sources['profile_size'] = tidy(fds.fixed_profile.sel(zsel), drop_zero=True)
         lump_terms += [
             ('size_coeff', sz.effects_per_size.rename(zren)),
             ('ind_coeff', sz.effects_fixed.sel({zdim: opt_ids}).rename(zren) if opt_ids else None),
@@ -462,8 +483,6 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         for n in ('has_sizing', 'is_optional', 'size_min', 'size_max', 'has_size_min_pos'):
             sources[n] = pd.DataFrame({'flow': [], 'value': []})
         for n in ('bigm_ub', 'bigm_lb'):
-            sources[n] = pd.DataFrame({'flow': [], 'time': [], 'value': []})
-        for n in ('rel_lb_size', 'rel_ub_size', 'profile_size'):
             sources[n] = pd.DataFrame({'flow': [], 'time': [], 'value': []})
 
     if 'has_cap_sizing' not in sources:
@@ -491,6 +510,87 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
     sources['ramp_bigM'] = pd.DataFrame(
         {'flow': flow_ids, 'value': [_size_upper(data, f) for f in flow_ids]},
     )
+
+    # --- investment -------------------------------------------------------
+    if inv is not None:
+        iren = {idim: 'flow'}
+        period_labels_inv: list[Any] = list(dims.period.values) if dims.period is not None else []
+        n_p = len(period_labels_inv)
+        lifetime = inv.lifetime.values
+        prior = inv.prior_size.values
+        window = np.zeros((len(invest_ids), n_p, n_p))
+        prior_active = np.zeros((len(invest_ids), n_p))
+        for f_idx in range(len(invest_ids)):
+            lt = lifetime[f_idx]
+            lt_int = None if np.isnan(lt) else int(lt)
+            for p_idx in range(n_p):
+                for b_idx in range(n_p):
+                    alive = b_idx <= p_idx if lt_int is None else b_idx <= p_idx < b_idx + lt_int
+                    window[f_idx, p_idx, b_idx] = float(alive)
+                if prior[f_idx] > 0 and (lt_int is None or p_idx < lt_int):
+                    prior_active[f_idx, p_idx] = 1.0
+        coords_w = {'flow': invest_ids, 'period': period_labels_inv, 'build_period': period_labels_inv}
+        sources['invest_window'] = _tidy(
+            xr.DataArray(window, dims=['flow', 'period', 'build_period'], coords=coords_w), drop_zero=True
+        )
+        sources['invest_prior_active'] = _tidy(
+            xr.DataArray(
+                prior_active, dims=['flow', 'period'], coords={'flow': invest_ids, 'period': period_labels_inv}
+            ),
+            drop_zero=False,
+        )
+        sources['has_invest'] = pd.DataFrame({'flow': invest_ids, 'value': True})
+        sources['invest_mandatory'] = pd.DataFrame({'flow': invest_ids, 'value': inv.mandatory.values.astype(bool)})
+        sources['invest_min'] = pd.DataFrame({'flow': invest_ids, 'value': inv.min.values})
+        sources['invest_max'] = pd.DataFrame({'flow': invest_ids, 'value': inv.max.values})
+        sources['invest_prior_size'] = pd.DataFrame({'flow': invest_ids, 'value': prior})
+        sources['has_invest_prior'] = pd.DataFrame(
+            {'flow': [f for f, ps in zip(invest_ids, prior, strict=True) if ps > 0], 'value': True}
+        )
+        # Diagonal in (period, build_period): a one-time cost belongs to the
+        # period the build happened in, not to every period the unit is alive.
+        eye = xr.DataArray(
+            np.eye(n_p),
+            dims=['period', 'build_period'],
+            coords={'period': period_labels_inv, 'build_period': period_labels_inv},
+        )
+        lump_terms += [
+            ('sab_coeff', inv.effects_per_size_at_build.rename(iren).rename({'period': 'build_period'}) * eye),
+            ('build_coeff', inv.effects_fixed_at_build.rename(iren).rename({'period': 'build_period'}) * eye),
+            ('invest_recurring_size_coeff', inv.effects_per_size_recurring.rename(iren)),
+            ('invest_recurring_fixed_coeff', inv.effects_fixed_recurring.rename(iren)),
+        ]
+    else:
+        for name in (
+            'has_invest',
+            'invest_mandatory',
+            'invest_min',
+            'invest_max',
+            'invest_prior_size',
+            'has_invest_prior',
+        ):
+            sources[name] = pd.DataFrame({'flow': [], 'value': []})
+        sources['invest_window'] = pd.DataFrame({'flow': [], 'period': [], 'build_period': [], 'value': []})
+        sources['invest_prior_active'] = pd.DataFrame({'flow': [], 'period': [], 'value': []})
+
+    # `sizing_rate` covers both mechanisms, so its envelope must span both.
+    sized_ids = [*sizing_ids, *invest_ids]
+    envelope_sel = {'flow': sized_ids}
+    sources['rel_lb_size'] = tidy(fds.rel_lb.sel(envelope_sel), drop_zero=True)
+    sources['rel_ub_size'] = tidy(fds.rel_ub.sel(envelope_sel), drop_zero=True)
+    sources['profile_size'] = tidy(fds.fixed_profile.sel(envelope_sel), drop_zero=True)
+
+    # upper bound of `size`: whichever mechanism sizes the flow
+    size_ub = xr.full_like(fds.size, np.inf)
+    for ids, maxima in (
+        (sizing_ids, sz.max if sz is not None else None),
+        (invest_ids, inv.max if inv is not None else None),
+    ):
+        if maxima is None or not ids:
+            continue
+        per_flow = xr.DataArray(maxima.values, dims=['flow'], coords={'flow': ids}).reindex(flow=flow_ids)
+        size_ub = xr.where(per_flow.notnull(), per_flow, size_ub)
+    sources['size_ub'] = _tidy(size_ub, drop_zero=False)
 
     # --- effects: the sparse one -----------------------------------------
     eds = data.effects
@@ -523,6 +623,12 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         sources.setdefault(name, pd.DataFrame({'flow': [], 'effect': [], 'value': []}))
     for name in ('cap_coeff', 'cap_ind_coeff'):
         sources.setdefault(name, pd.DataFrame({'storage': [], 'effect': [], 'value': []}))
+    for name in ('sab_coeff', 'build_coeff'):
+        sources.setdefault(
+            name, pd.DataFrame({'flow': [], 'effect': [], 'period': [], 'build_period': [], 'value': []})
+        )
+    for name in ('invest_recurring_size_coeff', 'invest_recurring_fixed_coeff'):
+        sources.setdefault(name, pd.DataFrame({'flow': [], 'effect': [], 'period': [], 'value': []}))
     total_const: xr.DataArray | None = None
     for edim, arr in lump_consts:
         part = fold(arr).sum(edim)
@@ -576,9 +682,15 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
             sources[name] = df.merge(pd.DataFrame({'period': p_ordinals}), how='cross')
 
     empty: list[str] = []
+    for name in BUILD_PERIOD_PARAMS:
+        df = sources.get(name)
+        if df is not None and 'build_period' in df.columns:
+            sources[name] = df.assign(build_period=[period_ord[v] for v in df['build_period']])
+
     coords: dict[str, Any] = {
         'time': ordinals,
         'period': p_ordinals,
+        'build_period': p_ordinals,
         'carrier': [str(c) for c in carriers],
         'converter': [str(c) for c in data.converters.eq_mask.coords['converter'].values]
         if data.converters is not None

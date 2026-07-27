@@ -16,6 +16,9 @@
 dimensions:
   time: {dtype: int}
   period: {dtype: int}
+  # The period a unit was built in. Same labels as `period`; a separate axis
+  # so a build decision can be summed into the periods it keeps alive.
+  build_period: {dtype: int}
   carrier: {dtype: str}
   converter: {dtype: str}
   eq_idx: {dtype: int}
@@ -95,6 +98,7 @@ parameters:
   is_optional: {dims: [flow], dtype: bool}   # sizing without `mandatory`
   size_min: {dims: [flow]}
   size_max: {dims: [flow]}
+  size_ub: {dims: [flow, period]}   # upper bound of `size`: sizing max or invest max
   rel_lb_size: {dims: [flow, time, period]}
   rel_ub_size: {dims: [flow, time, period]}
   profile_size: {dims: [flow, time, period]}
@@ -107,6 +111,25 @@ parameters:
   bigm_ub: {dims: [flow, time, period]}   # size_max * rel_ub
   bigm_lb: {dims: [flow, time, period]}   # size_max * rel_lb
   has_size_min_pos: {dims: [flow], dtype: bool}
+
+  # --- investment (build timing over periods) ------------------------------
+  has_invest: {dims: [flow], dtype: bool}
+  invest_mandatory: {dims: [flow], dtype: bool}
+  invest_min: {dims: [flow]}
+  invest_max: {dims: [flow]}
+  invest_prior_size: {dims: [flow]}
+  has_invest_prior: {dims: [flow], dtype: bool}
+  # 1 where a build in `build_period` is still within lifetime in `period`
+  invest_window: {dims: [flow, period, build_period]}
+  # 1 where pre-existing capacity is still active
+  invest_prior_active: {dims: [flow, period]}
+  # lump coefficients, Leontief-folded like the rest
+  # At-build effects land in the period the unit was built in, not in every
+  # period, so these carry both axes and are non-zero only on the diagonal.
+  sab_coeff: {dims: [flow, effect, period, build_period]}
+  build_coeff: {dims: [flow, effect, period, build_period]}
+  invest_recurring_size_coeff: {dims: [flow, effect, period]}
+  invest_recurring_fixed_coeff: {dims: [flow, effect, period]}
 
   # --- ramps --------------------------------------------------------------
   has_ramp_up: {dims: [flow], dtype: bool}
@@ -187,10 +210,32 @@ variables:
     where: "has_downtime"
     bounds: {lower: 0, upper: downtime_ub}
 
+  # Investment flows share this variable — `size` is the capacity available in
+  # a period, whether it came from Sizing or from a build decision.
   size:
     foreach: [flow, period]
-    where: "has_sizing"
-    bounds: {lower: 0, upper: size_max}
+    where: "has_sizing OR has_invest"
+    bounds: {lower: 0, upper: size_ub}
+
+  invest_size:
+    foreach: [flow]
+    where: "has_invest"
+    bounds: {lower: 0, upper: invest_max}
+
+  invest_build:
+    foreach: [flow, build_period]
+    where: "has_invest"
+    binary: true
+
+  invest_active:
+    foreach: [flow, period]
+    where: "has_invest"
+    binary: true
+
+  invest_sab:
+    foreach: [flow, build_period]
+    where: "has_invest"
+    bounds: {lower: 0, upper: invest_max}
 
   size_ind:
     foreach: [flow, period]
@@ -284,7 +329,7 @@ constraints:
   # `bounds:` and become rows (linopy-yaml #31).
   sizing_rate:
     foreach: [flow, time, period]
-    where: "has_sizing AND NOT has_status"
+    where: "(has_sizing OR has_invest) AND NOT has_status"
     equations:
       - expression: rate >= rel_lb_size * size
         where: "is_bounded"
@@ -417,6 +462,56 @@ constraints:
       - expression: group_sum(rate, over=flow, by=charge_storage) - m_charge * charging <= 0
       - expression: group_sum(rate, over=flow, by=discharge_storage) + m_discharge * charging <= m_discharge
 
+  # Build at most once (exactly once when mandatory); never when capacity
+  # already exists from before the horizon.
+  invest_build_once:
+    foreach: [flow]
+    where: "has_invest"
+    equations:
+      - expression: sum(invest_build, over=build_period) == 1
+        where: "invest_mandatory AND NOT has_invest_prior"
+      - expression: sum(invest_build, over=build_period) <= 1
+        where: "NOT invest_mandatory AND NOT has_invest_prior"
+      - expression: sum(invest_build, over=build_period) == 0
+        where: "has_invest_prior"
+
+  invest_active_logic:
+    foreach: [flow, period]
+    where: "has_invest"
+    equations:
+      - expression: invest_active - sum(invest_build * invest_window, over=build_period) == invest_prior_active
+
+  invest_size_bounds:
+    foreach: [flow]
+    where: "has_invest"
+    equations:
+      - expression: invest_size == invest_prior_size
+        where: "has_invest_prior"
+      - expression: invest_size >= invest_min
+        where: "invest_mandatory AND NOT has_invest_prior"
+      - expression: invest_size - invest_min * sum(invest_build, over=build_period) >= 0
+        where: "NOT invest_mandatory AND NOT has_invest_prior"
+      - expression: invest_size - invest_max * sum(invest_build, over=build_period) <= 0
+        where: "NOT invest_mandatory AND NOT has_invest_prior"
+
+  # size == invest_size when active, 0 when not (big-M).
+  invest_size_link:
+    foreach: [flow, period]
+    where: "has_invest"
+    equations:
+      - expression: size - invest_max * invest_active <= 0
+      - expression: size - invest_size <= 0
+      - expression: size - invest_size - invest_max * invest_active >= 0 - invest_max
+
+  # size_at_build == invest_size * build, linearised.
+  invest_sab_link:
+    foreach: [flow, build_period]
+    where: "has_invest"
+    equations:
+      - expression: invest_sab - invest_max * invest_build <= 0
+      - expression: invest_sab - invest_size <= 0
+      - expression: invest_sab - invest_size - invest_max * invest_build >= 0 - invest_max
+
   effect_accounting:
     foreach: [effect, period]
     equations:
@@ -428,6 +523,10 @@ constraints:
           + sum(size_ind * ind_coeff, over=flow)
           + sum(capacity * cap_coeff, over=storage)
           + sum(cap_ind * cap_ind_coeff, over=storage)
+          + sum(sum(invest_sab * sab_coeff, over=build_period), over=flow)
+          + sum(sum(invest_build * build_coeff, over=build_period), over=flow)
+          + sum(size * invest_recurring_size_coeff, over=flow)
+          + sum(invest_active * invest_recurring_fixed_coeff, over=flow)
           + lump_const
 
   effect_periodic_bounds:
