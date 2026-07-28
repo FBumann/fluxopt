@@ -74,7 +74,7 @@ parameters:
   uptime_upper: {dims: [flow, time, period]}      # uptime_max where given, else mega
   uptime_big_m: {dims: [flow]}              # big-M: horizon + any prior uptime
   downtime_big_m: {dims: [flow]}            # big-M: horizon + any prior downtime
-  dt_previous: {dims: [time]}              # dt at t-1
+  dt: {dims: [time]}                       # timestep duration [h]
   is_last: {dims: [time], dtype: bool}
   has_downtime: {dims: [flow], dtype: bool}
   downtime_min: {dims: [flow]}
@@ -84,7 +84,6 @@ parameters:
   previous_downtime: {dims: [flow]}
   forced_on_at_start: {dims: [flow], dtype: bool}    # prior run shorter than uptime_min
   forced_off_at_start: {dims: [flow], dtype: bool}
-  dt_at_start: {dims: [flow]}                       # dt at t=0, per flow (broadcast)
   effects_per_running_hour: {dims: [flow, effect, time, period]}       # running effects * dt
   effects_per_startup: {dims: [flow, effect, time, period]}  # startup effects
 
@@ -319,9 +318,9 @@ constraints:
     where: "has_uptime"
     equations:
       - expression: uptime <= uptime_big_m * on
-      - expression: uptime <= shift(uptime, time=1) + dt_previous
+      - expression: uptime <= shift(uptime, time=1) + shift(dt, time=1)
         where: "NOT is_first"
-      - expression: uptime >= shift(uptime, time=1) + dt_previous + (on - 1) * uptime_big_m
+      - expression: uptime >= shift(uptime, time=1) + shift(dt, time=1) + (on - 1) * uptime_big_m
         where: "NOT is_first"
       # minimum run length, read one step ahead
       - expression: uptime >= uptime_min * (on - shift(on, time=-1))
@@ -425,9 +424,9 @@ constraints:
     where: "has_downtime"
     equations:
       - expression: downtime + downtime_big_m * on <= downtime_big_m
-      - expression: downtime <= shift(downtime, time=1) + dt_previous
+      - expression: downtime <= shift(downtime, time=1) + shift(dt, time=1)
         where: "NOT is_first"
-      - expression: downtime >= shift(downtime, time=1) + dt_previous - downtime_big_m * on
+      - expression: downtime >= shift(downtime, time=1) + shift(dt, time=1) - downtime_big_m * on
         where: "NOT is_first"
       - expression: downtime >= downtime_min * (shift(on, time=-1) - on)
         where: "downtime_min AND NOT is_last"
@@ -438,9 +437,9 @@ constraints:
     foreach: [flow, time, period]
     where: "is_first"
     equations:
-      - expression: uptime == on * (previous_uptime + dt_at_start)
+      - expression: uptime == on * (previous_uptime + dt)
         where: "previous_uptime"
-      - expression: downtime + on * (previous_downtime + dt_at_start) == previous_downtime + dt_at_start
+      - expression: downtime + on * (previous_downtime + dt) == previous_downtime + dt
         where: "previous_downtime"
       - expression: on >= 1
         where: "forced_on_at_start"

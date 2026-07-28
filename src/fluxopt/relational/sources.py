@@ -402,7 +402,6 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         sources['initial_status'] = pd.DataFrame(
             {'flow': init_ids, 'value': init.sel(flow=init_ids).values if init_ids else []},
         )
-        sources['dt_at_start'] = pd.DataFrame({'flow': status_ids, 'value': float(dims.dt.values[0])})
         # Names are spelled out, not assembled, so a rename of the program is
         # greppable from here.
         for value_key, forced_key, prev, lo in (
@@ -440,15 +439,13 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
             'previous_downtime',
             'forced_on_at_start',
             'forced_off_at_start',
-            'dt_at_start',
         ):
             sources[n] = pd.DataFrame({'flow': [], 'value': []})
         for n in ('rate_min_when_on', 'rate_max_when_on', 'rate_fixed_when_on', 'uptime_upper', 'downtime_upper'):
             sources[n] = pd.DataFrame({'flow': [], 'time': [], 'value': []})
         ec_extra = []
 
-    dt_vals = dims.dt.values
-    sources['dt_previous'] = pd.DataFrame({'time': ordinals[1:], 'value': dt_vals[:-1]})
+    sources['dt'] = pd.DataFrame({'time': ordinals, 'value': dims.dt.values})
     sources['is_last'] = pd.DataFrame({'time': ordinals, 'value': [i == len(ordinals) - 1 for i in ordinals]})
 
     # --- sizing -----------------------------------------------------------
