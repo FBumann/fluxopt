@@ -305,7 +305,7 @@ def test_sparse_coefficients_are_not_materialised() -> None:
     sources, coords = build_sources(data, OBJECTIVE)
 
     dense = len(sources['flow']) * len(coords['effect']) * len(coords['time']) * len(coords['period'])
-    assert len(sources['effect_coeff']) < dense / 2
+    assert len(sources['effects_per_flow_hour']) < dense / 2
 
 
 def test_unsupported_feature_raises_rather_than_dropping() -> None:

@@ -41,8 +41,8 @@ parameters:
 
   # --- flows: absolute bounds (rel_bound * size, folded data-side because
   # bounds: accepts only a bare parameter name) ---------------------------
-  rate_lb: {dims: [flow, time, period]}
-  rate_ub: {dims: [flow, time, period]}
+  rate_min: {dims: [flow, time, period]}
+  rate_max: {dims: [flow, time, period]}
 
   # --- carrier balance ---------------------------------------------------
   carrier_sign: {dims: [flow]}
@@ -50,15 +50,15 @@ parameters:
   # --- converters --------------------------------------------------------
   # A flow belongs to exactly one component, so the (converter, flow) matrix
   # collapses to a mapping plus a coefficient keyed on flow.
-  conv_coeff: {dims: [flow, eq_idx, time]}
-  eq_active: {dims: [converter, eq_idx], dtype: bool}
+  conversion_factor: {dims: [flow, eq_idx, time]}
+  conversion_active: {dims: [converter, eq_idx], dtype: bool}
 
   # --- storage -----------------------------------------------------------
-  charge_factor: {dims: [flow, time]}      # eta_c * dt
-  discharge_factor: {dims: [flow, time]}   # dt / eta_d
+  charge_gain: {dims: [flow, time]}      # eta_c * dt
+  discharge_draw: {dims: [flow, time]}   # dt / eta_d
   retention: {dims: [storage, time]}       # (1 - loss) ** dt
-  level_lb: {dims: [storage, time]}
-  level_ub: {dims: [storage, time]}
+  level_min: {dims: [storage, time]}
+  level_max: {dims: [storage, time]}
   is_cyclic: {dims: [storage], dtype: bool}
   prior_level: {dims: [storage]}
 
@@ -66,70 +66,64 @@ parameters:
   has_status: {dims: [flow], dtype: bool}
   is_bounded: {dims: [flow], dtype: bool}
   is_profile: {dims: [flow], dtype: bool}
-  rate_lb_on: {dims: [flow, time, period]}     # size * rel_lb, gated by `on`
-  rate_ub_on: {dims: [flow, time, period]}     # size * rel_ub, gated by `on`
-  rate_fix_on: {dims: [flow, time, period]}    # size * profile, gated by `on`
+  rate_min_when_on: {dims: [flow, time, period]}     # size * rel_lb, gated by `on`
+  rate_max_when_on: {dims: [flow, time, period]}     # size * rel_ub, gated by `on`
+  rate_fixed_when_on: {dims: [flow, time, period]}    # size * profile, gated by `on`
   has_uptime: {dims: [flow], dtype: bool}
-  has_uptime_min: {dims: [flow], dtype: bool}
   uptime_min: {dims: [flow]}
-  uptime_ub: {dims: [flow, time, period]}      # uptime_max where given, else mega
-  mega_up: {dims: [flow]}              # big-M: horizon + any prior uptime
-  mega_down: {dims: [flow]}            # big-M: horizon + any prior downtime
-  dt_prev: {dims: [time]}              # dt at t-1
+  uptime_upper: {dims: [flow, time, period]}      # uptime_max where given, else mega
+  uptime_big_m: {dims: [flow]}              # big-M: horizon + any prior uptime
+  downtime_big_m: {dims: [flow]}            # big-M: horizon + any prior downtime
+  dt_previous: {dims: [time]}              # dt at t-1
   is_last: {dims: [time], dtype: bool}
   has_downtime: {dims: [flow], dtype: bool}
-  has_downtime_min: {dims: [flow], dtype: bool}
   downtime_min: {dims: [flow]}
-  downtime_ub: {dims: [flow, time, period]}
-  has_initial: {dims: [flow], dtype: bool}
-  initial_on: {dims: [flow]}
-  has_prev_up: {dims: [flow], dtype: bool}
-  prev_uptime: {dims: [flow]}
-  has_prev_down: {dims: [flow], dtype: bool}
-  prev_downtime: {dims: [flow]}
-  force_up_start: {dims: [flow], dtype: bool}    # prior run shorter than uptime_min
-  force_down_start: {dims: [flow], dtype: bool}
-  dt_first: {dims: [flow]}                       # dt at t=0, per flow (broadcast)
-  on_coeff: {dims: [flow, effect, time, period]}       # running effects * dt
-  startup_coeff: {dims: [flow, effect, time, period]}  # startup effects
+  downtime_upper: {dims: [flow, time, period]}
+  initial_status: {dims: [flow]}
+  previous_uptime: {dims: [flow]}
+  previous_downtime: {dims: [flow]}
+  forced_on_at_start: {dims: [flow], dtype: bool}    # prior run shorter than uptime_min
+  forced_off_at_start: {dims: [flow], dtype: bool}
+  dt_at_start: {dims: [flow]}                       # dt at t=0, per flow (broadcast)
+  effects_per_running_hour: {dims: [flow, effect, time, period]}       # running effects * dt
+  effects_per_startup: {dims: [flow, effect, time, period]}  # startup effects
 
   # --- sizing (capacity optimisation) -------------------------------------
   has_sizing: {dims: [flow], dtype: bool}
-  is_optional: {dims: [flow], dtype: bool}   # sizing without `mandatory`
+  size_optional: {dims: [flow], dtype: bool}   # sizing without `mandatory`
   size_min: {dims: [flow]}
   size_max: {dims: [flow]}
-  size_ub: {dims: [flow, period]}   # upper bound of `size`: sizing max or invest max
-  rel_lb_size: {dims: [flow, time, period]}
-  rel_ub_size: {dims: [flow, time, period]}
-  profile_size: {dims: [flow, time, period]}
+  size_upper: {dims: [flow, period]}   # upper bound of `size`: sizing max or invest max
+  relative_rate_min: {dims: [flow, time, period]}
+  relative_rate_max: {dims: [flow, time, period]}
+  fixed_relative_profile: {dims: [flow, time, period]}
   # Lump-domain effect coefficients, Leontief-folded like the temporal ones.
-  size_coeff: {dims: [flow, effect, period]}
-  ind_coeff: {dims: [flow, effect, period]}
-  lump_const: {dims: [effect, period]}
+  effects_per_size: {dims: [flow, effect, period]}
+  effects_fixed: {dims: [flow, effect, period]}
+  effects_fixed_mandatory: {dims: [effect, period]}
 
   # --- status x sizing: big-M decoupling of the binary from the size -------
-  bigm_ub: {dims: [flow, time, period]}   # size_max * rel_ub
-  bigm_lb: {dims: [flow, time, period]}   # size_max * rel_lb
-  has_size_min_pos: {dims: [flow], dtype: bool}
+  rate_max_at_size_max: {dims: [flow, time, period]}   # size_max * rel_ub
+  rate_min_at_size_max: {dims: [flow, time, period]}   # size_max * rel_lb
 
   # --- investment (build timing over periods) ------------------------------
   has_invest: {dims: [flow], dtype: bool}
   invest_mandatory: {dims: [flow], dtype: bool}
   invest_min: {dims: [flow]}
   invest_max: {dims: [flow]}
-  invest_prior_size: {dims: [flow]}
-  has_invest_prior: {dims: [flow], dtype: bool}
+  prior_capacity: {dims: [flow]}
+  has_prior_capacity: {dims: [flow], dtype: bool}
   # 1 where a build in `build_period` is still within lifetime in `period`
-  invest_window: {dims: [flow, period, build_period]}
+  lifetime_window: {dims: [flow, period, build_period]}
   # 1 where pre-existing capacity is still active
-  invest_prior_active: {dims: [flow, period]}
+  prior_capacity_active: {dims: [flow, period]}
   # lump coefficients, Leontief-folded like the rest
   # At-build effects land in the period the unit was built in, not in every
   # period, so these carry both axes and are non-zero only on the diagonal.
-  sab_coeff: {dims: [flow, effect, period, build_period]}
-  build_coeff: {dims: [flow, effect, period, build_period]}
-  invest_recurring_size_coeff: {dims: [flow, effect, period]}
-  invest_recurring_fixed_coeff: {dims: [flow, effect, period]}
+  effects_per_size_at_build: {dims: [flow, effect, period, build_period]}
+  effects_fixed_at_build: {dims: [flow, effect, period, build_period]}
+  effects_per_size_recurring: {dims: [flow, effect, period]}
+  effects_fixed_recurring: {dims: [flow, effect, period]}
 
   # --- ramps --------------------------------------------------------------
   has_ramp_up: {dims: [flow], dtype: bool}
@@ -141,49 +135,43 @@ parameters:
   ramp_bigM: {dims: [flow]}              # static size bound, relaxes across transitions
 
   # --- storage: end-of-horizon bounds and charge/discharge exclusion --------
-  has_final_min: {dims: [storage], dtype: bool}
-  has_final_max: {dims: [storage], dtype: bool}
   final_level_min: {dims: [storage]}
   final_level_max: {dims: [storage]}
-  prevent_simul: {dims: [storage], dtype: bool}
-  m_charge: {dims: [storage]}      # static size bound of the charge flow
-  m_discharge: {dims: [storage]}
+  prevent_simultaneous: {dims: [storage], dtype: bool}
+  charge_size_bound: {dims: [storage]}      # static size bound of the charge flow
+  discharge_size_bound: {dims: [storage]}
 
   # --- storage sizing -----------------------------------------------------
-  has_cap_sizing: {dims: [storage], dtype: bool}
-  cap_is_optional: {dims: [storage], dtype: bool}
-  cap_min: {dims: [storage]}
-  cap_max: {dims: [storage]}
-  rel_level_lb: {dims: [storage, time]}
-  rel_level_ub: {dims: [storage, time]}
-  cap_coeff: {dims: [storage, effect, period]}
-  cap_ind_coeff: {dims: [storage, effect, period]}
+  has_capacity_sizing: {dims: [storage], dtype: bool}
+  capacity_optional: {dims: [storage], dtype: bool}
+  capacity_min: {dims: [storage]}
+  capacity_max: {dims: [storage]}
+  relative_level_min: {dims: [storage, time]}
+  relative_level_max: {dims: [storage, time]}
+  effects_per_capacity: {dims: [storage, effect, period]}
+  effects_fixed_capacity: {dims: [storage, effect, period]}
 
   # --- effects -----------------------------------------------------------
   # coeff * dt * time_weight, Leontief inverse already folded in (numpy).
   # Declared (flow, effect, time); only live pairs are supplied.
-  effect_coeff: {dims: [flow, effect, time, period]}
+  effects_per_flow_hour: {dims: [flow, effect, time, period]}
   # objective weight x period weight, folded data-side
-  obj_weight: {dims: [effect, period]}
+  objective_weight: {dims: [effect, period]}
   # effect limits: per period, and across periods (weighted)
-  has_periodic_min: {dims: [effect, period], dtype: bool}
-  has_periodic_max: {dims: [effect, period], dtype: bool}
   periodic_min: {dims: [effect, period]}
   periodic_max: {dims: [effect, period]}
-  has_total_min: {dims: [effect], dtype: bool}
-  has_total_max: {dims: [effect], dtype: bool}
   total_min: {dims: [effect]}
   total_max: {dims: [effect]}
-  total_weight: {dims: [effect, period]}
+  period_weight: {dims: [effect, period]}
 
 variables:
   rate:
     foreach: [flow, time, period]
-    bounds: {lower: rate_lb, upper: rate_ub}
+    bounds: {lower: rate_min, upper: rate_max}
 
   level:
     foreach: [storage, time, period]
-    bounds: {lower: level_lb, upper: level_ub}
+    bounds: {lower: level_min, upper: level_max}
 
   on:
     foreach: [flow, time, period]
@@ -203,19 +191,19 @@ variables:
   uptime:
     foreach: [flow, time, period]
     where: "has_uptime"
-    bounds: {lower: 0, upper: uptime_ub}
+    bounds: {lower: 0, upper: uptime_upper}
 
   downtime:
     foreach: [flow, time, period]
     where: "has_downtime"
-    bounds: {lower: 0, upper: downtime_ub}
+    bounds: {lower: 0, upper: downtime_upper}
 
   # Investment flows share this variable — `size` is the capacity available in
   # a period, whether it came from Sizing or from a build decision.
   size:
     foreach: [flow, period]
     where: "has_sizing OR has_invest"
-    bounds: {lower: 0, upper: size_ub}
+    bounds: {lower: 0, upper: size_upper}
 
   invest_size:
     foreach: [flow]
@@ -232,39 +220,53 @@ variables:
     where: "has_invest"
     binary: true
 
-  invest_sab:
+  invest_size_at_build:
     foreach: [flow, build_period]
     where: "has_invest"
     bounds: {lower: 0, upper: invest_max}
 
-  size_ind:
+  size_built:
     foreach: [flow, period]
-    where: "is_optional"
+    where: "size_optional"
     binary: true
 
   capacity:
     foreach: [storage, period]
-    where: "has_cap_sizing"
-    bounds: {lower: 0, upper: cap_max}
+    where: "has_capacity_sizing"
+    bounds: {lower: 0, upper: capacity_max}
 
-  cap_ind:
+  capacity_built:
     foreach: [storage, period]
-    where: "cap_is_optional"
+    where: "capacity_optional"
     binary: true
 
   charging:
     foreach: [storage, time, period]
-    where: "prevent_simul"
+    where: "prevent_simultaneous"
     binary: true
 
   effect_total:
     foreach: [effect, period]
     bounds: {lower: -.inf, upper: .inf}
 
+macros:
+  # Every effect contribution has one of three shapes. Naming them turns the
+  # accounting equation into a ledger you can read line by line.
+  per_step:
+    args: [driver, coeff]
+    template: sum(sum(driver * coeff, over=time), over=flow)
+  per_entity:
+    args: [driver, coeff]
+    kwargs: [over]
+    template: sum(driver * coeff, over=over)
+  at_build:
+    args: [driver, coeff]
+    template: sum(sum(driver * coeff, over=build_period), over=flow)
+
 expressions:
   net_charge: >-
-    group_sum(rate * charge_factor, over=flow, by=charge_storage)
-    - group_sum(rate * discharge_factor, over=flow, by=discharge_storage)
+    group_sum(rate * charge_gain, over=flow, by=charge_storage)
+    - group_sum(rate * discharge_draw, over=flow, by=discharge_storage)
 
 constraints:
   carrier_balance:
@@ -275,8 +277,8 @@ constraints:
   conversion:
     foreach: [converter, eq_idx, time, period]
     equations:
-      - expression: group_sum(rate * conv_coeff, over=flow, by=converter) == 0
-        where: "eq_active"
+      - expression: group_sum(rate * conversion_factor, over=flow, by=converter) == 0
+        where: "conversion_active"
 
   storage_balance:
     foreach: [storage, time, period]
@@ -294,11 +296,11 @@ constraints:
     foreach: [flow, time, period]
     where: "has_status AND NOT has_sizing"
     equations:
-      - expression: rate >= rate_lb_on * on
+      - expression: rate >= rate_min_when_on * on
         where: "is_bounded"
-      - expression: rate <= rate_ub_on * on
+      - expression: rate <= rate_max_when_on * on
         where: "is_bounded"
-      - expression: rate == rate_fix_on * on
+      - expression: rate == rate_fixed_when_on * on
         where: "is_profile"
 
   status_transition:
@@ -307,8 +309,8 @@ constraints:
     equations:
       - expression: startup - shutdown == on - shift(on, time=1)
         where: "NOT is_first"
-      - expression: startup - shutdown == on - initial_on
-        where: "has_initial AND is_first"
+      - expression: startup - shutdown == on - initial_status
+        where: "initial_status AND is_first"
       - expression: startup + shutdown <= 1
 
   # Big-M duration tracking: uptime[t] accumulates dt while `on` holds.
@@ -316,14 +318,14 @@ constraints:
     foreach: [flow, time, period]
     where: "has_uptime"
     equations:
-      - expression: uptime <= mega_up * on
-      - expression: uptime <= shift(uptime, time=1) + dt_prev
+      - expression: uptime <= uptime_big_m * on
+      - expression: uptime <= shift(uptime, time=1) + dt_previous
         where: "NOT is_first"
-      - expression: uptime >= shift(uptime, time=1) + dt_prev + (on - 1) * mega_up
+      - expression: uptime >= shift(uptime, time=1) + dt_previous + (on - 1) * uptime_big_m
         where: "NOT is_first"
       # minimum run length, read one step ahead
       - expression: uptime >= uptime_min * (on - shift(on, time=-1))
-        where: "has_uptime_min AND NOT is_last"
+        where: "uptime_min AND NOT is_last"
 
   # P in [rel_lb, rel_ub] * S with S a decision variable — so these leave
   # `bounds:` and become rows (linopy-yaml #31).
@@ -331,11 +333,11 @@ constraints:
     foreach: [flow, time, period]
     where: "(has_sizing OR has_invest) AND NOT has_status"
     equations:
-      - expression: rate >= rel_lb_size * size
+      - expression: rate >= relative_rate_min * size
         where: "is_bounded"
-      - expression: rate <= rel_ub_size * size
+      - expression: rate <= relative_rate_max * size
         where: "is_bounded"
-      - expression: rate == profile_size * size
+      - expression: rate == fixed_relative_profile * size
         where: "is_profile"
 
   # P <= on*M+, P <= S*rel_ub, P >= (on-1)*M- + S*rel_lb
@@ -343,9 +345,9 @@ constraints:
     foreach: [flow, time, period]
     where: "has_status AND has_sizing"
     equations:
-      - expression: rate <= bigm_ub * on
-      - expression: rate <= rel_ub_size * size
-      - expression: rate - bigm_lb * on - rel_lb_size * size >= 0 - bigm_lb
+      - expression: rate <= rate_max_at_size_max * on
+      - expression: rate <= relative_rate_max * size
+      - expression: rate - rate_min_at_size_max * on - relative_rate_min * size >= 0 - rate_min_at_size_max
 
   # an unbuilt unit cannot be on
   status_sizing_gate:
@@ -353,20 +355,20 @@ constraints:
     where: "has_status AND has_sizing"
     equations:
       - expression: size >= size_min * on
-        where: "has_size_min_pos"
-      - expression: on <= size_ind
-        where: "is_optional AND NOT has_size_min_pos"
+        where: "size_min > 0"
+      - expression: on <= size_built
+        where: "size_optional AND NOT (size_min > 0)"
 
   sizing_bounds:
     foreach: [flow, period]
     where: "has_sizing"
     equations:
       - expression: size >= size_min
-        where: "NOT is_optional"
-      - expression: size >= size_min * size_ind
-        where: "is_optional"
-      - expression: size <= size_max * size_ind
-        where: "is_optional"
+        where: "NOT size_optional"
+      - expression: size >= size_min * size_built
+        where: "size_optional"
+      - expression: size <= size_max * size_built
+        where: "size_optional"
 
   # P_t - P_{t-1} <= r+ * S * dt, relaxed at a startup for status flows.
   # Periods are independent, hence the is_first mask.
@@ -399,22 +401,22 @@ constraints:
   # Capacity as a decision variable: the level envelope becomes rows.
   cap_level:
     foreach: [storage, time, period]
-    where: "has_cap_sizing"
+    where: "has_capacity_sizing"
     equations:
       - expression: level <= capacity
-      - expression: level >= rel_level_lb * capacity
-      - expression: level <= rel_level_ub * capacity
+      - expression: level >= relative_level_min * capacity
+      - expression: level <= relative_level_max * capacity
 
   cap_bounds:
     foreach: [storage, period]
-    where: "has_cap_sizing"
+    where: "has_capacity_sizing"
     equations:
-      - expression: capacity >= cap_min
-        where: "NOT cap_is_optional"
-      - expression: capacity >= cap_min * cap_ind
-        where: "cap_is_optional"
-      - expression: capacity <= cap_max * cap_ind
-        where: "cap_is_optional"
+      - expression: capacity >= capacity_min
+        where: "NOT capacity_optional"
+      - expression: capacity >= capacity_min * capacity_built
+        where: "capacity_optional"
+      - expression: capacity <= capacity_max * capacity_built
+        where: "capacity_optional"
 
   # Downtime mirrors uptime with the state inverted: (1 - on).
   # (1-on[t]) - (1-on[t+1]) reduces to shift(on, time=-1) - on.
@@ -422,13 +424,13 @@ constraints:
     foreach: [flow, time, period]
     where: "has_downtime"
     equations:
-      - expression: downtime + mega_down * on <= mega_down
-      - expression: downtime <= shift(downtime, time=1) + dt_prev
+      - expression: downtime + downtime_big_m * on <= downtime_big_m
+      - expression: downtime <= shift(downtime, time=1) + dt_previous
         where: "NOT is_first"
-      - expression: downtime >= shift(downtime, time=1) + dt_prev - mega_down * on
+      - expression: downtime >= shift(downtime, time=1) + dt_previous - downtime_big_m * on
         where: "NOT is_first"
       - expression: downtime >= downtime_min * (shift(on, time=-1) - on)
-        where: "has_downtime_min AND NOT is_last"
+        where: "downtime_min AND NOT is_last"
 
   # Carry-over from before the horizon: duration[0] = state[0] * (previous + dt[0]),
   # and a prior run shorter than the minimum forces continuation.
@@ -436,31 +438,31 @@ constraints:
     foreach: [flow, time, period]
     where: "is_first"
     equations:
-      - expression: uptime == on * (prev_uptime + dt_first)
-        where: "has_prev_up"
-      - expression: downtime + on * (prev_downtime + dt_first) == prev_downtime + dt_first
-        where: "has_prev_down"
+      - expression: uptime == on * (previous_uptime + dt_at_start)
+        where: "previous_uptime"
+      - expression: downtime + on * (previous_downtime + dt_at_start) == previous_downtime + dt_at_start
+        where: "previous_downtime"
       - expression: on >= 1
-        where: "force_up_start"
+        where: "forced_on_at_start"
       - expression: on <= 0
-        where: "force_down_start"
+        where: "forced_off_at_start"
 
   storage_final:
     foreach: [storage, time, period]
     where: "is_last"
     equations:
       - expression: level >= final_level_min
-        where: "has_final_min"
+        where: "final_level_min"
       - expression: level <= final_level_max
-        where: "has_final_max"
+        where: "final_level_max"
 
   # P^c <= M^c b,  P^d <= M^d (1 - b)
   storage_no_simul:
     foreach: [storage, time, period]
-    where: "prevent_simul"
+    where: "prevent_simultaneous"
     equations:
-      - expression: group_sum(rate, over=flow, by=charge_storage) - m_charge * charging <= 0
-      - expression: group_sum(rate, over=flow, by=discharge_storage) + m_discharge * charging <= m_discharge
+      - expression: group_sum(rate, over=flow, by=charge_storage) - charge_size_bound * charging <= 0
+      - expression: group_sum(rate, over=flow, by=discharge_storage) + discharge_size_bound * charging <= discharge_size_bound
 
   # Build at most once (exactly once when mandatory); never when capacity
   # already exists from before the horizon.
@@ -469,30 +471,30 @@ constraints:
     where: "has_invest"
     equations:
       - expression: sum(invest_build, over=build_period) == 1
-        where: "invest_mandatory AND NOT has_invest_prior"
+        where: "invest_mandatory AND NOT has_prior_capacity"
       - expression: sum(invest_build, over=build_period) <= 1
-        where: "NOT invest_mandatory AND NOT has_invest_prior"
+        where: "NOT invest_mandatory AND NOT has_prior_capacity"
       - expression: sum(invest_build, over=build_period) == 0
-        where: "has_invest_prior"
+        where: "has_prior_capacity"
 
   invest_active_logic:
     foreach: [flow, period]
     where: "has_invest"
     equations:
-      - expression: invest_active - sum(invest_build * invest_window, over=build_period) == invest_prior_active
+      - expression: invest_active - sum(invest_build * lifetime_window, over=build_period) == prior_capacity_active
 
   invest_size_bounds:
     foreach: [flow]
     where: "has_invest"
     equations:
-      - expression: invest_size == invest_prior_size
-        where: "has_invest_prior"
+      - expression: invest_size == prior_capacity
+        where: "has_prior_capacity"
       - expression: invest_size >= invest_min
-        where: "invest_mandatory AND NOT has_invest_prior"
+        where: "invest_mandatory AND NOT has_prior_capacity"
       - expression: invest_size - invest_min * sum(invest_build, over=build_period) >= 0
-        where: "NOT invest_mandatory AND NOT has_invest_prior"
+        where: "NOT invest_mandatory AND NOT has_prior_capacity"
       - expression: invest_size - invest_max * sum(invest_build, over=build_period) <= 0
-        where: "NOT invest_mandatory AND NOT has_invest_prior"
+        where: "NOT invest_mandatory AND NOT has_prior_capacity"
 
   # size == invest_size when active, 0 when not (big-M).
   invest_size_link:
@@ -508,45 +510,45 @@ constraints:
     foreach: [flow, build_period]
     where: "has_invest"
     equations:
-      - expression: invest_sab - invest_max * invest_build <= 0
-      - expression: invest_sab - invest_size <= 0
-      - expression: invest_sab - invest_size - invest_max * invest_build >= 0 - invest_max
+      - expression: invest_size_at_build - invest_max * invest_build <= 0
+      - expression: invest_size_at_build - invest_size <= 0
+      - expression: invest_size_at_build - invest_size - invest_max * invest_build >= 0 - invest_max
 
   effect_accounting:
     foreach: [effect, period]
     equations:
       - expression: >-
-          effect_total == sum(sum(rate * effect_coeff, over=time), over=flow)
-          + sum(sum(on * on_coeff, over=time), over=flow)
-          + sum(sum(startup * startup_coeff, over=time), over=flow)
-          + sum(size * size_coeff, over=flow)
-          + sum(size_ind * ind_coeff, over=flow)
-          + sum(capacity * cap_coeff, over=storage)
-          + sum(cap_ind * cap_ind_coeff, over=storage)
-          + sum(sum(invest_sab * sab_coeff, over=build_period), over=flow)
-          + sum(sum(invest_build * build_coeff, over=build_period), over=flow)
-          + sum(size * invest_recurring_size_coeff, over=flow)
-          + sum(invest_active * invest_recurring_fixed_coeff, over=flow)
-          + lump_const
+          effect_total == per_step(rate, effects_per_flow_hour)
+          + per_step(on, effects_per_running_hour)
+          + per_step(startup, effects_per_startup)
+          + per_entity(size, effects_per_size, over=flow)
+          + per_entity(size_built, effects_fixed, over=flow)
+          + per_entity(capacity, effects_per_capacity, over=storage)
+          + per_entity(capacity_built, effects_fixed_capacity, over=storage)
+          + at_build(invest_size_at_build, effects_per_size_at_build)
+          + at_build(invest_build, effects_fixed_at_build)
+          + per_entity(size, effects_per_size_recurring, over=flow)
+          + per_entity(invest_active, effects_fixed_recurring, over=flow)
+          + effects_fixed_mandatory
 
   effect_periodic_bounds:
     foreach: [effect, period]
     equations:
       - expression: effect_total >= periodic_min
-        where: "has_periodic_min"
+        where: "periodic_min"
       - expression: effect_total <= periodic_max
-        where: "has_periodic_max"
+        where: "periodic_max"
 
   effect_total_bounds:
     foreach: [effect]
     equations:
-      - expression: sum(effect_total * total_weight, over=period) >= total_min
-        where: "has_total_min"
-      - expression: sum(effect_total * total_weight, over=period) <= total_max
-        where: "has_total_max"
+      - expression: sum(effect_total * period_weight, over=period) >= total_min
+        where: "total_min"
+      - expression: sum(effect_total * period_weight, over=period) <= total_max
+        where: "total_max"
 
 objectives:
   weighted_effects:
     sense: minimize
     equations:
-      - expression: sum(sum(effect_total * obj_weight, over=period), over=effect)
+      - expression: sum(sum(effect_total * objective_weight, over=period), over=effect)
