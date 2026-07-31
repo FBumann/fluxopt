@@ -59,6 +59,18 @@ bounds [MWh] on the level at the last timestep, per period:
 They compose with `cyclic` (the prior level is then bounded too, since
 \(E_{s,t_0} = E_{s,t_{\text{end}}}\)).
 
+## Episode Boundaries
+
+The charge balance is a chain — it links each timestep to its predecessor,
+which is only physical while timesteps are genuinely consecutive. In
+multi-period models the time axis jumps between periods, so each period is
+an independent *episode*: the recursion never links a period's first
+timestep to the previous period's last. The initial condition
+(`prior_level`) and the cyclic condition apply per episode — \(t_0\) and
+\(t_{\text{end}}\) above are each episode's first and last timestep. With a
+single period there is exactly one episode and the classic reading applies
+unchanged.
+
 ## Simultaneous Charge & Discharge
 
 With \(\eta^{\text{c}} \cdot \eta^{\text{d}} < 1\), charging and discharging

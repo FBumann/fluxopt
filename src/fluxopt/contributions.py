@@ -162,7 +162,7 @@ def _apply_cross_effects(
     """
     assert data.effects.cf_temporal is not None
     temporal_out = _apply_leontief(_leontief(data.effects.cf_temporal), temporal)
-    cf_lump = data.effects.cf_temporal.mean('time')
+    cf_lump = data.dims.mean_time(data.effects.cf_temporal)
     lump_out = _apply_leontief(_leontief(cf_lump), lump)
     return temporal_out, lump_out
 
@@ -174,7 +174,7 @@ def _validate_against_solver(total: xr.DataArray, solution: xr.Dataset) -> None:
     pipeline bug that should fail loudly here rather than be silently aligned.
     """
     solver = solution[Var.EFFECT_TOTAL]
-    computed = total.sum('contributor')
+    computed = total.sum('contributor').transpose(*solver.dims)
     if not np.allclose(computed.values, solver.values, atol=1e-6):
         diff = abs(computed - solver)
         raise ValueError(
@@ -189,7 +189,8 @@ def _finalize(
     data: ModelData,
 ) -> xr.Dataset:
     """Combine temporal + lump into the public ``(temporal, lump, total)`` Dataset."""
-    total = (temporal * data.dims.weights).sum('time').reindex(contributor=all_ids, fill_value=0.0) + lump.reindex(
+    temporal_sum = data.dims.sum_time(temporal * data.dims.weights)
+    total = temporal_sum.reindex(contributor=all_ids, fill_value=0.0) + lump.reindex(
         contributor=all_ids, fill_value=0.0
     )
     return xr.Dataset({'temporal': temporal, 'lump': lump, 'total': total})

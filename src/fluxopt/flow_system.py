@@ -121,7 +121,7 @@ class FlowSystem(BaseModel):
 
     model_config = _PYDANTIC_CFG
 
-    timesteps: Timesteps
+    timesteps: Timesteps | dict[int, Timesteps]
     """Time index for the optimization horizon."""
     carriers: list[Carrier]
     """Carrier declarations."""

@@ -288,6 +288,8 @@ class Result:
             sol_vars,
             attrs={'objective': obj_val, 'objective_weights': json.dumps(model._objective_weights)},
         )
+        if model.data.dims.time_period is not None:
+            solution = solution.assign_coords(time_period=model.data.dims.time_period)
         duals = model.m.dual
 
         from fluxopt.contributions import _with_cross_effects, compute_effect_contributions

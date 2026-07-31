@@ -513,7 +513,7 @@ class TestFlowConstraints:
         assert_allclose(result.objective, 80.0, rtol=1e-5)
         cheap = result.flow_rate('CheapSrc(Heat)')
         for p in (2020, 2025):
-            per_period = float(cheap.sel(period=p).values.sum())
+            per_period = float(cheap.where(cheap.time_period == p).sum().values)
             assert per_period <= 15.0 + 1e-5, f'CheapSrc above flow_hours_max in period {p}: {per_period}'
 
     def test_flow_hours_max_respects_timestep_duration(self):

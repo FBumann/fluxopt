@@ -2,6 +2,11 @@
 
 Module-level functions that add binary status tracking constraints
 to a linopy Model. Used by FlowSystemModel to build status features.
+
+All temporal chains (duration tracking, switch transitions) respect
+episode boundaries: in multi-period models each period is an independent
+episode and no constraint links its first timestep to the previous
+period's last.
 """
 
 from __future__ import annotations
@@ -11,8 +16,11 @@ from typing import TYPE_CHECKING
 import xarray as xr
 
 if TYPE_CHECKING:
+    import numpy as np
     from linopy import Model, Variable
     from linopy.expressions import LinearExpression
+
+    from fluxopt.constraints.episodes import Episodes
 
 __all__ = [
     'add_duration_tracking',
@@ -63,11 +71,14 @@ def add_duration_tracking(
     minimum: xr.DataArray | None = None,
     maximum: xr.DataArray | None = None,
     previous: xr.DataArray | None = None,
+    episodes: Episodes,
 ) -> Variable:
     """Add consecutive duration tracking for a binary state variable.
 
     Uses Big-M formulation to track how long each element has been
-    continuously in the given state.
+    continuously in the given state. Tracking resets at episode starts;
+    ``previous`` applies at every episode start (each period sees the same
+    pre-horizon history).
 
     Args:
         m: Linopy model to add constraints to.
@@ -79,19 +90,24 @@ def add_duration_tracking(
         minimum: Minimum duration per element. NaN = no constraint.
         maximum: Maximum duration per element. NaN = no constraint.
         previous: Previous duration per element. NaN = no previous.
+        episodes: Episode partition of the ``dim`` axis — tracking resets at
+            its boundaries. Pass ``Episodes.single(...)`` for one
+            uninterrupted chain.
 
     Returns:
         Duration variable with same dims as state.
     """
     element_ids: xr.DataArray = state.coords[element_dim]
+    labels = state.coords[dim].values
+    starts = episodes.check(dim, len(labels)).flags
+    chain_mask = xr.DataArray(~starts[1:], dims=[dim], coords={dim: labels[1:]})
 
-    # Big-M per element: total horizon + any previous carryover
-    mega = dt.sum(dim)
+    mega = episodes.max_duration(dt)
     if previous is not None:
         mega = mega + previous.fillna(0)
 
     # Variable upper bound: use maximum where provided, else mega
-    upper: xr.DataArray = maximum.where(maximum.notnull(), mega) if maximum is not None else mega
+    upper: xr.DataArray | float = maximum.where(maximum.notnull(), mega) if maximum is not None else mega
 
     coords = [state.indexes[element_dim], state.indexes[dim]]
     duration = m.add_variables(lower=0, upper=upper, coords=coords, name=name)
@@ -99,19 +115,18 @@ def add_duration_tracking(
     # duration[e,t] <= state[e,t] * M[e]
     m.add_constraints(duration <= state * mega, name=f'{name}|ub')
 
-    # Forward: duration[e,t+1] <= duration[e,t] + dt[t]
-    m.add_constraints(
-        duration.isel({dim: slice(1, None)}) <= duration.isel({dim: slice(None, -1)}) + dt.isel({dim: slice(None, -1)}),
-        name=f'{name}|fwd',
-    )
+    curr = duration.isel({dim: slice(1, None)})
+    prev = duration.isel({dim: slice(None, -1)}).assign_coords({dim: labels[1:]})
+    dt_step = dt.isel({dim: slice(1, None)})
 
-    # Backward: duration[e,t+1] >= duration[e,t] + dt[t] + (state[e,t+1] - 1) * M[e]
+    # Forward: duration[e,t+1] <= duration[e,t] + dt[t+1] — within episodes only
+    m.add_constraints(curr <= prev + dt_step, name=f'{name}|fwd', mask=chain_mask)
+
+    # Backward: duration[e,t+1] >= duration[e,t] + dt[t+1] + (state[e,t+1] - 1) * M[e]
     m.add_constraints(
-        duration.isel({dim: slice(1, None)})
-        >= duration.isel({dim: slice(None, -1)})
-        + dt.isel({dim: slice(None, -1)})
-        + (state.isel({dim: slice(1, None)}) - 1) * mega,
+        curr >= prev + dt_step + (state.isel({dim: slice(1, None)}) - 1) * mega,
         name=f'{name}|bwd',
+        mask=chain_mask,
     )
 
     # Initial constraints for elements with previous duration
@@ -129,11 +144,12 @@ def add_duration_tracking(
                 name=name,
                 dim=dim,
                 element_dim=element_dim,
+                start_positions=episodes.start_positions.tolist(),
             )
 
     # Minimum duration: duration[t] >= min * (state[t] - state[t+1])
     if minimum is not None:
-        _add_minimum_constraints(m, state, duration, minimum, name, dim, element_dim)
+        _add_minimum_constraints(m, state, duration, minimum, name, dim, element_dim, starts)
 
     return duration
 
@@ -148,8 +164,9 @@ def _add_initial_constraints(
     name: str,
     dim: str,
     element_dim: str,
+    start_positions: list[int],
 ) -> None:
-    """Add initial duration constraints from previous period.
+    """Add initial duration constraints at each episode start.
 
     Args:
         m: Linopy model.
@@ -161,13 +178,14 @@ def _add_initial_constraints(
         name: Base constraint name.
         dim: Temporal dimension name.
         element_dim: Element dimension name.
+        start_positions: Positions of episode starts.
     """
     ids = list(previous.coords[element_dim].values)
-    state_0 = state.sel({element_dim: ids}).isel({dim: 0})
-    dur_0 = duration.sel({element_dim: ids}).isel({dim: 0})
-    dt_0 = dt.isel({dim: 0})
+    state_0 = state.sel({element_dim: ids}).isel({dim: start_positions})
+    dur_0 = duration.sel({element_dim: ids}).isel({dim: start_positions})
+    dt_0 = dt.isel({dim: start_positions})
 
-    # duration[0] = state[0] * (previous + dt[0])
+    # duration[s] = state[s] * (previous + dt[s]) at each episode start
     m.add_constraints(dur_0 == state_0 * (previous + dt_0), name=f'{name}|init')
 
     # Force continuation if previous duration < minimum
@@ -176,7 +194,7 @@ def _add_initial_constraints(
         if needs_cont.any():
             cont_ids = list(previous.coords[element_dim].values[needs_cont.values])
             m.add_constraints(
-                state.sel({element_dim: cont_ids}).isel({dim: 0}) >= 1,
+                state.sel({element_dim: cont_ids}).isel({dim: start_positions}) >= 1,
                 name=f'{name}|init_cont',
             )
 
@@ -189,6 +207,7 @@ def _add_minimum_constraints(
     name: str,
     dim: str,
     element_dim: str,
+    starts: np.ndarray,
 ) -> None:
     """Add minimum duration constraints on state transitions.
 
@@ -200,6 +219,7 @@ def _add_minimum_constraints(
         name: Base constraint name.
         dim: Temporal dimension name.
         element_dim: Element dimension name.
+        starts: Boolean per-position episode start flags.
     """
     has_min = minimum.notnull()
     if not has_min.any():
@@ -210,11 +230,14 @@ def _add_minimum_constraints(
     state_sub = state.sel({element_dim: min_ids})
     dur_sub = duration.sel({element_dim: min_ids})
 
-    # duration[t] >= min * (state[t] - state[t+1])
+    # duration[t] >= min * (state[t] - state[t+1]) — only for within-episode pairs
+    labels = state.coords[dim].values
+    pair_mask = xr.DataArray(~starts[1:], dims=[dim], coords={dim: labels[:-1]})
     state_diff = state_sub.isel({dim: slice(None, -1)}) - state_sub.isel({dim: slice(1, None)})
     m.add_constraints(
         dur_sub.isel({dim: slice(None, -1)}) >= min_sub * state_diff,
         name=f'{name}|min',
+        mask=pair_mask,
     )
 
 
@@ -228,11 +251,13 @@ def add_switch_transitions(
     element_dim: str = 'flow',
     dim: str = 'time',
     previous_state: xr.DataArray | None = None,
+    episodes: Episodes,
 ) -> None:
     """Add startup/shutdown transition constraints.
 
     Links status changes to startup and shutdown indicator variables:
-    ``startup[t] - shutdown[t] == status[t] - status[t-1]``.
+    ``startup[t] - shutdown[t] == status[t] - status[t-1]``, within episodes.
+    ``previous_state`` pins the transition at each episode start.
 
     Args:
         m: Linopy model.
@@ -243,12 +268,20 @@ def add_switch_transitions(
         element_dim: Element dimension name in status.
         dim: Temporal dimension name.
         previous_state: Previous on/off per element (pre-filtered, no NaN).
+        episodes: Episode partition of the ``dim`` axis — transitions never
+            link across its boundaries. Pass ``Episodes.single(...)`` for one
+            uninterrupted chain.
     """
-    # Transition for t > 0
+    labels = status.coords[dim].values
+    starts = episodes.check(dim, len(labels)).flags
+    chain_mask = xr.DataArray(~starts[1:], dims=[dim], coords={dim: labels[1:]})
+
+    # Transition within episodes (t not an episode start)
     m.add_constraints(
         startup.isel({dim: slice(1, None)}) - shutdown.isel({dim: slice(1, None)})
         == status.isel({dim: slice(1, None)}) - status.isel({dim: slice(None, -1)}),
         name=f'{name}|transition',
+        mask=chain_mask,
     )
 
     # At most one of startup/shutdown per step. Together with the transition
@@ -257,11 +290,13 @@ def add_switch_transitions(
     # and could be exploited by constraints relaxed via startup (e.g. ramps).
     m.add_constraints(startup + shutdown <= 1, name=f'{name}|exclusive')
 
-    # Initial transition from previous state
+    # Initial transition from previous state, at each episode start
     if previous_state is not None:
+        start_positions = episodes.start_positions.tolist()
         ids = list(previous_state.coords[element_dim].values)
         m.add_constraints(
-            startup.sel({element_dim: ids}).isel({dim: 0}) - shutdown.sel({element_dim: ids}).isel({dim: 0})
-            == status.sel({element_dim: ids}).isel({dim: 0}) - previous_state,
+            startup.sel({element_dim: ids}).isel({dim: start_positions})
+            - shutdown.sel({element_dim: ids}).isel({dim: start_positions})
+            == status.sel({element_dim: ids}).isel({dim: start_positions}) - previous_state,
             name=f'{name}|init',
         )

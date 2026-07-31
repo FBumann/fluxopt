@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pandas as pd
 import pytest
 import xarray as xr
 from conftest import ts
@@ -390,6 +391,184 @@ class TestDimsValidation:
         bad_weights = xr.DataArray(np.ones(3), dims=['time'], coords={'time': [0, 1, 2]})
         with pytest.raises(ValueError, match='does not match'):
             Dims(time=time, dt=dt, weights=bad_weights)
+
+
+class TestFlatTimeIndex:
+    """Dims builds one flat time axis; periods ride along as time_period."""
+
+    def test_single_period_unchanged(self):
+        dims = Dims.build(ts(3))
+        assert dims.period is None
+        assert dims.time_period is None
+        assert list(dims.episodes.starts.values) == [True, False, False]
+
+    def test_uniform_periods_shift_calendar_years(self):
+        dims = Dims.build(ts(3), periods=[2020, 2025])
+        assert len(dims.time) == 6
+        years = pd.DatetimeIndex(dims.time.values).year
+        assert list(years) == [2024, 2024, 2024, 2029, 2029, 2029]
+        assert list(dims.time_period.values) == [2020, 2020, 2020, 2025, 2025, 2025]
+        assert list(dims.episodes.start_positions) == [0, 3]
+        assert list(dims.episodes.last_positions) == [2, 5]
+
+    def test_integer_timesteps_get_running_index(self):
+        dims = Dims.build([0, 1, 2], periods=[1, 2], period_weights=[1, 1])
+        assert list(dims.time.values) == [0, 1, 2, 3, 4, 5]
+
+    def test_ragged_periods_have_own_dt(self):
+        dims = Dims.build(
+            {
+                2030: pd.date_range('2030-01-01', periods=4, freq='h'),
+                2040: pd.date_range('2040-01-01', periods=2, freq='4h'),
+            }
+        )
+        assert list(dims.dt.values) == [1, 1, 1, 1, 4, 4]
+        assert list(dims.time_period.values) == [2030] * 4 + [2040] * 2
+        # gap-inferred period weights
+        assert list(dims.period_weights.values) == [10, 10]
+
+    def test_leap_year_base_replicates_safely(self):
+        # Feb 29 in the base grid must not collide when shifted into
+        # non-leap years (whole-day offset, not calendar-year arithmetic).
+        base = pd.date_range('2024-02-28 22:00', periods=6, freq='h')
+        dims = Dims.build(base, periods=[2030, 2040], period_weights=[1, 1])
+        flat = pd.DatetimeIndex(dims.time.values)
+        assert flat.is_monotonic_increasing and flat.is_unique
+        # constant whole-day offset preserves time-of-day and dt
+        assert list(flat.hour[:6]) == list(flat.hour[6:])
+        assert list(dims.dt.values) == [1.0] * 12
+
+    def test_ragged_requires_datetime(self):
+        with pytest.raises(TypeError, match='datetime'):
+            Dims.build({2030: [0, 1, 2], 2040: [0, 1]})
+
+    def test_mapping_forbids_periods_arg(self):
+        with pytest.raises(ValueError, match='periods must not be given'):
+            Dims.build({2030: ts(2), 2040: ts(2)}, periods=[2030, 2040])
+
+    def test_overlapping_period_grids_raise(self):
+        overlapping = {
+            2030: pd.date_range('2030-01-01', periods=2, freq='h'),
+            2040: pd.date_range('2029-01-01', periods=2, freq='h'),
+        }
+        with pytest.raises(ValueError, match='increasing'):
+            Dims.build(overlapping)
+
+    def test_map_to_time_strips_period_coord_from_variables(self):
+        import linopy
+
+        dims = Dims.build(ts(2), periods=[2030, 2040], period_weights=[1, 1])
+        m = linopy.Model()
+        var = m.add_variables(coords=dims.coords(period=True), name='size')
+        mapped = dims.map_to_time(var)
+        assert 'time' in mapped.dims
+        assert 'period' not in mapped.coords
+
+    def test_replicas_overlapping_raise(self):
+        base = pd.DatetimeIndex(['2024-01-01', '2025-06-01'])
+        with pytest.raises(ValueError, match='increasing'):
+            Dims.build(base, periods=[2020, 2021], period_weights=[1, 1])
+
+
+class TestOperationalInputAlignment:
+    """Operational profiles must align to the flat axis — no silent resampling."""
+
+    def _build(self, profile, timesteps=None, periods=(2030, 2040)):
+        return ModelData.build(
+            timesteps if timesteps is not None else ts(2),
+            carriers=[Carrier(id='Heat')],
+            effects=[Effect(id='cost')],
+            ports=[
+                Port(id='Demand', exports=[Flow(carrier='Heat', size=1, fixed_relative_profile=profile)]),
+                Port(id='Grid', imports=[Flow(carrier='Heat')]),
+            ],
+            periods=list(periods) if periods else None,
+            period_weights=[1] * len(periods) if periods else None,
+        )
+
+    def test_within_period_profile_tiles(self):
+        data = self._build([3.0, 4.0])
+        assert list(data.flows.fixed_profile.sel(flow='Demand(Heat)').values) == [3, 4, 3, 4]
+
+    def test_flat_profile_used_as_is(self):
+        data = self._build([1.0, 2.0, 3.0, 4.0])
+        assert list(data.flows.fixed_profile.sel(flow='Demand(Heat)').values) == [1, 2, 3, 4]
+
+    def test_period_mapping_aligns_per_period(self):
+        ragged = {
+            2030: pd.date_range('2030-01-01', periods=3, freq='h'),
+            2040: pd.date_range('2040-01-01', periods=2, freq='4h'),
+        }
+        data = self._build({2030: [1.0, 2.0, 3.0], 2040: [7.0, 8.0]}, timesteps=ragged, periods=None)
+        assert list(data.flows.fixed_profile.sel(flow='Demand(Heat)').values) == [1, 2, 3, 7, 8]
+
+    def test_period_mapping_accepts_base_grid_labels(self):
+        # Uniform mode shifts later periods' labels internally; users only
+        # know the base grid, so {period: series} indexed by it must work.
+        base = pd.DatetimeIndex(ts(2), name='time')
+        data = self._build(
+            {
+                2030: pd.Series([1.0, 2.0], index=base),
+                2040: pd.Series([7.0, 8.0], index=base),
+            }
+        )
+        profile = data.flows.fixed_profile.sel(flow='Demand(Heat)')
+        assert list(profile.values) == [1, 2, 7, 8]
+
+    def test_series_with_foreign_index_name_raises(self):
+        bad = pd.Series([1.0, 2.0], index=pd.Index(['a', 'b'], name='timestamp'))
+        with pytest.raises(ValueError, match="'timestamp'"):
+            self._build(bad)
+
+    def test_mismatched_length_raises(self):
+        with pytest.raises(ValueError, match='matches no time grid'):
+            self._build([1.0, 2.0, 3.0])
+
+    def test_mapping_key_mismatch_raises(self):
+        with pytest.raises(ValueError, match='do not match periods'):
+            self._build({2030: [1.0, 2.0], 2035: [3.0, 4.0]})
+
+    def test_bare_list_is_always_a_time_profile(self):
+        # 3 periods x 3 within-period timesteps: the period-count collision
+        # must not change the meaning — bare lists are time profiles, period
+        # values require a named form.
+        data = self._build([1.0, 2.0, 3.0], timesteps=ts(3), periods=(2030, 2040, 2050))
+        profile = data.flows.fixed_profile.sel(flow='Demand(Heat)')
+        assert list(profile.values) == [1, 2, 3] * 3
+
+    def test_bare_list_of_period_count_length_errors_with_hint(self):
+        # ts(3) x 2 periods: a bare list of 2 matches no time grid; the error
+        # points to the named per-period forms instead of guessing.
+        with pytest.raises(ValueError, match=r'\{period: value\} mapping'):
+            self._build([1.0, 2.0], timesteps=ts(3))
+
+    def test_per_period_values_via_period_dataarray(self):
+        per_period = xr.DataArray([1.0, 2.0, 3.0], dims=['period'], coords={'period': [2030, 2040, 2050]})
+        data = self._build(per_period, timesteps=ts(3), periods=(2030, 2040, 2050))
+        profile = data.flows.fixed_profile.sel(flow='Demand(Heat)')
+        assert list(profile.values) == [1, 1, 1, 2, 2, 2, 3, 3, 3]
+
+    def test_per_period_values_via_mapping(self):
+        data = self._build(
+            {2030: [1.0, 2.0, 3.0], 2040: [1.0, 2.0, 3.0], 2050: [1.0, 2.0, 3.0]},
+            timesteps=ts(3),
+            periods=(2030, 2040, 2050),
+        )
+        profile = data.flows.fixed_profile.sel(flow='Demand(Heat)')
+        assert list(profile.values) == [1, 2, 3] * 3
+
+    def test_time_period_frame_requires_uniform_grid(self):
+        ragged = {
+            2030: pd.date_range('2030-01-01', periods=3, freq='h'),
+            2040: pd.date_range('2040-01-01', periods=2, freq='4h'),
+        }
+        frame = pd.DataFrame(
+            [[1.0, 2.0]] * 3,
+            index=pd.DatetimeIndex(pd.date_range('2030-01-01', periods=3, freq='h'), name='time'),
+            columns=pd.Index([2030, 2040], name='period'),
+        )
+        with pytest.raises(ValueError, match='uniform grid'):
+            self._build(frame, timesteps=ragged, periods=None)
 
 
 class TestEffectTerms:

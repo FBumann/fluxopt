@@ -273,7 +273,7 @@ class FlowSystemModel:
         ds = self.data.flows
         self.flow_rate = self.m.add_variables(
             lower=0,
-            coords={'flow': ds.rel_lb.coords['flow'], **self.data.dims.coords(time=True, period=True)},
+            coords={'flow': ds.rel_lb.coords['flow'], **self.data.dims.coords(time=True)},
             name=Var.FLOW_RATE,
         )
 
@@ -385,7 +385,7 @@ class FlowSystemModel:
 
         status_ids = ds.status.uptime_min.coords[Dim.STATUS_FLOW].values
         flow_coord = xr.DataArray(status_ids, dims=['flow'])
-        tp = {'flow': flow_coord, **self.data.dims.coords(time=True, period=True)}
+        tp = {'flow': flow_coord, **self.data.dims.coords(time=True)}
 
         self.flow_on = self._add_variables(binary=True, coords=tp, name=Var.FLOW_ON)
         self.flow_startup = self._add_variables(binary=True, coords=tp, name=Var.FLOW_STARTUP)
@@ -406,7 +406,7 @@ class FlowSystemModel:
 
         comp_ids = ds.cstatus.uptime_min.coords[Dim.CSTATUS_COMPONENT].values
         comp_coord = xr.DataArray(comp_ids, dims=['component'])
-        tp = {'component': comp_coord, **self.data.dims.coords(time=True, period=True)}
+        tp = {'component': comp_coord, **self.data.dims.coords(time=True)}
 
         self.component_on = self._add_variables(binary=True, coords=tp, name=Var.COMPONENT_ON)
         self.component_startup = self._add_variables(binary=True, coords=tp, name=Var.COMPONENT_STARTUP)
@@ -495,7 +495,7 @@ class FlowSystemModel:
         fp = ds.fixed_profile.sel(flow=invest_ids)
         inv_bounded = (ds.bound_type == BoundType.BOUNDED).sel(flow=invest_ids)
         inv_profile = (ds.bound_type == BoundType.PROFILE).sel(flow=invest_ids)
-        fs = self.flow_size.sel(flow=invest_ids)
+        fs = self._flow_size_on_time(invest_ids)
 
         var_mask = inv_bounded.broadcast_like(rl)
         if var_mask.any():
@@ -577,7 +577,7 @@ class FlowSystemModel:
 
         fr = self.flow_rate.sel(flow=flow_ids)
         on = self.flow_on.sel(flow=flow_ids)
-        fs = self.flow_size.sel(flow=flow_ids)
+        fs = self._flow_size_on_time(flow_ids)
         rl = ds.rel_lb.sel(flow=flow_ids)
         ru = ds.rel_ub.sel(flow=flow_ids)
 
@@ -724,8 +724,9 @@ class FlowSystemModel:
         bounds = (ds.flow_hours_min, ds.flow_hours_max, ds.load_factor_min, ds.load_factor_max)
         if all(b is None for b in bounds):
             return
-        w = self.data.dims.dt * self.data.dims.weights
-        flow_hours = (self.flow_rate * w).sum('time')  # (flow[, period])
+        dims = self.data.dims
+        w = dims.dt * dims.weights
+        flow_hours = dims.sum_time(self.flow_rate * w)  # (flow[, period])
 
         if ds.flow_hours_min is not None:
             self.m.add_constraints(
@@ -736,7 +737,7 @@ class FlowSystemModel:
                 flow_hours <= ds.flow_hours_max, name='flow_hours_max', mask=ds.flow_hours_max.notnull()
             )
 
-        total_duration = float(w.sum('time'))  # T [h]
+        total_duration = dims.sum_time(w)  # T [h] per period
         sized_flow_ids = self._sizing_flow_ids()
         for lf, name, sign in (
             (ds.load_factor_min, 'load_factor_min', 1),
@@ -848,21 +849,36 @@ class FlowSystemModel:
         sized_flow_ids = self._sizing_flow_ids()
         fixed_ids = [fid for fid in ids if fid not in sized_flow_ids]
         var_ids = [fid for fid in ids if fid in sized_flow_ids]
+        chain = self.data.dims.episodes.chain_mask
         if fixed_ids:
             # Fixed size: constant RHS r·S̄·Δt
             rhs = limit.sel(flow=fixed_ids) * ds.size.sel(flow=fixed_ids)
             lhs = delta.sel(flow=fixed_ids)
             if relax is not None:
                 lhs = lhs - self._flow_size_bounds(fixed_ids) * relax
-            self.m.add_constraints(lhs <= rhs, name=f'flow_{name}{suffix}', mask=rhs.notnull())
+            self.m.add_constraints(lhs <= rhs, name=f'flow_{name}{suffix}', mask=rhs.notnull() & chain)
         if var_ids:
             # Sizing/Investment: size is a variable — move to LHS
-            assert self.flow_size is not None
             coeff = limit.sel(flow=var_ids)
-            expr = delta.sel(flow=var_ids) - coeff * self.flow_size.sel(flow=var_ids)
+            fs = self._flow_size_on_time(var_ids)
+            if 'time' in fs.dims:
+                fs = fs.isel(time=slice(1, None))
+            expr = delta.sel(flow=var_ids) - coeff * fs
             if relax is not None:
                 expr = expr - self._flow_size_bounds(var_ids) * relax
-            self.m.add_constraints(expr <= 0, name=f'flow_{name}_sized{suffix}', mask=coeff.notnull())
+            self.m.add_constraints(expr <= 0, name=f'flow_{name}_sized{suffix}', mask=coeff.notnull() & chain)
+
+    def _flow_size_on_time(self, flow_ids: list[str]) -> Any:
+        """Selected flow sizes expanded onto the flat time axis.
+
+        Size is a per-period decision; operational constraints need it per
+        timestep.
+
+        Args:
+            flow_ids: Qualified flow ids; each must have a size variable.
+        """
+        assert self.flow_size is not None
+        return self.data.dims.map_to_time(self.flow_size.sel(flow=flow_ids))
 
     def _flow_size_bounds(self, flow_ids: list[str]) -> xr.DataArray:
         """Static per-flow upper size bounds: fixed value or sizing/invest max.
@@ -1083,6 +1099,7 @@ class FlowSystemModel:
         has_initial = initial.notnull()
         previous_state = initial.sel(flow=initial.coords['flow'][has_initial]) if has_initial.any() else None
 
+        episodes = self.data.dims.episodes
         add_switch_transitions(
             self.m,
             self.flow_on,
@@ -1090,6 +1107,7 @@ class FlowSystemModel:
             self.flow_shutdown,
             name='status',
             previous_state=previous_state,
+            episodes=episodes,
         )
 
         dt = self.data.dims.dt
@@ -1105,6 +1123,7 @@ class FlowSystemModel:
                 minimum=min_up,
                 maximum=max_up,
                 previous=prev_up,
+                episodes=episodes,
             )
 
         # Downtime tracking: state = 1 - on
@@ -1118,6 +1137,7 @@ class FlowSystemModel:
                 minimum=min_down,
                 maximum=max_down,
                 previous=prev_down,
+                episodes=episodes,
             )
 
     def _constrain_component_status(self) -> None:
@@ -1150,6 +1170,7 @@ class FlowSystemModel:
         has_initial = initial.notnull()
         previous_state = initial.sel(component=initial.coords['component'][has_initial]) if has_initial.any() else None
 
+        episodes = self.data.dims.episodes
         add_switch_transitions(
             self.m,
             self.component_on,
@@ -1158,6 +1179,7 @@ class FlowSystemModel:
             name='cstatus',
             element_dim='component',
             previous_state=previous_state,
+            episodes=episodes,
         )
 
         dt = self.data.dims.dt
@@ -1173,6 +1195,7 @@ class FlowSystemModel:
                 minimum=min_up,
                 maximum=max_up,
                 previous=prev_up,
+                episodes=episodes,
             )
 
         has_any_down = min_down.notnull().any() | max_down.notnull().any()
@@ -1186,6 +1209,7 @@ class FlowSystemModel:
                 minimum=min_down,
                 maximum=max_down,
                 previous=prev_down,
+                episodes=episodes,
             )
 
     def _create_balance(self) -> None:
@@ -1398,12 +1422,12 @@ class FlowSystemModel:
         # the mean is only ever applied where the source's lump is structurally zero.
         lump_rhs: Any = lump_direct
         if ds.cf_temporal is not None:
-            cf_lump = ds.cf_temporal.mean('time')
-            varying = (ds.cf_temporal != ds.cf_temporal.isel(time=0)).any('time')  # (effect, source_effect)
+            cf_lump = d.dims.mean_time(ds.cf_temporal)  # (effect, source_effect[, period])
+            varying = d.dims.varies_within_period(ds.cf_temporal)  # (effect, source_effect)
             if bool(varying.any().item()):
                 bearing = _lump_bearing_effects(terms, cf_lump)
                 mask = varying & bearing.rename({'effect': 'source_effect'})
-                mask = mask.any([d for d in mask.dims if d not in ('effect', 'source_effect')])
+                mask = mask.any([dim for dim in mask.dims if dim not in ('effect', 'source_effect')])
                 if bool(mask.any().item()):
                     pairs = ', '.join(
                         f'{mask.effect.values[i]}<-{mask.source_effect.values[j]}'
@@ -1425,7 +1449,7 @@ class FlowSystemModel:
         self.effect_total = self.m.add_variables(coords={'effect': effect_ids, **pc}, name=Var.EFFECT_TOTAL)
         rhs: Any = self.effect_lump
         if not isinstance(temporal_rhs, int):
-            rhs = (temporal_rhs * d.dims.weights).sum('time') + self.effect_lump
+            rhs = d.dims.sum_time(temporal_rhs * d.dims.weights) + self.effect_lump
         self.m.add_constraints(self.effect_total == rhs, name='effect_total_eq')
 
         # Per-period bounds on effect_total
@@ -1475,7 +1499,7 @@ class FlowSystemModel:
         # storage_level[storage, time(, period)] >= 0  (end-of-period convention)
         self.storage_level = self.m.add_variables(
             lower=0,
-            coords={'storage': stor_ids, **self.data.dims.coords(time=True, period=True)},
+            coords={'storage': stor_ids, **self.data.dims.coords(time=True)},
             name=Var.STORAGE_LEVEL,
         )
 
@@ -1495,7 +1519,8 @@ class FlowSystemModel:
             assert self.storage_capacity is not None
             invest_ids = list(self.storage_capacity.coords['storage'].values)
             level_invest = self.storage_level.sel(storage=invest_ids)
-            self.m.add_constraints(level_invest <= self.storage_capacity, name='level_cap_invest')
+            cap_t = d.dims.map_to_time(self.storage_capacity)
+            self.m.add_constraints(level_invest <= cap_t, name='level_cap_invest')
 
         # --- Relative level bounds ---
         # For fixed-capacity storages
@@ -1521,12 +1546,13 @@ class FlowSystemModel:
             rel_lb_inv = ds.rel_level_lb.sel(storage=invest_ids)
             rel_ub_inv = ds.rel_level_ub.sel(storage=invest_ids)
             level_invest = self.storage_level.sel(storage=invest_ids)
+            cap_t = d.dims.map_to_time(self.storage_capacity)
 
             has_lb = (rel_lb_inv > 1e-12).any('time')
             if has_lb.any():
                 lb_mask = has_lb.broadcast_like(rel_lb_inv) & (rel_lb_inv > 1e-12)
                 self.m.add_constraints(
-                    level_invest >= rel_lb_inv * self.storage_capacity,
+                    level_invest >= rel_lb_inv * cap_t,
                     name='level_lb_invest',
                     mask=lb_mask,
                 )
@@ -1535,7 +1561,7 @@ class FlowSystemModel:
             if has_ub.any():
                 ub_mask = has_ub.broadcast_like(rel_ub_inv) & (rel_ub_inv < 1 - 1e-12)
                 self.m.add_constraints(
-                    level_invest <= rel_ub_inv * self.storage_capacity,
+                    level_invest <= rel_ub_inv * cap_t,
                     name='level_ub_invest',
                     mask=ub_mask,
                 )
@@ -1573,14 +1599,16 @@ class FlowSystemModel:
             decay=loss_factor,
             initial=self.prior_storage_level,
             name='storage_balance',
+            episodes=d.dims.episodes,
         )
 
-        # Cyclic: prior == level[-1]
+        level_end = d.dims.last_time(self.storage_level)
+
         cyclic_mask = ds.cyclic.values.astype(bool)
         if np.any(cyclic_mask):
             cyc_ids = [str(s) for s, c in zip(stor_ids.values, cyclic_mask, strict=True) if c]
             self.m.add_constraints(
-                self.prior_storage_level.sel(storage=cyc_ids) == self.storage_level.sel(storage=cyc_ids).isel(time=-1),
+                self.prior_storage_level.sel(storage=cyc_ids) == level_end.sel(storage=cyc_ids),
                 name='storage_prior_cyc',
             )
 
@@ -1594,7 +1622,7 @@ class FlowSystemModel:
             )
 
         # --- Final level bounds: E̲^end <= E[last] <= Ē^end (per period) ---
-        final_level = self.storage_level.isel(time=-1)
+        final_level = level_end
         if ds.final_level_min is not None:
             self.m.add_constraints(
                 final_level >= ds.final_level_min, name='storage_final_min', mask=ds.final_level_min.notnull()
@@ -1613,7 +1641,7 @@ class FlowSystemModel:
             stor_coord = xr.DataArray(prev_ids, dims=['storage'])
             charging_on = self.m.add_variables(
                 binary=True,
-                coords={'storage': stor_coord, **self.data.dims.coords(time=True, period=True)},
+                coords={'storage': stor_coord, **self.data.dims.coords(time=True)},
                 name=Var.STORAGE_CHARGING,
             )
             m_c = xr.DataArray(

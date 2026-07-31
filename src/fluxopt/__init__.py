@@ -29,7 +29,7 @@ from fluxopt.types import (
 
 
 def optimize(
-    timesteps: Timesteps,
+    timesteps: Timesteps | Mapping[int, Timesteps],
     carriers: list[Carrier],
     effects: list[Effect],
     ports: list[Port],
@@ -47,7 +47,8 @@ def optimize(
     """Build data, build model, optimize, return results.
 
     Args:
-        timesteps: Time index for the optimization horizon.
+        timesteps: Time index for the optimization horizon, or a
+            ``{period: index}`` mapping for ragged multi-period grids.
         carriers: Carrier declarations.
         effects: Effects to track (costs, emissions, etc.).
         ports: System boundary ports with imports/exports.

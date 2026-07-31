@@ -49,7 +49,11 @@ class ProfileRef(BaseModel):
 
 
 # -- User input types --------------------------------------------------
-type Variate = float | int | list[float] | np.ndarray | pd.Series | pd.DataFrame | xr.DataArray | ProfileRef
+type PeriodMap = dict[int, float | list[float] | np.ndarray | pd.Series | xr.DataArray]
+"""Per-period operational input: one value or within-period series per period
+label. Aligned onto the flat time axis by ``_TimeMapper`` (ragged-safe)."""
+
+type Variate = float | int | list[float] | np.ndarray | pd.Series | pd.DataFrame | xr.DataArray | ProfileRef | PeriodMap
 """Any input that varies over a subset of the model's variate dims (``time``,
 optionally ``period``, eventually ``scenario``).
 
@@ -58,6 +62,7 @@ optionally ``period``, eventually ``scenario``).
 - 1-D (``pd.Series``): index name selects the dim if set; else matched by length.
 - 2-D (``pd.DataFrame``): ``index.name`` and ``columns.name`` must match target dims.
 - n-D (``xr.DataArray``): dims must be a subset of the target; coords must match exactly.
+- Mapping (``{period: value-or-series}``): per-period values on the flat time axis.
 
 Per-field reach (which dims a particular field can vary over) is documented on
 the field itself; ``as_dataarray`` enforces that user input only uses dims the

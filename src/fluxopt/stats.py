@@ -39,12 +39,13 @@ class StatsAccessor:
 
     @cached_property
     def total_flow_hours(self) -> xr.DataArray:
-        """Total energy per flow over the horizon, weighted.
+        """Total energy per flow, weighted; per period in multi-period models.
 
         Returns:
-            DataArray (flow,) — weighted sum of flow_hours over time.
+            DataArray (flow[, period]) — weighted sum of flow_hours over time.
         """
-        return (self.flow_hours * self._result.data.dims.weights).sum('time')
+        dims = self._result.data.dims
+        return dims.sum_time(self.flow_hours * dims.weights)
 
     @cached_property
     def carrier_balance(self) -> xr.DataArray:
@@ -138,9 +139,10 @@ class StatsAccessor:
         wanted, are ``capacity_factor * total_duration``.
 
         Returns:
-            Scalar DataArray in hours.
+            Scalar DataArray in hours; (period,) in multi-period models.
         """
-        return (self._result.data.dims.dt * self._result.data.dims.weights).sum('time')
+        dims = self._result.data.dims
+        return dims.sum_time(dims.dt * dims.weights)
 
     @cached_property
     def capacity_factor(self) -> xr.DataArray:
@@ -195,7 +197,7 @@ class StatsAccessor:
             return xr.DataArray()
         dims = self._result.data.dims
         with xr.set_options(keep_attrs=True):
-            mean_level = (self._result.storage_levels * dims.dt * dims.weights).sum('time') / self.total_duration
+            mean_level = dims.sum_time(self._result.storage_levels * dims.dt * dims.weights) / self.total_duration
             rel = mean_level / self.resolved_capacities
             return rel.where(lambda x: np.isfinite(x))
 

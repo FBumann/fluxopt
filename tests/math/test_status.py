@@ -626,6 +626,45 @@ class TestMaxUptime:
         # Src 4h: 4*10*1=40. Backup 1h: 1*10*10=100. Total=140.
         assert_allclose(result.objective, 140.0, rtol=1e-5)
 
+    def test_shutdown_feasible_on_irregular_grid(self):
+        """A prior-on unit can shut down when timestep durations vary.
+
+        Grid: [00:00, 04:00, 05:00] → dt=[4, 4, 1]. Src: size=10,
+        rel_min=0.5, prior_rates=[10] (on, 4h prior uptime), 1€/MWh.
+        Demand: [10, 10, 0] — step 2 has no demand and no waste, so Src
+        must shut off there. Src serves steps 0-1: 10*(4+4) = 80 MWh → 80.
+
+        Sensitivity: the duration recursion must add the entered step's dt
+        (dt[t+1]). With the departed step's dt and the longest-episode
+        Big-M (M = 9+4 = 13), the forced uptime D[1] = 12 would require
+        D[2] >= 12 + 4 - 13 = 3 while off caps D[2] at 0 — infeasible.
+        """
+        result = optimize(
+            [datetime(2024, 1, 1, 0), datetime(2024, 1, 1, 4), datetime(2024, 1, 1, 5)],
+            carriers=_heat,
+            effects=[Effect(id='cost')],
+            objective='cost',
+            ports=[
+                Port(id='Demand', exports=[Flow(carrier='Heat', size=1, fixed_relative_profile=[10, 10, 0])]),
+                Port(
+                    id='Src',
+                    imports=[
+                        Flow(
+                            carrier='Heat',
+                            size=10,
+                            relative_rate_min=0.5,
+                            effects_per_flow_hour={'cost': 1},
+                            status=Status(uptime_max=100),
+                            prior_rates=[10],
+                        )
+                    ],
+                ),
+            ],
+        )
+        on = result.solution['flow--on'].sel(flow='Src(Heat)').values
+        assert list(on) == [1, 1, 0]
+        assert_allclose(result.objective, 80.0, rtol=1e-5)
+
 
 class TestMaxDowntime:
     def test_downtime_max_forces_restart(self):
