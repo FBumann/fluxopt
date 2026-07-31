@@ -59,7 +59,7 @@ dev = [
     "pytest-cov==7.1.0",
     "pytest-xdist==3.8.0",
     "pyrefly==1.1.1",
-    "ruff==0.15.22",
+    "ruff==0.16.0",
 ]
 docs = [
     "plotly>=6",
