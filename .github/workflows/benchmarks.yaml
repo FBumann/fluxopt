@@ -39,7 +39,7 @@ jobs:
         working-directory: benchmark
         run: uv sync --frozen
       - name: Run benchmarks under CodSpeed (memory)
-        uses: CodSpeedHQ/action@v4
+        uses: CodSpeedHQ/action@v4.19.1
         with:
           mode: memory
           run: cd benchmark && uv run --no-sync pytest . --codspeed
@@ -67,7 +67,7 @@ jobs:
         working-directory: benchmark
         run: uv sync --frozen
       - name: Run benchmarks under CodSpeed (walltime)
-        uses: CodSpeedHQ/action@v4
+        uses: CodSpeedHQ/action@v4.19.1
         with:
           mode: walltime
           run: cd benchmark && uv run --no-sync pytest . --codspeed
