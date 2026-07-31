@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.2.0](https://github.com/fluxopt/fluxopt/compare/v0.1.0...v0.2.0) (2026-07-31)
+
+
+### ⚠ BREAKING CHANGES
+
+* flat time axis with time_period coord and ragged periods ([#213](https://github.com/fluxopt/fluxopt/issues/213))
+* **effects:** reject time-varying contribution_from into lump-bearing sources ([#258](https://github.com/fluxopt/fluxopt/issues/258))
+* derive qualified flow ids at build time ([#246](https://github.com/fluxopt/fluxopt/issues/246))
+* drop effect rate bounds, collapse temporal domain, nest data-model containers ([#242](https://github.com/fluxopt/fluxopt/issues/242))
+* objective API rework — build_model, guards, rename ([#223](https://github.com/fluxopt/fluxopt/issues/223))
+
+### refac
+
+* derive qualified flow ids at build time ([#246](https://github.com/fluxopt/fluxopt/issues/246)) ([013a3f0](https://github.com/fluxopt/fluxopt/commit/013a3f0080623400820ccceb2d429d0be220c8ec))
+* objective API rework — build_model, guards, rename ([#223](https://github.com/fluxopt/fluxopt/issues/223)) ([255601a](https://github.com/fluxopt/fluxopt/commit/255601a64e5a65556d355f0af90990039b82f641))
+
+
+### Features
+
+* **benchmark:** add abstract multi-period stress reference system ([#260](https://github.com/fluxopt/fluxopt/issues/260)) ([7433ff0](https://github.com/fluxopt/fluxopt/commit/7433ff05deae2f64fe2d579f6f87c66e3a872478))
+* drop effect rate bounds, collapse temporal domain, nest data-model containers ([#242](https://github.com/fluxopt/fluxopt/issues/242)) ([841a69f](https://github.com/fluxopt/fluxopt/commit/841a69fda6331f71d510c1c6122aa04d0366781d))
+* flat time axis with time_period coord and ragged periods ([#213](https://github.com/fluxopt/fluxopt/issues/213)) ([a10833c](https://github.com/fluxopt/fluxopt/commit/a10833c5d713ef4c4d90e7cc4bc09985e4f57e84))
+* user-runnable benchmark with realistic reference systems ([#257](https://github.com/fluxopt/fluxopt/issues/257)) ([f0f049e](https://github.com/fluxopt/fluxopt/commit/f0f049ecd56203386d1795e122a3f5026ba1d4e2))
+
+
+### Bug Fixes
+
+* **effects:** reject time-varying contribution_from into lump-bearing sources ([#258](https://github.com/fluxopt/fluxopt/issues/258)) ([78a737d](https://github.com/fluxopt/fluxopt/commit/78a737db044fa4ae844da2b2a58ae393ba9825de))
+* **status:** correct build gating, reject profile combo, warn on prior-dt assumption ([#251](https://github.com/fluxopt/fluxopt/issues/251)) ([26c5db1](https://github.com/fluxopt/fluxopt/commit/26c5db1fb13ddc213fc1b16f3f1316e09ce5a610))
+
+
+### Performance Improvements
+
+* **effects:** fold Leontief inverse into term coefficients, not expressions ([#270](https://github.com/fluxopt/fluxopt/issues/270)) ([dfb5f31](https://github.com/fluxopt/fluxopt/commit/dfb5f3165cfda540ce2fb180c05ec7e7bee38c91))
+
 ## [0.1.0](https://github.com/fluxopt/fluxopt/compare/v0.0.8...v0.1.0) (2026-07-21)
 
 
