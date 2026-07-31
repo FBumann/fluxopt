@@ -1,10 +1,31 @@
-"""Generate the API reference pages automatically from source."""
+"""Generate the API reference pages automatically from source.
+
+Only the modules backing the public surface get a page. Documenting every
+module would make the reference read far wider than the API actually is —
+see ``docs/api/index.md`` for the surface the project commits to.
+"""
 
 from pathlib import Path
 
 import mkdocs_gen_files
 
+INTERNAL_MODULES = {
+    'fluxopt.benchmark',
+    'fluxopt.constraints',
+    'fluxopt.contract',
+    'fluxopt.contributions',
+    'fluxopt.effect_terms',
+    'fluxopt.validation',
+}
+
+
+def is_internal(parts: tuple[str, ...]) -> bool:
+    """Whether a module, or any package containing it, is implementation detail."""
+    return any('.'.join(parts[: depth + 1]) in INTERNAL_MODULES for depth in range(len(parts)))
+
+
 nav = mkdocs_gen_files.Nav()
+nav['Overview'] = 'index.md'
 root = Path('src')
 
 for path in sorted(root.rglob('*.py')):
@@ -21,7 +42,7 @@ for path in sorted(root.rglob('*.py')):
     elif parts[-1].startswith('_'):
         continue
 
-    if not parts:
+    if not parts or is_internal(parts):
         continue
 
     nav[parts] = doc_path.as_posix()

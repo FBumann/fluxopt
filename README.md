@@ -98,6 +98,24 @@ Results close the loop: `result.flow_rates`, `result.effect_totals`,
 `result.stats` (KPIs, effect contributions), `result.plot`, netCDF round-trip,
 and `result.data` — the exact `ModelData` the solution came from.
 
+## The whole API
+
+<!--public-api-start-->
+Twenty-seven names — that is all of it. Everything else under `fluxopt.*` is
+implementation detail and may change without a deprecation cycle.
+
+| Group | Names |
+|-------|-------|
+| **Entry points** | `optimize` · `FlowSystem` · `FlowSystemModel` · `ModelData` · `Result` |
+| **Elements** | `Carrier` · `Effect` · `Flow` · `Port` · `Converter` · `Storage` |
+| **Modifiers** | `Sizing` · `Status` · `Investment` · `PiecewiseConversion` |
+| **Data & types** | `Dims` · `TimeIndex` · `Timesteps` · `Variate` · `ProfileRef` · `IdList` · `as_dataarray` |
+| **Schema & IO** | `element_schema` · `all_element_schemas` · `from_dict` · `to_dict` · `PENALTY_EFFECT_ID` |
+
+A test pins this list against `fluxopt.__all__`, so widening the surface is a
+deliberate, reviewed change rather than an accident of a new import.
+<!--public-api-end-->
+
 ## Roadmap
 
 fluxopt is evolving into a family of packages with a lean core and optional companions:
