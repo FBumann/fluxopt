@@ -23,7 +23,7 @@ from conftest import ts, waste  # noqa: F401 — re-exported for test imports
 
 from fluxopt import ModelData
 from fluxopt import optimize as fluxopt_optimize
-from fluxopt.relational import solve
+from fluxopt.math import solve
 from fluxopt.results import Result
 
 

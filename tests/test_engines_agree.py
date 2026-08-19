@@ -1,6 +1,6 @@
 """The two engines must agree, and the checks that need no oracle.
 
-There is one math now — `relational/core.yaml` — and two engines that build
+There is one math now — `math/program.yaml` — and two engines that build
 it: the relational one fluxopt ships on, and lpspec's eager lane, which
 evaluates the same program onto a `linopy.Model`. Same file, same sources,
 independent implementations, so a disagreement is an *engine* bug rather than
@@ -45,8 +45,8 @@ from fluxopt import (
     Storage,
 )
 from fluxopt.contract import Var
-from fluxopt.relational import MATH_PROGRAM, UnsupportedFeatureError, build_sources, solve
-from fluxopt.relational.results import objective_weights, to_result
+from fluxopt.math import PROGRAM, UnsupportedFeatureError, build_sources, solve
+from fluxopt.math.results import objective_weights, to_result
 
 if TYPE_CHECKING:
     import xarray as xr
@@ -66,7 +66,7 @@ BINDING_CO2_CAP = 205.0
 
 
 def _system(n: int, periods: list[int] | None = None, co2_cap: float | None = CO2_CAP) -> dict:
-    """A system exercising every feature the relational program expresses."""
+    """A system exercising every feature the program expresses."""
     rng = np.random.default_rng(0)
     hours = np.arange(n)
     demand = np.clip(0.5 + 0.3 * np.cos(2 * np.pi * hours / 24) + 0.05 * rng.standard_normal(n), 0.05, 1.0)
@@ -252,7 +252,7 @@ class _EagerResult:
         return self._m.variables[name].solution
 
     def expression(self, name: str) -> Any:
-        return lpspec_linopy.expression(self._m, MATH_PROGRAM, name, self._sources)
+        return lpspec_linopy.expression(self._m, PROGRAM, name, self._sources)
 
 
 def _eager(data: ModelData) -> Result:
@@ -260,7 +260,7 @@ def _eager(data: ModelData) -> Result:
     weights = objective_weights(data, OBJECTIVE)
     sources, coords = build_sources(data, weights)
     bound = {**sources, **coords}
-    model = lpspec_linopy.build(MATH_PROGRAM, bound)
+    model = lpspec_linopy.build(PROGRAM, bound)
     model.solve(solver_name='highs', output_flag=False, **SOLVER_OPTIONS)
     return to_result(_EagerResult(model, bound), data, weights)
 

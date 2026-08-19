@@ -1,10 +1,10 @@
 """fluxopt's math, and the engine that builds it.
 
 Three layers: Elements -> ModelData -> this. The math is
-:data:`~fluxopt.relational.sources.MATH_PROGRAM`, a declarative YAML program
+:data:`~fluxopt.math.sources.PROGRAM`, a declarative YAML program
 built and solved by `lpspec <https://github.com/fluxopt/lpspec>`_;
-:mod:`~fluxopt.relational.sources` binds a ``ModelData`` to it, and
-:mod:`~fluxopt.relational.results` reads the answer back as a
+:mod:`~fluxopt.math.sources` binds a ``ModelData`` to it, and
+:mod:`~fluxopt.math.results` reads the answer back as a
 :class:`~fluxopt.results.Result`.
 
 There is no second implementation. ``model.py`` built the same math a second
@@ -22,13 +22,13 @@ question. :class:`UnsupportedFeatureError` says so rather than quietly
 answering it.
 """
 
-from fluxopt.relational.results import to_result
-from fluxopt.relational.solve import solve
-from fluxopt.relational.sources import MATH_PROGRAM, PERIOD_PARAMS, UnsupportedFeatureError, build_sources
+from fluxopt.math.results import to_result
+from fluxopt.math.solve import solve
+from fluxopt.math.sources import PERIOD_PARAMS, PROGRAM, UnsupportedFeatureError, build_sources
 
 __all__ = [
-    'MATH_PROGRAM',
     'PERIOD_PARAMS',
+    'PROGRAM',
     'UnsupportedFeatureError',
     'build_sources',
     'solve',

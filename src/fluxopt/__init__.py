@@ -18,7 +18,6 @@ from fluxopt.model_data import Dims, ModelData
 from fluxopt.results import Result
 from fluxopt.schema import all_element_schemas, element_schema, from_dict, to_dict
 from fluxopt.types import (
-    IdList,
     ProfileRef,
     TimeIndex,
     Timesteps,
@@ -94,7 +93,6 @@ __all__ = [
     'Effect',
     'Flow',
     'FlowSystem',
-    'IdList',
     'Investment',
     'ModelData',
     'PiecewiseConversion',

@@ -60,14 +60,12 @@ def _inline_array_paths(obj: Any, path: str, out: list[str]) -> None:
     import xarray as xr
     from pydantic import BaseModel
 
-    from fluxopt.types import IdList
-
     if isinstance(obj, (np.ndarray, pd.Series, pd.DataFrame, xr.DataArray)):
         out.append(path)
     elif isinstance(obj, dict):
         for key, value in obj.items():
             _inline_array_paths(value, f'{path}[{key!r}]', out)
-    elif isinstance(obj, (list, IdList)):
+    elif isinstance(obj, list):
         for i, value in enumerate(obj):
             _inline_array_paths(value, f'{path}[{i}]', out)
     elif isinstance(obj, BaseModel):
@@ -80,7 +78,7 @@ def _inline_array_paths(obj: Any, path: str, out: list[str]) -> None:
 def to_dict(element: object) -> dict[str, Any]:
     """Serialize an element to a JSON-safe dict.
 
-    Nested elements, ``IdList`` fields, and ``ProfileRef`` references are
+    Nested elements and ``ProfileRef`` references are
     included; inline array-valued ``Variate`` fields are not serializable —
     reference them with a ``ProfileRef`` instead.
 

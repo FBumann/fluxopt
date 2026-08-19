@@ -13,7 +13,7 @@ from fluxopt import (
     Storage,
     optimize,
 )
-from fluxopt.relational import solve
+from fluxopt.math import solve
 
 
 class TestEndToEnd:

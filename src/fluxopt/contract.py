@@ -108,7 +108,6 @@ class Var:
     STORAGE_CHARGING = 'storage--charging'
     STORAGE_CAPACITY = 'storage--capacity'
     STORAGE_SIZE_INDICATOR = 'storage--size_indicator'
-    STORAGE_PRIOR = 'storage--prior'
     INVEST_SIZE = 'invest--size'
     INVEST_SIZE_AT_BUILD = 'invest--size_at_build'
     INVEST_BUILD = 'invest--build'
