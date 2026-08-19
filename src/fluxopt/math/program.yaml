@@ -77,7 +77,10 @@ parameters:
   level_min: {dims: [storage, time]}
   level_max: {dims: [storage, time]}
   is_cyclic: {dims: [storage], dtype: bool}
-  prior_level: {dims: [storage]}
+  # Carries a period axis so a rolling-horizon fold can collapse `time`
+  # alone: a carry reduces exactly one dimension, and the level it copies
+  # forward is per period.
+  prior_level: {dims: [storage, period]}
 
   # --- status (on/off) ----------------------------------------------------
   # `is_gated` is a flow-side mask: this rate answers to a binary. Which

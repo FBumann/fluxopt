@@ -59,6 +59,7 @@ PERIOD_PARAMS = frozenset(
         'effects_fixed_capacity',
         'effects_fixed_mandatory',
         'objective_weight',
+        'prior_level',
         'periodic_min',
         'periodic_max',
         'period_weight',
@@ -926,7 +927,6 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         else:
             sources[name] = df.merge(pd.DataFrame({'period': p_ordinals}), how='cross')
 
-    empty: list[str] = []
     for name in BUILD_PERIOD_PARAMS:
         df = sources.get(name)
         if df is not None and 'build_period' in df.columns:
@@ -954,22 +954,32 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         """
         return np.array(list(values), dtype=str)
 
+    def axis(dim: str, values: Any) -> pl.DataFrame:
+        """A dimension's labels as a one-column frame.
+
+        A frame rather than a sequence because a strategy slices its sources:
+        `solve_over` filters every table that carries the axis it cuts on, and
+        a bare list is not a table it can cut. Costing nothing to always do,
+        so the shipped sources are sliceable whether or not this build is.
+        """
+        return pl.DataFrame({dim: list(values)}, schema={dim: pl.Int64})
+
     coords: dict[str, Any] = {
-        'time': ordinals,
-        'period': p_ordinals,
-        'build_period': p_ordinals,
+        'time': axis('time', ordinals),
+        'period': axis('period', p_ordinals),
+        'build_period': axis('build_period', p_ordinals),
         'carrier': labels([str(c) for c in carriers]),
         # Both kinds: a converter states linear equations, a piecewise curve,
         # or one of each. The axis is the union, or a curve's own converter
         # would not be a coordinate of the dimension its rows are keyed on.
         'converter': _index_frame('converter', converter_ids, {'pw_status_of': pw_status_of}),
-        'eq_idx': list(range(data.converters.eq_mask.sizes['eq_idx'])) if data.converters is not None else empty,
+        'eq_idx': axis('eq_idx', range(data.converters.eq_mask.sizes['eq_idx']) if data.converters is not None else []),
         'storage': labels(storage_ids),
         'effect': labels(effect_ids),
         'status_entity': labels(entity_ids),
         # numpy, not a list: with no piecewise converter the width is 0 and a
         # bare `[]` has no integer type for the join to match.
-        'bp': np.arange(bp_width),
+        'bp': axis('bp', range(bp_width)),
     }
     _stamp_empty_dtypes(sources)
     return sources, coords
