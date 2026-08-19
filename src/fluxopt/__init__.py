@@ -1,4 +1,4 @@
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from typing import Any
 
 from fluxopt.components import Converter, Port
@@ -14,7 +14,6 @@ from fluxopt.elements import (
     Storage,
 )
 from fluxopt.flow_system import FlowSystem
-from fluxopt.model import FlowSystemModel
 from fluxopt.model_data import Dims, ModelData
 from fluxopt.results import Result
 from fluxopt.schema import all_element_schemas, element_schema, from_dict, to_dict
@@ -41,7 +40,8 @@ def optimize(
     period_weights: list[float] | None = None,
     profiles: Mapping[str, Any] | None = None,
     solver: str = 'highs',
-    customize: Callable[[FlowSystemModel], None] | None = None,
+    math: Any = None,
+    parameters: Mapping[str, Any] | None = None,
     **kwargs: Any,
 ) -> Result:
     """Build data, build model, optimize, return results.
@@ -65,10 +65,11 @@ def optimize(
         profiles: Mapping from ``ProfileRef.dataset`` to a dataset (or mapping)
             holding referenced time series. Required if any element uses a
             ``ProfileRef``.
-        solver: Solver backend name.
-        customize: Optional callback to modify the linopy model between build and solve.
-            Receives the built FlowSystemModel; use ``model.m`` to add variables/constraints.
-        **kwargs: Passed through to ``linopy.Model.solve()``.
+        solver: Solver name — ``highs``, or ``gurobi`` with lpspec's extra.
+        math: An edited program to solve instead of the shipped one; see
+            :meth:`~fluxopt.flow_system.FlowSystem.math`.
+        parameters: Data for the parameters *math* adds.
+        **kwargs: Passed to the solver verbatim, in its own vocabulary.
     """
     system = FlowSystem(
         timesteps=timesteps,
@@ -82,7 +83,7 @@ def optimize(
         periods=periods,
         period_weights=period_weights,
     )
-    return system.optimize(profiles, customize=customize, solver=solver, **kwargs)
+    return system.optimize(profiles, solver=solver, math=math, parameters=parameters, **kwargs)
 
 
 __all__ = [
@@ -93,7 +94,6 @@ __all__ = [
     'Effect',
     'Flow',
     'FlowSystem',
-    'FlowSystemModel',
     'IdList',
     'Investment',
     'ModelData',

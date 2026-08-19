@@ -21,8 +21,9 @@ from typing import Any
 import pytest
 from conftest import ts, waste  # noqa: F401 — re-exported for test imports
 
-from fluxopt import FlowSystemModel, ModelData
+from fluxopt import ModelData
 from fluxopt import optimize as fluxopt_optimize
+from fluxopt.model import FlowSystemModel
 from fluxopt.results import Result
 
 

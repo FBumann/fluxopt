@@ -8,7 +8,7 @@ supplied at solve time via ``profiles`` (``system.optimize(profiles=...)``) and
 resolved into arrays just before the model is built.
 
 The FlowSystem has no modeling behavior of its own — ``.optimize()`` runs the existing
-pipeline (:meth:`ModelData.build` → :class:`FlowSystemModel`). Declaration (the system)
+pipeline (:meth:`ModelData.build` → the math program). Declaration (the system)
 and use (building/solving) stay separate.
 """
 
@@ -21,14 +21,13 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from fluxopt.components import Converter, Port
 from fluxopt.elements import Carrier, Effect, Storage
-from fluxopt.model import FlowSystemModel
 from fluxopt.model_data import ModelData
 from fluxopt.schema import from_dict, to_dict
 from fluxopt.types import IdList, ProfileRef, Timesteps
 from fluxopt.validation import validate_system
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping
+    from collections.abc import Mapping
     from pathlib import Path
 
     from fluxopt.results import Result
@@ -203,14 +202,29 @@ class FlowSystem(BaseModel):
             out.setdefault(ref.dataset, set()).add(ref.variable)
         return out
 
-    def build_model(self, profiles: Mapping[str, Any] | None = None) -> FlowSystemModel:
-        """Materialize an unbuilt solver model from this declaration.
+    def math(self) -> Any:
+        """The equations this system will be solved as, as data.
+
+        An :class:`lpspec.Model` — the whole program, before any of this
+        system's numbers are bound to it. Read it (``to_yaml()``), typeset it
+        (``lpspec.to_latex(...)``), or edit it and hand it back to
+        :meth:`optimize` as ``math=``: adding a named quantity to
+        ``expressions:`` or a row to ``constraints:`` is how a caller extends
+        the math now, in the same language and with the same load-time checks
+        the shipped program gets.
+        """
+        import lpspec
+
+        from fluxopt.relational import MATH_PROGRAM
+
+        return lpspec.load_model(MATH_PROGRAM)
+
+    def build_data(self, profiles: Mapping[str, Any] | None = None) -> ModelData:
+        """Materialize this declaration's data, resolving profile references.
 
         Resolves ``ProfileRef`` references (on a copy — the system stays
-        reusable across different ``profiles``), builds the ``ModelData``, and
-        returns a :class:`FlowSystemModel` carrying this system's
-        :attr:`objective`. Call ``build()`` on the result to inspect the linopy
-        model before solving, or ``optimize()`` to build and solve in one step.
+        reusable across different ``profiles``) and builds the ``ModelData``
+        both lanes read.
 
         Args:
             profiles: Mapping from ``ProfileRef.dataset`` to a dataset (or mapping)
@@ -247,27 +261,38 @@ class FlowSystem(BaseModel):
             periods=self.periods,
             period_weights=self.period_weights,
         )
-        return FlowSystemModel(data, objective=self.objective)
+        return data
 
     def optimize(
         self,
         profiles: Mapping[str, Any] | None = None,
         *,
         solver: str = 'highs',
-        customize: Callable[[FlowSystemModel], None] | None = None,
+        math: Any = None,
+        parameters: Mapping[str, Any] | None = None,
         **kwargs: Any,
     ) -> Result:
-        """Resolve profile references, build the model, and solve.
-
-        Shorthand for ``build_model(profiles).optimize(...)``.
+        """Resolve profile references, build the data, and solve.
 
         Args:
             profiles: Mapping from ``ProfileRef.dataset`` to a dataset (or mapping)
                 holding the referenced variables. Required if the system uses
                 any ``ProfileRef``.
-            solver: Solver backend name.
-            customize: Callback to modify the linopy model between build and
-                solve; receives the built ``FlowSystemModel`` (use ``model.m``).
-            **kwargs: Passed through to ``linopy.Model.solve()``.
+            solver: Solver name — ``highs``, or ``gurobi`` with lpspec's extra.
+            math: An edited :meth:`math` to solve instead of the shipped
+                program. Whatever it declares is checked and lowered exactly
+                as the shipped one is.
+            parameters: Data for parameters *math* adds. Ignored by the
+                shipped program, which declares none of its own.
+            **kwargs: Passed to the solver verbatim, in its own vocabulary.
         """
-        return self.build_model(profiles).optimize(customize=customize, solver=solver, **kwargs)
+        from fluxopt.relational import solve
+
+        return solve(
+            self.build_data(profiles),
+            self.objective,
+            solver_name=solver,
+            solver_options=kwargs or None,
+            math=math,
+            parameters=parameters,
+        )

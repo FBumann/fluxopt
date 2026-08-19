@@ -170,6 +170,18 @@ parameters:
   effects_per_capacity: {dims: [storage, effect, period]}
   effects_fixed_capacity: {dims: [storage, effect, period]}
 
+  # --- flow aggregates: the horizon's total, bounded per period ------------
+  # `flow_hour_weight` is dt * time_weight, so the sum is energy rather than
+  # a count of steps. Load factors are the same bound stated relative to size,
+  # which is why a sized flow needs the coefficient rather than the product.
+  flow_hour_weight: {dims: [time]}
+  flow_hours_min: {dims: [flow, period]}
+  flow_hours_max: {dims: [flow, period]}
+  load_factor_min_bound: {dims: [flow, period]}    # lambda * size * T, fixed size
+  load_factor_max_bound: {dims: [flow, period]}
+  load_factor_min_coeff: {dims: [flow, period]}    # lambda * T, size a variable
+  load_factor_max_coeff: {dims: [flow, period]}
+
   # --- piecewise conversion ------------------------------------------------
   # The lambda formulation, written out rather than declared: lpspec's
   # `piecewise:` block takes a static list of links, and fluxopt's curves vary
@@ -717,6 +729,39 @@ constraints:
     expression: >-
       invest_size_at_build - invest_size - invest_max * invest_build
       >= 0 - invest_max
+
+  # --- flow aggregates. Each period is bounded on its own.
+  flow_hours_lower:
+    foreach: [flow, period]
+    where: "flow_hours_min"
+    expression: sum(rate * flow_hour_weight, over=time) >= flow_hours_min
+
+  flow_hours_upper:
+    foreach: [flow, period]
+    where: "flow_hours_max"
+    expression: sum(rate * flow_hour_weight, over=time) <= flow_hours_max
+
+  load_factor_lower:
+    foreach: [flow, period]
+    where: "load_factor_min_bound"
+    expression: sum(rate * flow_hour_weight, over=time) >= load_factor_min_bound
+
+  load_factor_upper:
+    foreach: [flow, period]
+    where: "load_factor_max_bound"
+    expression: sum(rate * flow_hour_weight, over=time) <= load_factor_max_bound
+
+  # Sized flows state the same bound with the size on the left, because it is
+  # a decision rather than a number.
+  load_factor_lower_sized:
+    foreach: [flow, period]
+    where: "load_factor_min_coeff"
+    expression: sum(rate * flow_hour_weight, over=time) - load_factor_min_coeff * size >= 0
+
+  load_factor_upper_sized:
+    foreach: [flow, period]
+    where: "load_factor_max_coeff"
+    expression: sum(rate * flow_hour_weight, over=time) - load_factor_max_coeff * size <= 0
 
   # --- piecewise: one convexity row per curve, one link row per curve flow.
   pw_convexity:

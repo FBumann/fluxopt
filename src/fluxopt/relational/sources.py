@@ -26,6 +26,7 @@ import xarray as xr
 
 from fluxopt.contract import BoundType, Dim
 from fluxopt.contributions import _apply_leontief, _leontief
+from fluxopt.validation import reject_varying_contribution_into_lump
 
 if TYPE_CHECKING:
     from fluxopt.model_data import ModelData
@@ -64,6 +65,12 @@ PERIOD_PARAMS = frozenset(
         'periodic_max',
         'period_weight',
         'pw_avail_bound',
+        'flow_hours_min',
+        'flow_hours_max',
+        'load_factor_min_bound',
+        'load_factor_max_bound',
+        'load_factor_min_coeff',
+        'load_factor_max_coeff',
         'rate_max_at_size_max',
         'rate_min_at_size_max',
         'size_upper',
@@ -238,6 +245,7 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
             not express yet, rather than dropping it silently.
     """
     _reject_unsupported(data)
+    reject_varying_contribution_into_lump(data)
     fds, dims = data.flows, data.dims
 
     time_labels = list(dims.time.values)
@@ -785,6 +793,27 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
     # --- temporal boundary mask ------------------------------------------
     sources['is_first'] = pd.DataFrame({'time': ordinals, 'value': [i == 0 for i in ordinals]})
 
+    # --- flow aggregates ------------------------------------------------
+    # `size` here is the static one; a sized flow's is a variable, so its bound
+    # travels as a coefficient instead of a product and the program multiplies.
+    weight = dims.dt * dims.weights
+    sources['flow_hour_weight'] = pd.DataFrame({'time': ordinals, 'value': weight.values})
+    total_duration = float(weight.sum('time'))
+    sized = set(sizing_ids) | set(invest_ids)
+    static = xr.DataArray([f not in sized for f in flow_ids], dims=['flow'], coords={'flow': fds.size.coords['flow']})
+    for name, arr in (('flow_hours_min', fds.flow_hours_min), ('flow_hours_max', fds.flow_hours_max)):
+        sources[name] = tidy(arr.where(arr.notnull()), drop_zero=False) if arr is not None else _empty(name, 'flow')
+    for kind, arr in (('min', fds.load_factor_min), ('max', fds.load_factor_max)):
+        if arr is None:
+            sources[f'load_factor_{kind}_bound'] = _empty(f'load_factor_{kind}_bound', 'flow')
+            sources[f'load_factor_{kind}_coeff'] = _empty(f'load_factor_{kind}_coeff', 'flow')
+            continue
+        live = arr.notnull()
+        sources[f'load_factor_{kind}_bound'] = tidy(
+            (arr * fds.size * total_duration).where(live & static), drop_zero=False
+        )
+        sources[f'load_factor_{kind}_coeff'] = tidy((arr * total_duration).where(live & ~static), drop_zero=False)
+
     # --- piecewise conversion ------------------------------------------
     # `breakpoints` is already keyed per (converter, flow) pair, which is the
     # shape the program wants: a link is a row on `flow`, so nothing has to be
@@ -848,7 +877,10 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         )
         avail = pw.availability.rename({Dim.PW_CONVERTER: 'converter'})
         sources['pw_avail_bound'] = tidy(avail * max_bp, drop_zero=False)
-        pw_status_of = dict.fromkeys(gated)
+        # A gated curve's Status is keyed by the converter's own id, so the
+        # lookup maps it to itself — `dict.fromkeys` would map it to None,
+        # which reads as 'no Status' and leaves the curve ungated.
+        pw_status_of = {c: c for c in gated}
         of = dict(zip(pair_flow, pair_conv, strict=True))
         flow_index['converter_of'] = [of.get(f) or c for f, c in zip(flow_ids, flow_index['converter_of'], strict=True)]
         converter_ids = linear_convs + [c for c in pw_convs if c not in set(linear_convs)]
