@@ -251,19 +251,22 @@ class TestContributionsRoundtrip:
         xr.testing.assert_allclose(loaded.contributions['lump'], result.contributions['lump'])
         xr.testing.assert_allclose(loaded.contributions['total'], result.contributions['total'])
 
-    def test_old_file_without_contributions(self, tmp_nc: Path) -> None:
-        """Loading a file without contributions group falls back gracefully and warns."""
+    def test_a_file_without_contributions_says_so_rather_than_re_deriving(self, tmp_nc: Path) -> None:
+        """The breakdown is read off the model at solve time, so it travels or it does not.
+
+        Re-deriving on load would answer with today's decomposition against
+        yesterday's numbers, which is the failure the old fallback warned
+        about and this refuses instead.
+        """
         result = _solve_simple([datetime(2024, 1, 1, h) for h in range(3)])
-        # Write without contributions (simulate old format)
         result.solution.to_netcdf(tmp_nc, mode='w', engine='netcdf4')
         result.data.to_netcdf(tmp_nc)
 
         with pytest.warns(UserWarning, match="no 'contributions' group"):
             loaded = Result.from_netcdf(tmp_nc)
         assert loaded.contributions is None
-        # Fallback re-derivation still works
-        contrib = loaded.stats.effect_contributions
-        assert 'temporal' in contrib
+        with pytest.raises(ValueError, match='cannot re-derive'):
+            _ = loaded.stats.effect_contributions
 
     def test_roundtrip_does_not_warn(self, tmp_nc: Path) -> None:
         """Loading a file with cached contributions does not emit the missing-group warning."""
@@ -296,32 +299,6 @@ class TestContributionsRoundtrip:
         assert set(contrib['lump'].dims) == {'contributor', 'effect'}
         assert set(contrib['total'].dims) == {'contributor', 'effect'}
 
-    def test_from_model_warns_and_falls_back_when_compute_fails(self, monkeypatch) -> None:
-        """If compute_effect_contributions raises during solve, from_model emits a
-        warning (including the exception) and sets result.contributions to None —
-        lazy re-derivation via the stats accessor still produces the breakdown."""
-        import fluxopt.contributions as contributions_mod
-
-        def _raise(*args, **kwargs):
-            raise RuntimeError('synthetic failure for test')
-
-        monkeypatch.setattr(contributions_mod, 'compute_effect_contributions', _raise)
-
-        with pytest.warns(UserWarning, match=r'synthetic failure for test'):
-            result = _solve_simple([datetime(2024, 1, 1, h) for h in range(3)])
-
-        assert result.contributions is None
-
-        # Restore the real function and exercise the lazy fallback path:
-        # result.stats.effect_contributions must still produce a valid breakdown
-        # by re-deriving from solution + ModelData.
-        monkeypatch.undo()
-        contrib = result.stats.effect_contributions
-        assert contrib is not None
-        assert set(contrib.data_vars) == {'temporal', 'lump', 'total'}
-
-
-class TestLoadValidation:
     def test_tampered_investment_bounds_rejected_on_load(self, tmp_nc: Path) -> None:
         """A netCDF whose invest table was hand-edited into an invalid state fails to load."""
         import netCDF4

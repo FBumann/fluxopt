@@ -198,54 +198,55 @@ def to_result(result: Any, data: ModelData, weights: dict[str, float]) -> Result
     # The lump half of the ledger is a named expression rather than a variable:
     # nothing in the model decides it on its own, so it is read back through
     # the same compiler that built the accounting row.
-    lump = result.expression('effect_lump')
-    effects = [str(e) for e in data.effects.total_min.coords['effect'].values]
-    solution[Var.EFFECT_LUMP] = _relabel(_frame_to_array(lump, 'effect_lump', effects, data), data)
+    solution[Var.EFFECT_LUMP] = _relabel(_expression_array(result.expression('effect_lump'), 'effect_lump'), data)
 
     dataset = xr.Dataset(
         solution,
         attrs={'objective': float(result.objective), 'objective_weights': json.dumps(weights)},
     )
-    return Result(solution=dataset, data=data, contributions=_contributions(dataset, data))
+    return Result(solution=dataset, data=data, contributions=_contributions(result, data, dataset))
 
 
-def _contributions(solution: xr.Dataset, data: ModelData) -> xr.Dataset | None:
-    """The direct per-contributor breakdown, cached at solve time.
+def _contributions(result: Any, data: ModelData, solution: xr.Dataset) -> xr.Dataset | None:
+    """The per-contributor breakdown, read off the program's own expressions.
 
-    Cached rather than derived on demand for the same reason the linopy lane
-    caches it: a ``Result`` that outlives its process is read back from NetCDF,
-    and re-deriving there would answer with today's decomposition logic rather
-    than the one that produced the numbers.
+    Computed here rather than on demand because it can only be computed here:
+    a named expression is evaluated at a solution, so a `Result` read back
+    from disk has the numbers but not the model that produced them. Carrying
+    it is also what stops a reload re-deriving with today's logic against
+    yesterday's answer.
     """
     import warnings
 
-    from fluxopt.contributions import _with_cross_effects, compute_effect_contributions
+    from fluxopt.contributions import contributions_from, validate_against_solver
+
+    def read(name: str) -> xr.DataArray | None:
+        try:
+            frame = result.expression(name)
+        except Exception:  # the program declares it; this system has no rows
+            return None
+        if not len(frame):
+            return None
+        return _relabel(_expression_array(frame, name), data)
 
     try:
-        direct = compute_effect_contributions(solution, data, cross_effects=False)
-        # Applying cross-effects has to reproduce the solver's own totals.
-        # Result discarded; what is cached is the direct view it builds on.
-        _with_cross_effects(direct, data, solution)
-    except Exception as exc:
+        charged = contributions_from(read, data)
+        validate_against_solver(charged['total'], solution)
+    except Exception as exc:  # advisory; a Result without it still reads
         warnings.warn(
-            f'Failed to compute effect contributions during solve ({exc!r}); '
-            'result.contributions will be None (re-derive via result.stats.effect_contributions)',
+            f'Failed to compute effect contributions during solve ({exc!r}); result.contributions will be None',
             stacklevel=2,
         )
         return None
-    return direct
+    return charged
 
 
-def _frame_to_array(frame: Any, name: str, effects: list[str], data: ModelData) -> xr.DataArray:
-    """A tidy ``(period, effect, value)`` frame as a dense ``(effect, period)`` array."""
-    periods = list(range(len(data.dims.period.values))) if data.dims.period is not None else [0]
-    values = np.zeros((len(effects), len(periods)))
-    index = {e: i for i, e in enumerate(effects)}
+def _expression_array(frame: Any, name: str) -> xr.DataArray:
+    """A tidy `(dims..., value)` frame as a dense array over its own dims."""
+    dims = [c for c in frame.columns if c != 'value']
+    coords = {d: sorted(set(frame[d].to_list())) for d in dims}
+    index = {d: {v: i for i, v in enumerate(coords[d])} for d in dims}
+    values = np.zeros([len(coords[d]) for d in dims])
     for row in frame.iter_rows(named=True):
-        values[index[row['effect']], periods.index(int(row['period']))] = row['value']
-    return xr.DataArray(
-        values,
-        dims=['effect', 'period'],
-        coords={'effect': effects, 'period': periods},
-        name=name,
-    )
+        values[tuple(index[d][row[d]] for d in dims)] = row['value']
+    return xr.DataArray(values, dims=dims, coords=coords, name=name)

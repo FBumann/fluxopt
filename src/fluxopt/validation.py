@@ -10,7 +10,7 @@ same mistakes with the same messages.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from fluxopt.model_data import ModelData
@@ -128,7 +128,6 @@ def reject_varying_contribution_into_lump(data: ModelData) -> None:
         ValueError: Naming each ``effect<-source_effect`` pair that is
             ill-defined, and the two ways to state it instead.
     """
-    from fluxopt.effect_terms import _lump_bearing_effects, effect_terms
 
     ds = data.effects
     if ds.cf_temporal is None:
@@ -136,7 +135,7 @@ def reject_varying_contribution_into_lump(data: ModelData) -> None:
     varying = (ds.cf_temporal != ds.cf_temporal.isel(time=0)).any('time')
     if not bool(varying.any().item()):
         return
-    bearing = _lump_bearing_effects(effect_terms(data), ds.cf_temporal.mean('time'))
+    bearing = _lump_bearing_effects(data, ds.cf_temporal.mean('time'))
     mask = varying & bearing.rename({'effect': 'source_effect'})
     mask = mask.any([d for d in mask.dims if d not in ('effect', 'source_effect')])
     if not bool(mask.any().item()):
@@ -150,3 +149,58 @@ def reject_varying_contribution_into_lump(data: ModelData) -> None:
         'for one-time quantities. Use a scalar factor, or move the lump share into a '
         'separate effect with a scalar factor.'
     )
+
+
+def _lump_coefficient_arrays(data: ModelData) -> list[Any]:
+    """Every coefficient a one-time (lump) contribution is charged through.
+
+    Read off the containers rather than off a term list: what makes a cost
+    one-time is which container declares it, and that is a fact about the
+    data layer.
+    """
+    fds = data.flows
+    containers = [fds.sizing, fds.invest]
+    if data.storages is not None:
+        containers += [data.storages.sizing, data.storages.invest]
+    fields = (
+        'effects_per_size',
+        'effects_fixed',
+        'effects_per_size_at_build',
+        'effects_fixed_at_build',
+        'effects_per_size_recurring',
+        'effects_fixed_recurring',
+    )
+    return [
+        arr
+        for container in containers
+        if container is not None
+        for name in fields
+        if (arr := getattr(container, name, None)) is not None
+    ]
+
+
+def _lump_bearing_effects(data: ModelData, cf_lump: Any) -> Any:
+    """Boolean mask over ``effect``: which effects receive lump contributions.
+
+    An effect is lump-bearing when a lump coefficient charges it directly, or
+    when it receives from a lump-bearing effect through the (acyclic)
+    cross-effect matrix ``(effect, source_effect[, ...])``.
+    """
+    import numpy as np
+    import xarray as xr
+
+    effect_ids = cf_lump.indexes['effect']
+    bearing = xr.DataArray(np.zeros(len(effect_ids), dtype=bool), coords={'effect': effect_ids}, dims='effect')
+    for coeff in _lump_coefficient_arrays(data):
+        nonzero = (coeff.notnull() & (coeff != 0)).any([d for d in coeff.dims if d != 'effect'])
+        bearing = bearing | nonzero.reindex_like(bearing, fill_value=False)
+
+    adjacency = (cf_lump.notnull() & (cf_lump != 0)).any(
+        [d for d in cf_lump.dims if d not in ('effect', 'source_effect')]
+    )
+    for _ in range(bearing.sizes['effect']):
+        grown = bearing | (adjacency & bearing.rename({'effect': 'source_effect'})).any('source_effect')
+        if grown.equals(bearing):
+            break
+        bearing = grown
+    return bearing

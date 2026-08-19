@@ -56,20 +56,24 @@ class StatsAccessor:
     def effect_contributions_direct(self) -> xr.Dataset:
         """Per-contributor effect breakdown *without* cross-effect propagation.
 
-        Each contributor only carries effects it directly emits —
+        Each contributor carries only effects it directly emits —
         ``contribution_from`` chains are ignored. Useful for attributing
-        physical quantities (e.g. raw CO₂ emissions) without conflating them
-        with priced-in monetary effects.
+        physical quantities (raw CO2, say) without conflating them with
+        priced-in monetary ones.
+
+        Derived from :attr:`effect_contributions` by undoing the fold the
+        binder applied — ``(I - C) . charged`` — which is a forward multiply,
+        so the two views cannot disagree about anything but floating point.
 
         Returns:
             Dataset with ``temporal``, ``lump``, and ``total`` DataArrays.
         """
-        if self._result.contributions is not None:
-            return self._result.contributions
+        from fluxopt.contributions import _finalize, _undo_cross_effects
 
-        from fluxopt.contributions import compute_effect_contributions
-
-        return compute_effect_contributions(self._result.solution, self._result.data, cross_effects=False)
+        charged = self.effect_contributions
+        temporal, lump = _undo_cross_effects(charged['temporal'], charged['lump'], self._result.data)
+        ids = [str(c) for c in charged['total'].coords['contributor'].values]
+        return _finalize(temporal, lump, ids, self._result.data)
 
     @cached_property
     def effect_contributions(self) -> xr.Dataset:
@@ -83,24 +87,26 @@ class StatsAccessor:
             contrib['lump']  # (contributor, effect)
             contrib['total']  # (contributor, effect) — temporal sum + lump
 
-        Cross-effects (e.g. CO₂ → cost via ``Effect.contribution_from``) are
-        propagated through the Leontief inverse, so each contributor is
-        charged the full priced-in cost. The contributions are validated
-        against solver totals; a ``ValueError`` is raised if they don't match.
-
-        Built on top of :attr:`effect_contributions_direct` — when both views
-        are accessed, the heavy direct computation runs only once.
+        Cross-effects (CO2 into cost via ``Effect.contribution_from``) are
+        already carried: the coefficients bound to the program hold the
+        Leontief inverse, so each contributor is charged the full priced-in
+        cost by the same expressions the ledger sums.
 
         Returns:
             Dataset with ``temporal``, ``lump``, and ``total`` DataArrays.
-        """
-        from fluxopt.contributions import _with_cross_effects
 
-        return _with_cross_effects(
-            self.effect_contributions_direct,
-            self._result.data,
-            self._result.solution,
-        )
+        Raises:
+            ValueError: If the solve did not record a breakdown. It is read
+                off the model's named expressions at solve time and cannot be
+                recovered from the solution alone.
+        """
+        if self._result.contributions is None:
+            msg = (
+                'this Result carries no effect breakdown: it is read off the '
+                'model at solve time, so a Result without one cannot re-derive it'
+            )
+            raise ValueError(msg)
+        return self._result.contributions
 
     @cached_property
     def resolved_sizes(self) -> xr.DataArray:
