@@ -450,11 +450,14 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         # them a second time per flow would be redundant, and wrong for the
         # links the curve only bounds.
         pw_comps = set(data.piecewise.converter_ids()) if data.piecewise is not None else set()
-        if cst.governed_flows is not None:
-            for row, cid in zip(cst.governed_flows.values, comp_ids, strict=True):
-                if cid in pw_comps:
-                    continue
-                status_of.update({str(f): cid for f in row if str(f)})
+        if fds.governed_by is not None:
+            status_of.update(
+                {
+                    fid: str(owner)
+                    for fid, owner in zip(flow_ids, fds.governed_by.values, strict=True)
+                    if str(owner) and str(owner) not in pw_comps
+                }
+            )
 
     flow_index['status_of'] = [status_of.get(f) for f in flow_ids]
     entity_ids = [e for _, ids in blocks for e in ids]

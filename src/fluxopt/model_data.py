@@ -376,7 +376,6 @@ class StatusData:
     effects_startup: xr.DataArray  # (dim, effect, time, period?) — dense, zero where absent
     previous_uptime: xr.DataArray | None = None  # (dim,) — hours, NaN = no prior
     previous_downtime: xr.DataArray | None = None  # (dim,) — hours, NaN = no prior
-    governed_flows: xr.DataArray | None = None  # (dim, governed_idx) — only for component status
 
     def __post_init__(self) -> None:
         """Validate durations >= 0 and max >= min where both given."""
@@ -416,7 +415,6 @@ class StatusData:
         prior_rates_map: dict[str, list[float]] | None = None,
         dt: float = 1.0,
         period: pd.Index | None = None,
-        governed_flows_map: dict[str, list[str]] | None = None,
     ) -> Self | None:
         """Validate Status objects and collect into DataArrays, or None if empty.
 
@@ -428,9 +426,6 @@ class StatusData:
             prior_rates_map: Item id to prior flow rates (MW) before horizon.
             dt: Scalar timestep duration in hours for prior duration computation.
             period: Period index for period-varying effects.
-            governed_flows_map: Item id to ids of flows the status governs.
-                Only populated for component-level status; emits a 2D
-                ``(dim, governed_idx)`` string array.
         """
         if not items:
             return None
@@ -488,19 +483,6 @@ class StatusData:
         prev_up_arr = np.array(prev_ups)
         prev_down_arr = np.array(prev_downs)
 
-        governed: xr.DataArray | None = None
-        if governed_flows_map:
-            max_n = max(len(governed_flows_map.get(i, [])) for i in ids)
-            if max_n > 0:
-                rows = [
-                    governed_flows_map.get(i, []) + [''] * (max_n - len(governed_flows_map.get(i, []))) for i in ids
-                ]
-                governed = xr.DataArray(
-                    np.array(rows, dtype=object),
-                    dims=[dim, 'governed_idx'],
-                    coords={dim: ids},
-                )
-
         return cls(
             uptime_min=xr.DataArray(np.array(min_ups), dims=[dim], coords=coords),
             uptime_max=xr.DataArray(np.array(max_ups), dims=[dim], coords=coords),
@@ -515,7 +497,6 @@ class StatusData:
             previous_downtime=xr.DataArray(prev_down_arr, dims=[dim], coords=coords)
             if not np.all(np.isnan(prev_down_arr))
             else None,
-            governed_flows=governed,
         )
 
 
@@ -537,6 +518,10 @@ class FlowsData:
     status: StatusData | None = None  # dim Dim.STATUS_FLOW
     invest: InvestmentData | None = None  # dim Dim.INVEST_FLOW
     cstatus: StatusData | None = None  # dim Dim.CSTATUS_COMPONENT, entity coord 'component'
+    #: (flow,) — the component whose Status governs this flow, '' where none.
+    #: A fact about the flow, so it sits here rather than as a ragged padded
+    #: matrix on the component's Status, which is what it used to be.
+    governed_by: xr.DataArray | None = None
 
     def __post_init__(self) -> None:
         """Validate relative bounds, status non-degeneracy, and sized-feature requirements."""
@@ -783,9 +768,21 @@ class FlowsData:
                 time,
                 dim=Dim.CSTATUS_COMPONENT,
                 period=period,
-                governed_flows_map={cid: gov for cid, _, gov in (component_status_items or [])} or None,
             ),
+            governed_by=_governed_by(flow_ids, component_status_items or []),
         )
+
+
+def _governed_by(flow_ids: list[str], items: list[tuple[str, Any, list[str]]]) -> xr.DataArray | None:
+    """Which component's Status governs each flow, '' where none governs it.
+
+    The inverse of the map the caller supplies, and the direction every reader
+    wanted: a flow is governed by at most one component, so this is a column.
+    """
+    if not items:
+        return None
+    owner = {fid: cid for cid, _status, governed in items for fid in governed}
+    return xr.DataArray([owner.get(fid, '') for fid in flow_ids], dims=['flow'], coords={'flow': flow_ids})
 
 
 def _flow_bound_or_none(vals: np.ndarray, flow_ids: list[str]) -> xr.DataArray | None:
@@ -1698,9 +1695,15 @@ class ModelData:
             check_flows(coord_ids(self.flows.invest.min), 'flows.invest')
         if self.flows.status is not None:
             check_flows(coord_ids(self.flows.status.uptime_min), 'flows.status')
-        if self.flows.cstatus is not None and self.flows.cstatus.governed_flows is not None:
-            governed = [str(v) for v in self.flows.cstatus.governed_flows.values.ravel() if str(v)]
-            check_flows(governed, 'flows.cstatus.governed_flows')
+        if self.flows.governed_by is not None:
+            components = (
+                {str(c) for c in self.flows.cstatus.uptime_min.coords[Dim.CSTATUS_COMPONENT].values}
+                if self.flows.cstatus is not None
+                else set()
+            )
+            named = {str(v) for v in self.flows.governed_by.values if str(v)}
+            if unknown := sorted(named - components):
+                raise ValueError(f'flows.governed_by names components without a Status: {unknown}')
         if self.converters is not None:
             check_flows([str(v) for v in self.converters.pair_flow.values], 'converters.pair_flow')
         if self.piecewise is not None:

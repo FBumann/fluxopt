@@ -21,8 +21,8 @@ Sentinel conventions
       storage ``prior_level`` / final level, an ``Investment`` lifetime
       (forever), unknown prior status durations, and a carrier
       ``flow_coeff`` entry for a flow not on that carrier.
-    - ``''`` (empty string) means "not set" for color fields and is the
-      padding value in the ragged ``governed_flows`` string array.
+    - ``''`` (empty string) means "not set" for color fields and for
+      ``governed_by``, where it means no component's Status governs the flow.
     - ``None`` at container level means the feature is absent entirely
       (the converters/storages/piecewise tables, the sizing / invest /
       status sub-containers, and all-NaN optional per-flow bounds).
