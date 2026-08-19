@@ -37,6 +37,11 @@ dependencies = [
     "netcdf4>=1.6.0",
     "numpy>=1.26",
     "pandas>=2.1",
+    # The interchange type with lpspec: parameter tables go in as tidy frames
+    # and results come back as them. Direct because fluxopt states schemas of
+    # its own — a column of labels no system happens to fill must still say it
+    # holds labels.
+    "polars>=1.30",
     "pydantic>=2.7",
     "pyyaml>=6.0",
     "xarray>=2024.1.0",

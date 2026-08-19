@@ -32,12 +32,6 @@ from fluxopt import (
 from fluxopt.model import FlowSystemModel
 from fluxopt.relational import UnsupportedFeatureError, build_sources, solve
 
-#: The program is still written against the pre-`lpspec` language surface
-#: (`group_sum`, `objectives:`, `binary:`, a dimension's `coords:`), so it does
-#: not load against the pinned tag. The next step of the migration rewrites it
-#: and turns this back on — docs/design/lpspec-direction.md, step 2.
-pytestmark = pytest.mark.skip(reason='core.yaml awaits the lpspec surface migration')
-
 OBJECTIVE = {'cost': 1.0}
 SOLVER_OPTIONS = {'mip_rel_gap': 1e-9}
 #: Generous by default: the short horizons used for parity have no co2 slack
@@ -237,7 +231,7 @@ def test_flow_rates_match_linopy() -> None:
     reference = _linopy_optimum(data)
     result = solve(data, OBJECTIVE, solver_options=SOLVER_OPTIONS)
 
-    rates = result.primal('rate').drop(columns='period')
+    rates = result.to_pandas('rate').drop(columns='period')
     pivot = rates.pivot(index='time', columns='flow', values='value').sort_index()
     for flow_id in pivot.columns:
         expected = reference.flow_rate.solution.sel(flow=flow_id).values
@@ -261,7 +255,7 @@ def test_investment_matches_linopy(periods: list[int], lifetime: int) -> None:
     assert result.objective == pytest.approx(float(reference.m.objective.value), rel=1e-9)
 
     # The build decision itself must agree, not only its cost.
-    built = result.primal('invest_build').set_index(['flow', 'build_period'])['value']
+    built = result.to_pandas('invest_build').set_index(['flow', 'build_period'])['value']
     expected = reference.invest_build.solution.to_series()
     assert built.to_numpy().round() == pytest.approx(expected.to_numpy().round())
 
@@ -273,7 +267,7 @@ def test_effect_limit_binds() -> None:
     reference = float(_linopy_optimum(data).m.objective.value)
     result = solve(data, OBJECTIVE, solver_options=SOLVER_OPTIONS)
 
-    totals = result.primal('effect_total').set_index('effect')['value']
+    totals = result.to_pandas('effect_total').set_index('effect')['value']
     assert totals['co2'] == pytest.approx(BINDING_CO2_CAP, rel=1e-9)
     assert result.objective == pytest.approx(reference, rel=1e-9)
 
