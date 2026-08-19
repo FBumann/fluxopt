@@ -20,11 +20,17 @@ also what retires the parity test.
 lpspec is pinned to a tag — its language surface is pre-1.0 and still moves, so
 an unpinned ref would let a ``uv sync`` change what the program means.
 
-Component-level status is expressed: a flow's own ``Status`` and a
-component's are one ``status_entity`` axis, and ``at(running, by=status_of)``
-decides which rows read which binary. Piecewise conversion is not, and raises
-:class:`UnsupportedFeatureError` rather than being dropped — a missing
-constraint still solves, just to the wrong answer.
+Every feature the element layer can express, this program expresses. The two
+that needed ``at(x, by=map)`` — an indexed lookup, the adjoint of ``sum(by=)``
+— are component-level status, where a flow's own ``Status`` and a component's
+share one ``status_entity`` axis, and piecewise conversion, where a curve's
+weights are read back onto each of its flows.
+
+One refusal is left, and it is a difference of formulation rather than a gap:
+``PiecewiseConversion.method='lp'`` is linopy's tangent-line *relaxation*, and
+this lane has only the exact formulation, so it would answer a different
+question. :class:`UnsupportedFeatureError` says so rather than quietly
+answering it.
 """
 
 from fluxopt.relational.solve import solve

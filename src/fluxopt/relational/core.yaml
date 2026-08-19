@@ -31,6 +31,9 @@ dimensions:
   # component whose Status governs several flows at once. One dimension,
   # because the two differ only in which rows read the binary.
   status_entity: {dtype: str}
+  # Breakpoint index of a piecewise curve. The dimension is the widest
+  # curve in the system; narrower ones mask their tail away.
+  bp: {dtype: int}
 
 # Every relation a flow participates in, as a map out of the flow label. These
 # arrive as columns on the `flow` index table, each named for its lookup.
@@ -45,6 +48,8 @@ lookups:
   # its own Status, its component where a component's Status governs it,
   # null where nothing gates it. `at()` reads the binary back through it.
   status_of: {over: flow, into: status_entity}
+  # A piecewise curve's own on/off decision, where its component has one.
+  pw_status_of: {over: converter, into: status_entity}
 
 parameters:
   # Boundary mask as data, not a `time > 0` comparison: with ragged
@@ -165,6 +170,23 @@ parameters:
   effects_per_capacity: {dims: [storage, effect, period]}
   effects_fixed_capacity: {dims: [storage, effect, period]}
 
+  # --- piecewise conversion ------------------------------------------------
+  # The lambda formulation, written out rather than declared: lpspec's
+  # `piecewise:` block takes a static list of links, and fluxopt's curves vary
+  # in how many flows they tie together. Here a link is a *row* — one per curve
+  # flow, keyed on `flow` — so arity is data like everything else.
+  has_piecewise: {dims: [converter], dtype: bool}
+  pw_gated: {dims: [converter], dtype: bool}       # the curve answers to a Status
+  pw_bp_present: {dims: [converter, bp], dtype: bool}   # this curve has this breakpoint
+  pw_seg_present: {dims: [converter, bp], dtype: bool}  # ...and a segment starts here
+  is_piecewise: {dims: [flow], dtype: bool}        # this flow is a link of a curve
+  pw_equal: {dims: [flow], dtype: bool}            # pinned to the curve
+  pw_upper: {dims: [flow], dtype: bool}            # bounded above by it
+  pw_lower: {dims: [flow], dtype: bool}            # bounded below by it
+  pw_bp_value: {dims: [flow, bp, time]}            # this link's breakpoint values
+  pw_ref: {dims: [flow]}                           # 1 on the link availability scales
+  pw_avail_bound: {dims: [converter, time, period]}  # availability * widest breakpoint
+
   # --- effects -----------------------------------------------------------
   # coeff * dt * time_weight, Leontief inverse already folded in (numpy).
   # Declared (flow, effect, time); only live pairs are supplied.
@@ -256,6 +278,21 @@ variables:
   charging:
     foreach: [storage, time, period]
     where: "prevent_simultaneous"
+    domain: binary
+
+  # Convex-combination weights over the breakpoints of each curve.
+  lam:
+    foreach: [converter, bp, time, period]
+    where: "pw_bp_present"
+    bounds: {lower: 0, upper: 1}
+
+  # Which segment the operating point sits on. `absence: zero` is what makes
+  # the adjacency row read correctly at the last breakpoint, where no segment
+  # starts: the term goes to zero rather than taking the row with it.
+  seg:
+    foreach: [converter, bp, time, period]
+    where: "pw_seg_present"
+    absence: zero
     domain: binary
 
   effect_total:
@@ -656,6 +693,64 @@ constraints:
     expression: >-
       invest_size_at_build - invest_size - invest_max * invest_build
       >= 0 - invest_max
+
+  # --- piecewise: one convexity row per curve, one link row per curve flow.
+  pw_convexity:
+    foreach: [converter, time, period]
+    where: "has_piecewise AND NOT pw_gated"
+    expression: sum(lam, over=bp) == 1
+
+  pw_convexity_gated:
+    foreach: [converter, time, period]
+    where: "has_piecewise AND pw_gated"
+    expression: sum(lam, over=bp) == at(running, by=pw_status_of)
+
+  # A link is a row keyed on the flow, so a curve ties as many flows as it has.
+  pw_link_equal:
+    foreach: [flow, time, period]
+    where: "is_piecewise AND pw_equal"
+    expression: rate == sum(at(lam, by=converter_of) * pw_bp_value, over=bp)
+
+  pw_link_upper:
+    foreach: [flow, time, period]
+    where: "is_piecewise AND pw_upper"
+    expression: rate <= sum(at(lam, by=converter_of) * pw_bp_value, over=bp)
+
+  pw_link_lower:
+    foreach: [flow, time, period]
+    where: "is_piecewise AND pw_lower"
+    expression: rate >= sum(at(lam, by=converter_of) * pw_bp_value, over=bp)
+
+  # Adjacency: weight may only be carried by the segment in use, or the one
+  # ending at this breakpoint. Together with the pick row below this is SOS2.
+  pw_adjacency:
+    foreach: [converter, bp, time, period]
+    where: "pw_bp_present"
+    expression: lam <= seg + shift(seg, over=bp, offset=1, edge=0)
+
+  pw_segment_pick:
+    foreach: [converter, time, period]
+    where: "has_piecewise AND NOT pw_gated"
+    expression: sum(seg, over=bp) == 1
+
+  pw_segment_pick_gated:
+    foreach: [converter, time, period]
+    where: "has_piecewise AND pw_gated"
+    expression: sum(seg, over=bp) == at(running, by=pw_status_of)
+
+  # Availability scales the envelope rather than the curve, so it bounds the
+  # reference link instead of moving the breakpoints.
+  pw_availability:
+    foreach: [converter, time, period]
+    where: "has_piecewise AND NOT pw_gated"
+    expression: sum(rate * pw_ref, by=converter_of) <= pw_avail_bound
+
+  pw_availability_gated:
+    foreach: [converter, time, period]
+    where: "has_piecewise AND pw_gated"
+    expression: >-
+      sum(rate * pw_ref, by=converter_of) - pw_avail_bound * at(running, by=pw_status_of)
+      <= 0
 
   effect_accounting:
     foreach: [effect, period]

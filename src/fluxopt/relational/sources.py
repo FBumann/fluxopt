@@ -24,7 +24,7 @@ import pandas as pd
 import polars as pl
 import xarray as xr
 
-from fluxopt.contract import BoundType
+from fluxopt.contract import BoundType, Dim
 from fluxopt.contributions import _apply_leontief, _leontief
 
 if TYPE_CHECKING:
@@ -63,6 +63,7 @@ PERIOD_PARAMS = frozenset(
         'periodic_min',
         'periodic_max',
         'period_weight',
+        'pw_avail_bound',
         'rate_max_at_size_max',
         'rate_min_at_size_max',
         'size_upper',
@@ -95,7 +96,7 @@ def _size_upper(data: ModelData, fid: str) -> float:
 
 #: Index columns the program declares with an integer dtype; every other index
 #: column is a string label.
-_INT_DIMS = frozenset({'time', 'period', 'build_period', 'eq_idx'})
+_INT_DIMS = frozenset({'time', 'period', 'build_period', 'eq_idx', 'bp'})
 
 #: Parameters the program declares ``dtype: bool``.
 _BOOL_PARAMS = frozenset(
@@ -105,6 +106,14 @@ _BOOL_PARAMS = frozenset(
         'conversion_active',
         'is_cyclic',
         'is_gated',
+        'is_piecewise',
+        'has_piecewise',
+        'pw_gated',
+        'pw_equal',
+        'pw_upper',
+        'pw_lower',
+        'pw_bp_present',
+        'pw_seg_present',
         'is_bounded',
         'is_profile',
         'has_uptime',
@@ -194,7 +203,13 @@ def _tidy(da: xr.DataArray, *, drop_zero: bool, time_ord: dict[Any, int] | None 
 def _reject_unsupported(data: ModelData) -> None:
     fds = data.flows
     if data.piecewise is not None:
-        raise UnsupportedFeatureError('piecewise is not supported by the relational backend yet')
+        bad = sorted({str(m) for m in data.piecewise.method.values} & {'lp'})
+        if bad:
+            raise UnsupportedFeatureError(
+                "piecewise method 'lp' is linopy's tangent-line relaxation, which this lane has no "
+                'formulation for — the adjacency formulation it does have is exact, so it would '
+                'answer a different question. Use the default method, or lpspec #695.'
+            )
     if fds.invest is not None and data.dims.period is None:
         raise UnsupportedFeatureError('investment requires multi-period optimization (periods must be specified)')
     if fds.sizing is not None and fds.status is not None:
@@ -434,8 +449,15 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         cdim = cst.uptime_min.dims[0]
         comp_ids = [str(v) for v in cst.uptime_min.coords[cdim].values]
         blocks.append((cst, comp_ids))
+        # A piecewise curve's flows are gated by its convexity row, which
+        # already pins every weight to zero when the binary is off. Gating
+        # them a second time per flow would be redundant, and wrong for the
+        # links the curve only bounds.
+        pw_comps = set(data.piecewise.converter_ids()) if data.piecewise is not None else set()
         if cst.governed_flows is not None:
             for row, cid in zip(cst.governed_flows.values, comp_ids, strict=True):
+                if cid in pw_comps:
+                    continue
                 status_of.update({str(f): cid for f in row if str(f)})
 
     flow_index['status_of'] = [status_of.get(f) for f in flow_ids]
@@ -763,6 +785,90 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
     # --- temporal boundary mask ------------------------------------------
     sources['is_first'] = pd.DataFrame({'time': ordinals, 'value': [i == 0 for i in ordinals]})
 
+    # --- piecewise conversion ------------------------------------------
+    # `breakpoints` is already keyed per (converter, flow) pair, which is the
+    # shape the program wants: a link is a row on `flow`, so nothing has to be
+    # reshaped into link slots.
+    linear_convs = (
+        [str(c) for c in data.converters.eq_mask.coords['converter'].values] if data.converters is not None else []
+    )
+    bp_width = 0
+    pw_status_of: dict[str, str | None] = {}
+    pw = data.piecewise
+    if pw is not None:
+        pair_flow = [str(v) for v in pw.pair_flow.values]
+        pair_conv = [str(v) for v in pw.pair_converter.values]
+        pair_bound = [str(v) for v in pw.pair_bound.values]
+        pw_convs = pw.converter_ids()
+
+        bpv = pw.breakpoints.rename({Dim.PW_PAIR: 'flow', 'breakpoint': 'bp'}).assign_coords(flow=pair_flow)
+        sources['pw_bp_value'] = tidy(bpv, drop_zero=True)
+
+        # Which breakpoints a curve has. Curves of different width share one
+        # `bp` axis, so the narrow ones carry NaN past their last point and
+        # the mask is what stops a weight existing there.
+        first_of = {c: pair_conv.index(c) for c in pw_convs}
+        present = np.array([bpv.isel(flow=first_of[c]).notnull().any('time').values for c in pw_convs])
+        n_bp = present.shape[1]
+        bp_width = n_bp
+
+        def bp_mask(name: str, grid: np.ndarray) -> None:
+            rows = np.argwhere(grid)
+            sources[name] = (
+                pd.DataFrame(
+                    {'converter': [pw_convs[i] for i, _ in rows], 'bp': [int(b) for _, b in rows], 'value': True}
+                )
+                if len(rows)
+                else _empty(name, 'converter', 'bp')
+            )
+
+        bp_mask('pw_bp_present', present)
+        # A segment starts at every present breakpoint but the last.
+        seg = present.copy()
+        for i, row in enumerate(present):
+            live = np.nonzero(row)[0]
+            if len(live):
+                seg[i, live[-1]] = False
+        bp_mask('pw_seg_present', seg)
+
+        gated = [c for c in pw_convs if bool(pw.has_status.sel(pw_converter=c).item())]
+        sources['has_piecewise'] = _flags('has_piecewise', 'converter', pw_convs)
+        sources['pw_gated'] = _flags('pw_gated', 'converter', gated)
+        sources['is_piecewise'] = _flags('is_piecewise', 'flow', pair_flow)
+        for name, sign in (('pw_equal', '=='), ('pw_upper', '<='), ('pw_lower', '>=')):
+            sources[name] = _flags(name, 'flow', [f for f, b in zip(pair_flow, pair_bound, strict=True) if b == sign])
+
+        # Availability scales the envelope of the reference link — the first
+        # of a curve's pairs, which is what the linopy lane bounds too.
+        ref_flows = [pair_flow[first_of[c]] for c in pw_convs]
+        sources['pw_ref'] = pd.DataFrame({'flow': ref_flows, 'value': 1.0})
+        max_bp = xr.concat(
+            [bpv.isel(flow=first_of[c]).max('bp') for c in pw_convs],
+            dim=pd.Index(pw_convs, name='converter'),
+        )
+        avail = pw.availability.rename({Dim.PW_CONVERTER: 'converter'})
+        sources['pw_avail_bound'] = tidy(avail * max_bp, drop_zero=False)
+        pw_status_of = dict.fromkeys(gated)
+        of = dict(zip(pair_flow, pair_conv, strict=True))
+        flow_index['converter_of'] = [of.get(f) or c for f, c in zip(flow_ids, flow_index['converter_of'], strict=True)]
+        converter_ids = linear_convs + [c for c in pw_convs if c not in set(linear_convs)]
+    else:
+        for name, dcols in (
+            ('has_piecewise', ('converter',)),
+            ('pw_gated', ('converter',)),
+            ('is_piecewise', ('flow',)),
+            ('pw_equal', ('flow',)),
+            ('pw_upper', ('flow',)),
+            ('pw_lower', ('flow',)),
+            ('pw_ref', ('flow',)),
+            ('pw_bp_present', ('converter', 'bp')),
+            ('pw_seg_present', ('converter', 'bp')),
+            ('pw_bp_value', ('flow', 'bp', 'time')),
+            ('pw_avail_bound', ('converter', 'time')),
+        ):
+            sources[name] = _empty(name, *dcols)
+        converter_ids = linear_convs
+
     # Stated as a schema rather than inferred. Every column here is a label
     # or a lookup into one, and a system with no storages leaves
     # `charge_storage` all-null — which infers as a null column and fails the
@@ -772,6 +878,7 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         {c: flow_index[c].tolist() for c in flow_index.columns},
         schema=dict.fromkeys(flow_index.columns, pl.String),
     )
+
     # Single-period models supply a length-1 period so one program serves both.
     period_labels = list(dims.period.values) if dims.period is not None else [0]
     period_ord = {v: i for i, v in enumerate(period_labels)}
@@ -791,6 +898,17 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         if df is not None and 'build_period' in df.columns:
             sources[name] = df.assign(build_period=[period_ord[v] for v in df['build_period']])
 
+    def _index_frame(dim: str, values: list[str], lookups: dict[str, dict[str, str | None]]) -> pl.DataFrame:
+        """A dimension's index table plus the lookup columns declared over it.
+
+        Stated as a schema for the same reason the flow index is: a lookup no
+        system happens to fill is all-null, and a null column joins against
+        nothing.
+        """
+        cols: dict[str, list[str | None]] = {dim: list(values)}
+        cols.update({name: [m.get(v) for v in values] for name, m in lookups.items()})
+        return pl.DataFrame(cols, schema=dict.fromkeys(cols, pl.String))
+
     def labels(values: Any) -> np.ndarray:
         """A string dimension's labels, carrying their type even when empty.
 
@@ -807,13 +925,17 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         'period': p_ordinals,
         'build_period': p_ordinals,
         'carrier': labels([str(c) for c in carriers]),
-        'converter': labels(
-            [str(c) for c in data.converters.eq_mask.coords['converter'].values] if data.converters is not None else []
-        ),
+        # Both kinds: a converter states linear equations, a piecewise curve,
+        # or one of each. The axis is the union, or a curve's own converter
+        # would not be a coordinate of the dimension its rows are keyed on.
+        'converter': _index_frame('converter', converter_ids, {'pw_status_of': pw_status_of}),
         'eq_idx': list(range(data.converters.eq_mask.sizes['eq_idx'])) if data.converters is not None else empty,
         'storage': labels(storage_ids),
         'effect': labels(effect_ids),
         'status_entity': labels(entity_ids),
+        # numpy, not a list: with no piecewise converter the width is 0 and a
+        # bare `[]` has no integer type for the join to match.
+        'bp': np.arange(bp_width),
     }
     _stamp_empty_dtypes(sources)
     return sources, coords
