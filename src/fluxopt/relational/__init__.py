@@ -8,7 +8,8 @@ YAML program (:data:`~fluxopt.relational.sources.MATH_PROGRAM`) executed by
 `lpspec <https://github.com/fluxopt/lpspec>`_, which builds the model
 relationally and hands it to the solver without an LP file in between.
 
-Both backends are held to the same answer: ``tests/test_relational_parity.py``
+Both backends answer with the same :class:`~fluxopt.results.Result`, so
+``tests/test_relational_parity.py`` compares answers rather than shapes: it
 solves the same ``ModelData`` through each and requires the objectives to
 agree, with a solution that never beats the linopy lane's proven optimum.
 
@@ -33,6 +34,7 @@ question. :class:`UnsupportedFeatureError` says so rather than quietly
 answering it.
 """
 
+from fluxopt.relational.results import to_result
 from fluxopt.relational.solve import solve
 from fluxopt.relational.sources import MATH_PROGRAM, PERIOD_PARAMS, UnsupportedFeatureError, build_sources
 
@@ -42,4 +44,5 @@ __all__ = [
     'UnsupportedFeatureError',
     'build_sources',
     'solve',
+    'to_result',
 ]
