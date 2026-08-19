@@ -332,7 +332,14 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         flow_index['converter_of'] = [conv_of.get(f) for f in flow_ids]
         pc = cds.pair_coeff.assign_coords(pair=pair_flow).rename({'pair': 'flow'})
         sources['conversion_factor'] = tidy(pc, drop_zero=True)
-        sources['conversion_active'] = _tidy(cds.eq_mask.astype(float), drop_zero=True).assign(value=True)
+        # One row per equation each converter states — the counts, expanded.
+        sources['conversion_active'] = pd.DataFrame(
+            [
+                {'converter': str(cid), 'eq_idx': i, 'value': True}
+                for cid, n in zip(cds.n_equations.coords['converter'].values, cds.n_equations.values, strict=True)
+                for i in range(int(n))
+            ]
+        )
     else:
         flow_index['converter_of'] = None
         sources['conversion_factor'] = _empty('conversion_factor', 'flow', 'eq_idx', 'time')
@@ -805,7 +812,7 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
     # shape the program wants: a link is a row on `flow`, so nothing has to be
     # reshaped into link slots.
     linear_convs = (
-        [str(c) for c in data.converters.eq_mask.coords['converter'].values] if data.converters is not None else []
+        [str(c) for c in data.converters.n_equations.coords['converter'].values] if data.converters is not None else []
     )
     bp_width = 0
     pw_status_of: dict[str, str | None] = {}
@@ -956,7 +963,7 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         # or one of each. The axis is the union, or a curve's own converter
         # would not be a coordinate of the dimension its rows are keyed on.
         'converter': _index_frame('converter', converter_ids, {'pw_status_of': pw_status_of}),
-        'eq_idx': axis('eq_idx', range(data.converters.eq_mask.sizes['eq_idx']) if data.converters is not None else []),
+        'eq_idx': axis('eq_idx', range(int(data.converters.n_equations.max())) if data.converters is not None else []),
         'storage': labels(storage_ids),
         'effect': labels(effect_ids),
         'status_entity': labels(entity_ids),

@@ -905,13 +905,18 @@ class ConvertersData:
     pair_coeff: xr.DataArray  # (pair, eq_idx, time) — non-zero coefficients only
     pair_converter: xr.DataArray  # (pair,) — converter id per pair
     pair_flow: xr.DataArray  # (pair,) — flow id per pair
-    eq_mask: xr.DataArray  # (converter, eq_idx)
+    #: (converter,) — how many conversion equations each converter states.
+    #: Equations are numbered 0..n-1 per converter, so which (converter, eq_idx)
+    #: pairs are live follows from the count; this used to be that same fact as
+    #: a dense boolean matrix.
+    n_equations: xr.DataArray
 
     def __post_init__(self) -> None:
-        """Validate pair/mask consistency (also on netCDF reload)."""
-        if self.eq_mask.dtype != bool:
-            raise ValueError(f'ConvertersData.eq_mask must be boolean, got dtype {self.eq_mask.dtype}')
-        known = set(self.eq_mask.coords['converter'].values)
+        """Validate equation counts and pair references (also on netCDF reload)."""
+        counts = self.n_equations.values
+        if counts.dtype.kind not in 'iu' or (counts < 1).any():
+            raise ValueError(f'ConvertersData.n_equations must be positive integers, got {counts.tolist()}')
+        known = set(self.n_equations.coords['converter'].values)
         if unknown := sorted(set(self.pair_converter.values) - known):
             raise ValueError(f'ConvertersData.pair_converter references unknown converter(s) {unknown}')
 
@@ -949,7 +954,7 @@ class ConvertersData:
             pair_coeff=ds['pair_coeff'],
             pair_converter=ds['pair_converter'],
             pair_flow=ds['pair_flow'],
-            eq_mask=ds['eq_mask'],
+            n_equations=ds['n_equations'],
         )
 
     @classmethod
@@ -972,17 +977,11 @@ class ConvertersData:
         n_time = len(time)
         eq_idx_list = list(range(max_eq))
 
-        eq_mask_rows: list[np.ndarray] = []
         pairs_conv: list[str] = []
         pairs_flow: list[str] = []
         coeff_arrays: list[np.ndarray] = []
 
         for conv in converters:
-            mask_row = np.zeros(max_eq, dtype=bool)
-            for eq_i in range(len(conv.conversion_factors)):
-                mask_row[eq_i] = True
-            eq_mask_rows.append(mask_row)
-
             for fid, flow, _sign in conv._qualified_flows():
                 short = flow.short_id
                 eq_coeffs = np.zeros((max_eq, n_time))
@@ -1001,10 +1000,10 @@ class ConvertersData:
             ),
             pair_converter=xr.DataArray(pairs_conv, dims=['pair']),
             pair_flow=xr.DataArray(pairs_flow, dims=['pair']),
-            eq_mask=xr.DataArray(
-                np.array(eq_mask_rows),
-                dims=['converter', 'eq_idx'],
-                coords={'converter': conv_ids, 'eq_idx': eq_idx_list},
+            n_equations=xr.DataArray(
+                np.array([len(c.conversion_factors) for c in converters]),
+                dims=['converter'],
+                coords={'converter': conv_ids},
             ),
         )
 
