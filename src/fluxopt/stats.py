@@ -48,9 +48,20 @@ class StatsAccessor:
 
     @cached_property
     def carrier_balance(self) -> xr.DataArray:
-        """Signed balance per carrier: coeff * P. (carrier, flow, time)."""
-        coeff = self._result.data.carriers.flow_coeff
-        return coeff * self._result.flow_rates
+        """Each flow's signed contribution to its carrier — ``(flow, time)``.
+
+        Positive produces into the carrier, negative consumes from it. The
+        carrier a flow belongs to rides along as a coordinate rather than as
+        an axis: a flow is on exactly one, so an axis would be mostly holes.
+        Group by it to get the balance itself, which the model holds at zero::
+
+            balance = result.stats.carrier_balance
+            balance.groupby('carrier').sum()
+        """
+        cd = self._result.data.carriers
+        rates = self._result.flow_rates
+        signed = rates * cd.sign.sel(flow=rates.coords['flow'])
+        return signed.assign_coords(carrier=cd.carrier_of.sel(flow=rates.coords['flow']))
 
     @cached_property
     def effect_contributions_direct(self) -> xr.Dataset:

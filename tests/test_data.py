@@ -58,11 +58,10 @@ class TestCarriersData:
             effects=[Effect(id='cost')],
             ports=[Port(id='src', imports=[out_flow]), Port(id='sink', exports=[in_flow])],
         )
-        coeffs = data.carriers.flow_coeff
-        out_coeff = float(coeffs.sel(carrier='b', flow='src(b)').values)
-        in_coeff = float(coeffs.sel(carrier='b', flow='sink(b)').values)
-        assert out_coeff == 1.0  # output to carrier
-        assert in_coeff == -1.0  # input from carrier
+        cd = data.carriers
+        assert float(cd.sign.sel(flow='src(b)')) == 1.0  # output to carrier
+        assert float(cd.sign.sel(flow='sink(b)')) == -1.0  # input from carrier
+        assert {str(c) for c in cd.carrier_of.values} == {'b'}
 
     def test_metadata(self):
         data = ModelData.build(
@@ -291,7 +290,7 @@ class TestCarrierValidation:
 
 class TestCarrierBalance:
     def test_carrier_balance_property(self):
-        """StatsAccessor.carrier_balance returns signed balance per carrier."""
+        """StatsAccessor.carrier_balance returns each flow's signed contribution."""
         result = optimize(
             timesteps=ts(3),
             carriers=[Carrier(id='elec')],
@@ -303,11 +302,12 @@ class TestCarrierBalance:
             ],
         )
         balance = result.stats.carrier_balance
-        assert 'carrier' in balance.dims
         assert 'flow' in balance.dims
-        # Source has positive coeff, sink negative — balance should sum to ~0
-        total = balance.sum('flow')
-        for val in total.sel(carrier='elec').values:
+        # The carrier rides as a coordinate on the flow axis, not as an axis
+        assert 'carrier' in balance.coords
+        assert 'carrier' not in balance.dims
+        # Source produces, sink consumes — grouped by carrier they cancel
+        for val in balance.groupby('carrier').sum().sel(carrier='elec').values:
             assert val == pytest.approx(0.0, abs=1e-6)
 
 
@@ -369,7 +369,7 @@ class TestMultiNodeCarrier:
                 ),
             ],
         )
-        carrier_ids = list(data.carriers.flow_coeff.coords['carrier'].values)
+        carrier_ids = list(data.carriers.unit.coords['carrier'].values)
         assert 'heat:A' in carrier_ids
         assert 'heat:B' in carrier_ids
         assert len(carrier_ids) == 2
