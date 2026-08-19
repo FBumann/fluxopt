@@ -104,7 +104,7 @@ _BOOL_PARAMS = frozenset(
         'is_last',
         'conversion_active',
         'is_cyclic',
-        'has_status',
+        'is_gated',
         'is_bounded',
         'is_profile',
         'has_uptime',
@@ -193,12 +193,8 @@ def _tidy(da: xr.DataArray, *, drop_zero: bool, time_ord: dict[Any, int] | None 
 
 def _reject_unsupported(data: ModelData) -> None:
     fds = data.flows
-    for name, obj in (
-        ('component status', fds.cstatus),
-        ('piecewise', data.piecewise),
-    ):
-        if obj is not None:
-            raise UnsupportedFeatureError(f'{name} is not supported by the relational backend yet')
+    if data.piecewise is not None:
+        raise UnsupportedFeatureError('piecewise is not supported by the relational backend yet')
     if fds.invest is not None and data.dims.period is None:
         raise UnsupportedFeatureError('investment requires multi-period optimization (periods must be specified)')
     if fds.sizing is not None and fds.status is not None:
@@ -419,106 +415,138 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
             sources[name] = pd.DataFrame({c: [] for c in [*dcols, 'value']})
 
     # --- status -----------------------------------------------------------
+    # Two containers, one axis. `flows.status` is a flow's own on/off decision;
+    # `flows.cstatus` is a component's, governing several flows at once. They
+    # carry the same fields and obey the same math, so they are bound to one
+    # `status_entity` dimension and the program states the family once. Which
+    # rows read which binary is `status_of`, and nothing else distinguishes
+    # them.
     ec_extra: list[tuple[str, xr.DataArray]] = []
+    cst = fds.cstatus
+    blocks: list[tuple[Any, list[str]]] = []
+    #: flow id -> the entity whose binary gates it. A self-status flow maps to
+    #: itself; a governed flow to its component; an ungated flow to nothing.
+    status_of: dict[str, str] = {}
     if st is not None:
-        ren = {sdim: 'flow'}
-        sources['has_status'] = _flags('has_status', 'flow', status_ids)
-        sources['is_bounded'] = pd.DataFrame(
-            {'flow': flow_ids, 'value': (bt == BoundType.BOUNDED).values},
-        )
-        sources['is_profile'] = pd.DataFrame(
-            {'flow': flow_ids, 'value': (bt == BoundType.PROFILE).values},
-        )
-        sel = {'flow': status_ids}
-        sources['rate_min_when_on'] = tidy((size * fds.rel_lb).sel(sel), drop_zero=True)
-        sources['rate_max_when_on'] = tidy((size * fds.rel_ub).sel(sel), drop_zero=True)
-        sources['rate_fixed_when_on'] = tidy((size * fds.fixed_profile).sel(sel), drop_zero=True)
+        blocks.append((st, status_ids))
+        status_of.update({f: f for f in status_ids})
+    if cst is not None:
+        cdim = cst.uptime_min.dims[0]
+        comp_ids = [str(v) for v in cst.uptime_min.coords[cdim].values]
+        blocks.append((cst, comp_ids))
+        if cst.governed_flows is not None:
+            for row, cid in zip(cst.governed_flows.values, comp_ids, strict=True):
+                status_of.update({str(f): cid for f in row if str(f)})
 
-        up_min = st.uptime_min.rename(ren)
-        up_max = st.uptime_max.rename(ren)
+    flow_index['status_of'] = [status_of.get(f) for f in flow_ids]
+    entity_ids = [e for _, ids in blocks for e in ids]
+    gated_ids = [f for f in flow_ids if f in status_of]
+
+    sources['is_gated'] = _flags('is_gated', 'flow', gated_ids)
+    sources['is_bounded'] = pd.DataFrame({'flow': flow_ids, 'value': (bt == BoundType.BOUNDED).values})
+    sources['is_profile'] = pd.DataFrame({'flow': flow_ids, 'value': (bt == BoundType.PROFILE).values})
+
+    if blocks:
+
+        def on_entity(field: str) -> xr.DataArray:
+            """One field of every block, on the shared entity axis.
+
+            A field a block leaves unset (``previous_uptime`` on a container
+            with no prior rates) still has to occupy its entity's rows, or the
+            concatenation would silently shorten the axis — so it arrives as
+            NaN, which is what "not set" already means everywhere else here.
+            """
+            parts: list[xr.DataArray] = []
+            for block, ids in blocks:
+                arr = getattr(block, field)
+                if arr is None:
+                    arr = xr.DataArray(np.full(len(ids), np.nan), dims=['status_entity'])
+                else:
+                    arr = arr.rename({arr.dims[0]: 'status_entity'})
+                parts.append(arr.assign_coords(status_entity=ids))
+            return xr.concat(parts, dim='status_entity')
+
+        def entity_frame(name: str, arr: xr.DataArray) -> None:
+            """Emit *arr* keyed on the entity axis, live rows only."""
+            live = arr.notnull()
+            ids = [e for e, h in zip(entity_ids, live.values, strict=True) if h]
+            sources[name] = (
+                pd.DataFrame({'status_entity': ids, 'value': arr.values[live.values]})
+                if ids
+                else _empty(name, 'status_entity')
+            )
+
+        # Envelopes are per gated flow: an governed flow is sized like any
+        # other, and `size * rel` is what the binary scales.
+        gsel = {'flow': gated_ids}
+        sources['rate_min_when_on'] = tidy((size * fds.rel_lb).sel(gsel), drop_zero=True)
+        sources['rate_max_when_on'] = tidy((size * fds.rel_ub).sel(gsel), drop_zero=True)
+        sources['rate_fixed_when_on'] = tidy((size * fds.fixed_profile).sel(gsel), drop_zero=True)
+
+        up_min, up_max = on_entity('uptime_min'), on_entity('uptime_max')
+        dn_min, dn_max = on_entity('downtime_min'), on_entity('downtime_max')
+        prev_up, prev_dn = on_entity('previous_uptime'), on_entity('previous_downtime')
         horizon = float(dims.dt.sum())
-        has_up = (up_min.notnull() | up_max.notnull()).values
-        up_ids = [f for f, h in zip(status_ids, has_up, strict=True) if h]
-        sources['has_uptime'] = _flags('has_uptime', 'flow', up_ids)
-        min_ids = [f for f, h in zip(status_ids, up_min.notnull().values, strict=True) if h]
-        sources['uptime_min'] = pd.DataFrame(
-            {'flow': min_ids, 'value': up_min.sel(flow=min_ids).values if min_ids else []},
-        )
-        prev_up = st.previous_uptime.rename(ren) if st.previous_uptime is not None else None
-        prev_dn = st.previous_downtime.rename(ren) if st.previous_downtime is not None else None
-        envelope = fds.rel_lb.sel(sel)
 
-        def _per_flow(arr: xr.DataArray | float) -> np.ndarray:
-            return np.broadcast_to(np.asarray(arr, dtype=float), (len(status_ids),)).copy()
+        up_ids = [e for e, h in zip(entity_ids, (up_min.notnull() | up_max.notnull()).values, strict=True) if h]
+        dn_ids = [e for e, h in zip(entity_ids, (dn_min.notnull() | dn_max.notnull()).values, strict=True) if h]
+        sources['has_uptime'] = _flags('has_uptime', 'status_entity', up_ids)
+        sources['has_downtime'] = _flags('has_downtime', 'status_entity', dn_ids)
+        entity_frame('uptime_min', up_min)
+        entity_frame('downtime_min', dn_min)
+        entity_frame('initial_status', on_entity('initial'))
 
-        uptime_big_m = horizon + (prev_up.fillna(0.0) if prev_up is not None else 0.0)
-        mega_dn = horizon + (prev_dn.fillna(0.0) if prev_dn is not None else 0.0)
-        sources['uptime_big_m'] = pd.DataFrame({'flow': status_ids, 'value': _per_flow(uptime_big_m)})
-        sources['downtime_big_m'] = pd.DataFrame({'flow': status_ids, 'value': _per_flow(mega_dn)})
-        sources['uptime_upper'] = tidy(
-            up_max.fillna(uptime_big_m).broadcast_like(envelope).sel(flow=up_ids), drop_zero=False
-        )
+        uptime_big_m = horizon + prev_up.fillna(0.0)
+        downtime_big_m = horizon + prev_dn.fillna(0.0)
+        sources['uptime_big_m'] = pd.DataFrame({'status_entity': entity_ids, 'value': uptime_big_m.values})
+        sources['downtime_big_m'] = pd.DataFrame({'status_entity': entity_ids, 'value': downtime_big_m.values})
 
-        # --- downtime: the same tracking with the state inverted -------------
-        dn_min, dn_max = st.downtime_min.rename(ren), st.downtime_max.rename(ren)
-        dn_ids = [f for f, h in zip(status_ids, (dn_min.notnull() | dn_max.notnull()).values, strict=True) if h]
-        dn_min_ids = [f for f, h in zip(status_ids, dn_min.notnull().values, strict=True) if h]
-        sources['has_downtime'] = _flags('has_downtime', 'flow', dn_ids)
-        sources['downtime_min'] = pd.DataFrame(
-            {'flow': dn_min_ids, 'value': dn_min.sel(flow=dn_min_ids).values if dn_min_ids else []},
+        # The duration variables' own upper bound, over the entity's timeline.
+        span = xr.DataArray(
+            np.ones((len(entity_ids), len(time_labels))),
+            dims=['status_entity', 'time'],
+            coords={'status_entity': entity_ids, 'time': list(dims.time.values)},
         )
+        sources['uptime_upper'] = tidy((up_max.fillna(uptime_big_m) * span).sel(status_entity=up_ids), drop_zero=False)
         sources['downtime_upper'] = tidy(
-            dn_max.fillna(mega_dn).broadcast_like(envelope).sel(flow=dn_ids), drop_zero=False
+            (dn_max.fillna(downtime_big_m) * span).sel(status_entity=dn_ids), drop_zero=False
         )
 
-        # --- initial state and pre-horizon carry-over ------------------------
-        init = st.initial.rename(ren)
-        init_ids = [f for f, h in zip(status_ids, init.notnull().values, strict=True) if h]
-        sources['initial_status'] = pd.DataFrame(
-            {'flow': init_ids, 'value': init.sel(flow=init_ids).values if init_ids else []},
-        )
-        # Names are spelled out, not assembled, so a rename of the program is
-        # greppable from here.
+        # Pre-horizon carry-over. Names are spelled out, not assembled, so a
+        # rename of the program is greppable from here.
         for value_key, forced_key, prev, lo in (
             ('previous_uptime', 'forced_on_at_start', prev_up, up_min),
             ('previous_downtime', 'forced_off_at_start', prev_dn, dn_min),
         ):
-            if prev is None:
-                sources[value_key] = _empty(value_key, 'flow')
-                sources[forced_key] = _empty(forced_key, 'flow')
-                continue
-            pids = [f for f, h in zip(status_ids, prev.notnull().values, strict=True) if h]
-            sources[value_key] = (
-                pd.DataFrame({'flow': pids, 'value': prev.sel(flow=pids).values}) if pids else _empty(value_key, 'flow')
-            )
+            entity_frame(value_key, prev)
             forced = ((prev > 0) & lo.notnull() & (prev < lo)).values
-            sources[forced_key] = _flags(forced_key, 'flow', [f for f, h in zip(status_ids, forced, strict=True) if h])
+            sources[forced_key] = _flags(
+                forced_key, 'status_entity', [e for e, h in zip(entity_ids, forced, strict=True) if h]
+            )
 
         ec_extra = [
-            ('effects_per_running_hour', (st.effects_running.rename(ren) * dims.dt * dims.weights)),
-            ('effects_per_startup', (st.effects_startup.rename(ren) * dims.weights)),
+            ('effects_per_running_hour', on_entity('effects_running') * dims.dt * dims.weights),
+            ('effects_per_startup', on_entity('effects_startup') * dims.weights),
         ]
     else:
-        for n in ('has_status', 'has_uptime'):
-            sources[n] = _empty(n, 'flow')
-        sources['is_bounded'] = pd.DataFrame({'flow': flow_ids, 'value': (bt == BoundType.BOUNDED).values})
-        sources['is_profile'] = pd.DataFrame({'flow': flow_ids, 'value': (bt == BoundType.PROFILE).values})
+        for n in ('has_uptime', 'has_downtime'):
+            sources[n] = _empty(n, 'status_entity')
         for n in (
             'uptime_min',
             'uptime_big_m',
             'downtime_big_m',
             'downtime_min',
-            'has_downtime',
             'initial_status',
             'previous_uptime',
             'previous_downtime',
             'forced_on_at_start',
             'forced_off_at_start',
         ):
-            sources[n] = _empty(n, 'flow')
-        for n in ('rate_min_when_on', 'rate_max_when_on', 'rate_fixed_when_on', 'uptime_upper', 'downtime_upper'):
+            sources[n] = _empty(n, 'status_entity')
+        for n in ('uptime_upper', 'downtime_upper'):
+            sources[n] = _empty(n, 'status_entity', 'time')
+        for n in ('rate_min_when_on', 'rate_max_when_on', 'rate_fixed_when_on'):
             sources[n] = _empty(n, 'flow', 'time')
-        ec_extra = []
 
     sources['dt'] = pd.DataFrame({'time': ordinals, 'value': dims.dt.values})
     sources['is_last'] = pd.DataFrame({'time': ordinals, 'value': [i == len(ordinals) - 1 for i in ordinals]})
@@ -675,7 +703,7 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
     for name, arr in ec_extra:
         sources[name] = tidy(_apply_leontief(leo, arr) if leo is not None else arr, drop_zero=True)
     for name in ('effects_per_running_hour', 'effects_per_startup'):
-        sources.setdefault(name, _empty(name, 'flow', 'effect', 'time'))
+        sources.setdefault(name, _empty(name, 'status_entity', 'effect', 'time'))
 
     # Lump domain: effect_lump = (I - cf_lump)^-1 . lump_direct, folded into
     # the coefficients so no self-referential effect_lump variable is needed.
@@ -785,6 +813,7 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         'eq_idx': list(range(data.converters.eq_mask.sizes['eq_idx'])) if data.converters is not None else empty,
         'storage': labels(storage_ids),
         'effect': labels(effect_ids),
+        'status_entity': labels(entity_ids),
     }
     _stamp_empty_dtypes(sources)
     return sources, coords

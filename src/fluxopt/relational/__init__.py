@@ -20,11 +20,11 @@ also what retires the parity test.
 lpspec is pinned to a tag — its language surface is pre-1.0 and still moves, so
 an unpinned ref would let a ``uv sync`` change what the program means.
 
-Piecewise conversion and component-level status are not expressed yet, and
-raise :class:`UnsupportedFeatureError` rather than being dropped: a missing
-constraint still solves, just to the wrong answer. Both need ``at(x, by=map)``
-— an indexed lookup, the adjoint of ``sum(by=)`` — which the pinned lpspec has;
-porting them is the next step of the migration.
+Component-level status is expressed: a flow's own ``Status`` and a
+component's are one ``status_entity`` axis, and ``at(running, by=status_of)``
+decides which rows read which binary. Piecewise conversion is not, and raises
+:class:`UnsupportedFeatureError` rather than being dropped — a missing
+constraint still solves, just to the wrong answer.
 """
 
 from fluxopt.relational.solve import solve

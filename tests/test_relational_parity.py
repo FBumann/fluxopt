@@ -297,6 +297,39 @@ def test_mandatory_storage_sizing_binds_the_right_dims() -> None:
     assert result.objective == pytest.approx(reference, rel=1e-9)
 
 
+def test_component_status_matches_linopy() -> None:
+    """One binary per component, read by every flow it governs.
+
+    A storage with Status gates its charging and discharging flows together —
+    the case `at(running, by=status_of)` exists for. The linopy lane builds it
+    as a per-component binary and a constraint per governed flow; this one
+    states it once and lets the lookup decide which rows read it.
+    """
+    elements = _system(48)
+    elements['storages'] = [
+        Storage(
+            id='tank',
+            charging=Flow(carrier='heat', size=10.0),
+            discharging=Flow(carrier='heat', size=10.0),
+            capacity=100.0,
+            relative_loss_per_hour=0.003,
+            status=Status(uptime_min=3.0, downtime_min=2.0, effects_per_startup={'cost': 40.0}),
+        )
+    ]
+    data = ModelData.build(**elements)
+    reference = _linopy_optimum(data)
+    result = solve(data, OBJECTIVE, solver_options=SOLVER_OPTIONS)
+
+    assert result.objective >= float(reference.m.objective.value) - 1e-6
+    assert result.objective == pytest.approx(float(reference.m.objective.value), rel=1e-9)
+
+    # The binary itself must agree, not only its cost — a dropped gate would
+    # still solve, and cheaper.
+    on = result.to_pandas('running').set_index(['status_entity', 'time'])['value']
+    expected = reference.component_on.solution.sel(component='tank').values
+    assert on.loc['tank'].to_numpy().round() == pytest.approx(expected.round())
+
+
 def test_sparse_coefficients_are_not_materialised() -> None:
     """`effect_coeff` is declared dense but only live rows are emitted."""
     data = ModelData.build(**_system(48))
