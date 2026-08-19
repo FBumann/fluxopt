@@ -339,20 +339,59 @@ def test_sparse_coefficients_are_not_materialised() -> None:
     assert len(sources['effects_per_flow_hour']) < dense / 2
 
 
-def test_unsupported_feature_raises_rather_than_dropping() -> None:
-    """A feature with no formulation must fail loudly, not solve to a wrong answer."""
-    elements = _system(24)
+def test_piecewise_matches_linopy() -> None:
+    """A curve tying N flows through shared weights, N being data.
+
+    lpspec's `piecewise:` block takes a static link list, so the program
+    writes the lambda formulation out and keys a link on `flow` — which is
+    what lets one declaration serve curves of different arity (fluxopt/lpspec#1101).
+    """
+    elements = _system(48)
     elements['converters'] = [
         Converter(
             id='pw_boiler',
             inputs=[Flow(carrier='gas', size=100.0)],
             outputs=[Flow(carrier='heat', size=70.0)],
             conversion=PiecewiseConversion(points={'gas': [0, 50, 100], 'heat': [0, 45, 70]}),
+        ),
+        Converter(
+            id='pw_chp',
+            inputs=[Flow(carrier='gas', size=120.0)],
+            outputs=[Flow(carrier='heat', size=60.0), Flow(carrier='elec', size=40.0)],
+            conversion=PiecewiseConversion(
+                points={'gas': [0, 60, 120], 'heat': [0, 35, 60], 'elec': [0, 18, 40]},
+            ),
+        ),
+    ]
+    data = ModelData.build(**elements)
+    reference = _linopy_optimum(data)
+    result = solve(data, OBJECTIVE, solver_options=SOLVER_OPTIONS)
+
+    assert result.objective >= float(reference.m.objective.value) - 1e-6
+    assert result.objective == pytest.approx(float(reference.m.objective.value), rel=1e-9)
+
+    # Two curves of different arity in one system is the case a static link
+    # list cannot express, so assert both were actually built.
+    rates = result.to_pandas('rate').set_index(['flow', 'time', 'period'])['value']
+    for flow_id in ('pw_boiler(gas)', 'pw_chp(gas)', 'pw_chp(elec)'):
+        expected = reference.flow_rate.solution.sel(flow=flow_id).values.ravel()
+        assert rates.loc[flow_id].to_numpy() == pytest.approx(expected, abs=1e-7)
+
+
+def test_piecewise_lp_method_raises_rather_than_answering_differently() -> None:
+    """`method='lp'` is a relaxation this lane has no formulation for."""
+    elements = _system(24)
+    elements['converters'] = [
+        Converter(
+            id='pw_boiler',
+            inputs=[Flow(carrier='gas', size=100.0)],
+            outputs=[Flow(carrier='heat', size=70.0)],
+            conversion=PiecewiseConversion(points=[('gas', [0, 50, 100]), ('heat', [0, 45, 70], '<=')], method='lp'),
         )
     ]
     data = ModelData.build(**elements)
 
-    with pytest.raises(UnsupportedFeatureError, match='piecewise'):
+    with pytest.raises(UnsupportedFeatureError, match='lp'):
         build_sources(data, OBJECTIVE)
 
 
