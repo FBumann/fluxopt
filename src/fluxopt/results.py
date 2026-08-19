@@ -43,16 +43,18 @@ class Result:
         solution: Solved variable values as xr.Dataset.
         data: ModelData used to build the optimization.
         duals: Dual values (shadow prices) from the solver.
-        contributions: Cached *direct* per-contributor effect breakdown (no
-            cross-effect propagation). Surfaced via
-            ``result.stats.effect_contributions_direct``;
-            ``result.stats.effect_contributions`` applies Leontief on top.
+        expressions: Every quantity the model *names*, evaluated at this
+            solution. A named expression is evaluated against a solve, so it
+            can only be had here — carrying them is what makes a ``Result``
+            answer for the model rather than only for its variables. Read one
+            with :meth:`expression`; the effect breakdown is a view over
+            them (``result.stats.effect_contributions``).
     """
 
     solution: xr.Dataset
     data: ModelData = field(repr=False)
     duals: xr.Dataset = field(default_factory=xr.Dataset, repr=False)
-    contributions: xr.Dataset | None = field(default=None, repr=False)
+    expressions: xr.Dataset = field(default_factory=xr.Dataset, repr=False)
 
     @property
     def objective(self) -> float:
@@ -162,6 +164,25 @@ class Result:
 
         return {'carriers': carriers, 'converters': converters}
 
+    def expression(self, name: str) -> xr.DataArray:
+        """One quantity the model names, at this solution.
+
+        Whatever the program declares under ``expressions:`` — including
+        anything a caller added through ``optimize(math=...)``.
+
+        Args:
+            name: The expression's name in the program.
+
+        Raises:
+            KeyError: Naming what this Result does carry, since a model that
+                declared it and a Result that kept it are different things.
+        """
+        if name not in self.expressions:
+            available = ', '.join(sorted(str(n) for n in self.expressions.data_vars)) or 'nothing'
+            msg = f'{name!r} is not among the expressions this Result carries ({available})'
+            raise KeyError(msg)
+        return self.expressions[name]
+
     @cached_property
     def stats(self) -> StatsAccessor:
         """Post-processing statistics accessor."""
@@ -178,8 +199,8 @@ class Result:
         p = Path(path)
         self.solution.to_netcdf(p, mode='w', engine='netcdf4')
         self.data.to_netcdf(p)
-        if self.contributions is not None:
-            self.contributions.to_netcdf(p, mode='a', group='contributions', engine='netcdf4')
+        if self.expressions.data_vars:
+            self.expressions.to_netcdf(p, mode='a', group='expressions', engine='netcdf4')
 
     @classmethod
     def from_netcdf(cls, path: str | Path) -> Result:
@@ -201,20 +222,20 @@ class Result:
         data = ModelData.from_netcdf(p)
 
         try:
-            contributions = xr.load_dataset(p, group='contributions', engine='netcdf4')
+            expressions = xr.load_dataset(p, group='expressions', engine='netcdf4')
         except OSError:
-            contributions = None
+            expressions = xr.Dataset()
             import warnings
 
             warnings.warn(
-                f"NetCDF file {p} has no 'contributions' group, so this Result carries no "
-                'per-contributor effect breakdown. It is read off the model at solve time and '
-                'cannot be recovered from the solution alone — re-solve, or re-save a Result '
-                'that has one.',
+                f"NetCDF file {p} has no 'expressions' group, so this Result carries none of "
+                'the quantities the model names — including the per-contributor effect '
+                'breakdown. They are evaluated against a solve and cannot be recovered from '
+                'the solution alone; re-solve, or re-save a Result that has them.',
                 stacklevel=2,
             )
 
-        return cls(solution=solution, data=data, contributions=contributions)
+        return cls(solution=solution, data=data, expressions=expressions)
 
     @cached_property
     def plot(self) -> PlotAccessor:

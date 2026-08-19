@@ -162,7 +162,7 @@ def _split_status(arr: xr.DataArray, data: ModelData) -> tuple[xr.DataArray | No
     return parts[0], parts[1]
 
 
-def to_result(result: Any, data: ModelData, weights: dict[str, float]) -> Result:
+def to_result(result: Any, data: ModelData, weights: dict[str, float], model: Any = None) -> Result:
     """Build a :class:`~fluxopt.results.Result` from a solved lpspec model.
 
     Args:
@@ -171,6 +171,8 @@ def to_result(result: Any, data: ModelData, weights: dict[str, float]) -> Result
             indexes by ordinal, and the tables ``Result`` reads alongside the
             solution.
         weights: Effect ids mapped to their objective weight, for provenance.
+        model: The program that was solved, whose ``expressions:`` are read
+            back. Defaults to the shipped one.
 
     Returns:
         The same object the linopy lane returns.
@@ -179,6 +181,12 @@ def to_result(result: Any, data: ModelData, weights: dict[str, float]) -> Result
         RuntimeError: If the solve did not produce a primal solution — there
             is no result to read, and an empty one would read as zeros.
     """
+    if model is None:
+        import lpspec
+
+        from fluxopt.math.sources import PROGRAM
+
+        model = lpspec.load_model(PROGRAM)
     if not result.has_primal:
         raise RuntimeError(f'no primal solution to read: the solver terminated {result.termination_condition!r}')
 
@@ -198,47 +206,36 @@ def to_result(result: Any, data: ModelData, weights: dict[str, float]) -> Result
     # The lump half of the ledger is a named expression rather than a variable:
     # nothing in the model decides it on its own, so it is read back through
     # the same compiler that built the accounting row.
-    solution[Var.EFFECT_LUMP] = _relabel(_expression_array(result.expression('effect_lump'), 'effect_lump'), data)
+    expressions = _expressions(result, model, data)
+    solution[Var.EFFECT_LUMP] = expressions['effect_lump']
 
     dataset = xr.Dataset(
         solution,
         attrs={'objective': float(result.objective), 'objective_weights': json.dumps(weights)},
     )
-    return Result(solution=dataset, data=data, contributions=_contributions(result, data, dataset))
+    return Result(solution=dataset, data=data, expressions=expressions)
 
 
-def _contributions(result: Any, data: ModelData, solution: xr.Dataset) -> xr.Dataset | None:
-    """The per-contributor breakdown, read off the program's own expressions.
+def _expressions(result: Any, model: Any, data: ModelData) -> xr.Dataset:
+    """Every quantity the program names, evaluated at this solution.
 
-    Computed here rather than on demand because it can only be computed here:
-    a named expression is evaluated at a solution, so a `Result` read back
-    from disk has the numbers but not the model that produced them. Carrying
-    it is also what stops a reload re-deriving with today's logic against
-    yesterday's answer.
+    All of them, not the handful fluxopt reads itself: a caller who added an
+    expression through ``optimize(math=...)`` named a quantity they want back,
+    and an expression is evaluated against a solve, so this is the only place
+    it can be had.
     """
     import warnings
 
-    from fluxopt.contributions import contributions_from, validate_against_solver
-
-    def read(name: str) -> xr.DataArray | None:
+    evaluated: dict[str, xr.DataArray] = {}
+    for name in model.expressions:
         try:
             frame = result.expression(name)
-        except Exception:  # the program declares it; this system has no rows
-            return None
-        if not len(frame):
-            return None
-        return _relabel(_expression_array(frame, name), data)
-
-    try:
-        charged = contributions_from(read, data)
-        validate_against_solver(charged['total'], solution)
-    except Exception as exc:  # advisory; a Result without it still reads
-        warnings.warn(
-            f'Failed to compute effect contributions during solve ({exc!r}); result.contributions will be None',
-            stacklevel=2,
-        )
-        return None
-    return charged
+        except Exception as exc:  # advisory: one unreadable name is not a failed solve
+            warnings.warn(f'expression {name!r} could not be read back ({exc!r})', stacklevel=3)
+            continue
+        if len(frame):
+            evaluated[name] = _relabel(_expression_array(frame, name), data)
+    return xr.Dataset(evaluated)
 
 
 def _expression_array(frame: Any, name: str) -> xr.DataArray:

@@ -100,13 +100,17 @@ class StatsAccessor:
                 off the model's named expressions at solve time and cannot be
                 recovered from the solution alone.
         """
-        if self._result.contributions is None:
+        from fluxopt.contributions import contributions_from
+
+        stored = self._result.expressions
+        if not stored.data_vars:
             msg = (
-                'this Result carries no effect breakdown: it is read off the '
-                'model at solve time, so a Result without one cannot re-derive it'
+                'this Result carries none of the quantities the model names, so the '
+                'effect breakdown cannot be assembled: they are evaluated against a '
+                'solve, and a Result without them cannot re-derive it'
             )
             raise ValueError(msg)
-        return self._result.contributions
+        return contributions_from(lambda name: stored.get(name), self._result.data)
 
     @cached_property
     def resolved_sizes(self) -> xr.DataArray:

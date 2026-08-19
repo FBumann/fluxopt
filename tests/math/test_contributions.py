@@ -736,17 +736,25 @@ class TestBreakdownIsReadOffTheModel:
             ports=[Port(id='grid', imports=[source]), Port(id='demand', exports=[sink])],
         )
 
-    def test_the_solve_records_it(self):
+    def test_the_solve_records_every_named_quantity(self):
         """A named expression is evaluated at a solution, so the solve is where it can be had."""
-        assert self._result().contributions is not None
+        result = self._result()
+        assert 'contribution_flow_hour' in result.expressions
+        assert 'effect_lump' in result.expressions
+        # and it is reachable by name, not only through the breakdown
+        assert result.expression('effect_temporal').sum() != 0
 
-    def test_a_result_without_one_says_so_rather_than_guessing(self):
+    def test_a_result_without_them_says_so_rather_than_guessing(self):
         """Re-deriving from the solution alone would answer with today's logic."""
         import dataclasses
 
-        stripped = dataclasses.replace(self._result(), contributions=None)
+        import xarray as xr
+
+        stripped = dataclasses.replace(self._result(), expressions=xr.Dataset())
         with pytest.raises(ValueError, match='cannot re-derive'):
             _ = stripped.stats.effect_contributions
+        with pytest.raises(KeyError, match='effect_lump'):
+            stripped.expression('effect_lump')
 
     def test_the_two_views_differ_only_by_the_fold(self):
         """`direct` is `(I - C) . charged`, so it strips exactly the priced-in share."""

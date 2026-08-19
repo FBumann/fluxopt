@@ -83,3 +83,27 @@ class TestEditingTheMath:
         assert system.optimize(math=system.math()).objective == pytest.approx(
             optimize(**simple_system).objective, abs=1e-9
         )
+
+    def test_a_caller_s_own_expression_comes_back_and_survives_export(self, simple_system, tmp_path):
+        """Naming a quantity is how you ask for it; the answer carries it home.
+
+        Every expression the solved program declares is evaluated at the
+        solution and travels with the `Result` — a caller's as much as
+        fluxopt's, since neither can be recovered from the solution alone.
+        """
+        from fluxopt import Result
+
+        system = FlowSystem(**simple_system)
+        math = system.math()
+        block = type(math.expressions['effect_lump'])
+        math.expressions['grid_energy'] = block(
+            expression='sum(rate * dt, over=flow)', description='every flow the system moved, per step'
+        )
+
+        result = system.optimize(math=math)
+        # both sides of the bus: 50 imported and 50 exported, each hour
+        assert result.expression('grid_energy').values == pytest.approx([100.0] * 3, abs=1e-6)
+
+        path = tmp_path / 'result.nc'
+        result.to_netcdf(path)
+        assert Result.from_netcdf(path).expression('grid_energy').values == pytest.approx([100.0] * 3, abs=1e-6)

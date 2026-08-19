@@ -98,7 +98,11 @@ def _gather(
             continue
         if collapse and collapse in arr.dims:
             arr = arr.sum(collapse)
-        part = _onto_contributor(arr, entity, data, flow_ids).reindex(contributor=all_ids, fill_value=0.0)
+        # `fillna` as well as `fill_value`: the expressions are stored in one
+        # Dataset, so a name whose entity axis is narrower than another's was
+        # aligned to the union and padded. A solved product is never NaN, so
+        # padding there means the entity had no row — which contributes zero.
+        part = _onto_contributor(arr, entity, data, flow_ids).reindex(contributor=all_ids, fill_value=0.0).fillna(0.0)
         total = part if total is None else total + part
     if total is None:
         effects = [str(e) for e in data.effects.total_min.coords['effect'].values]

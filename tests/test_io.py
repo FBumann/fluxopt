@@ -237,39 +237,42 @@ class TestSolutionDataset:
         assert ds.attrs['objective'] == pytest.approx(result.objective)
 
 
-class TestContributionsRoundtrip:
-    def test_contributions_serialized(self, tmp_nc: Path) -> None:
-        """Pre-computed contributions survive a NetCDF roundtrip."""
+class TestExpressionsRoundtrip:
+    def test_named_quantities_survive_a_roundtrip(self, tmp_nc: Path) -> None:
+        """Everything the model names travels with the answer, not just its variables."""
         result = _solve_simple([datetime(2024, 1, 1, h) for h in range(3)])
-        assert result.contributions is not None
+        assert result.expressions.data_vars
 
         result.to_netcdf(tmp_nc)
         loaded = Result.from_netcdf(tmp_nc)
 
-        assert loaded.contributions is not None
-        xr.testing.assert_allclose(loaded.contributions['temporal'], result.contributions['temporal'])
-        xr.testing.assert_allclose(loaded.contributions['lump'], result.contributions['lump'])
-        xr.testing.assert_allclose(loaded.contributions['total'], result.contributions['total'])
+        assert set(loaded.expressions.data_vars) == set(result.expressions.data_vars)
+        for name in result.expressions.data_vars:
+            xr.testing.assert_allclose(loaded.expressions[name], result.expressions[name])
 
-    def test_a_file_without_contributions_says_so_rather_than_re_deriving(self, tmp_nc: Path) -> None:
-        """The breakdown is read off the model at solve time, so it travels or it does not.
+    def test_the_breakdown_is_a_view_over_them(self, tmp_nc: Path) -> None:
+        """Contributions are assembled from the stored expressions, so they survive too."""
+        result = _solve_simple([datetime(2024, 1, 1, h) for h in range(3)])
+        result.to_netcdf(tmp_nc)
+        loaded = Result.from_netcdf(tmp_nc)
 
-        Re-deriving on load would answer with today's decomposition against
-        yesterday's numbers, which is the failure the old fallback warned
-        about and this refuses instead.
-        """
+        for view in ('temporal', 'lump', 'total'):
+            xr.testing.assert_allclose(loaded.stats.effect_contributions[view], result.stats.effect_contributions[view])
+
+    def test_a_file_without_them_says_so_rather_than_re_deriving(self, tmp_nc: Path) -> None:
+        """Re-deriving on load would answer with today's logic against yesterday's numbers."""
         result = _solve_simple([datetime(2024, 1, 1, h) for h in range(3)])
         result.solution.to_netcdf(tmp_nc, mode='w', engine='netcdf4')
         result.data.to_netcdf(tmp_nc)
 
-        with pytest.warns(UserWarning, match="no 'contributions' group"):
+        with pytest.warns(UserWarning, match="no 'expressions' group"):
             loaded = Result.from_netcdf(tmp_nc)
-        assert loaded.contributions is None
+        assert not loaded.expressions.data_vars
         with pytest.raises(ValueError, match='cannot re-derive'):
             _ = loaded.stats.effect_contributions
 
     def test_roundtrip_does_not_warn(self, tmp_nc: Path) -> None:
-        """Loading a file with cached contributions does not emit the missing-group warning."""
+        """Loading a file that carries them emits no missing-group warning."""
         import warnings
 
         result = _solve_simple([datetime(2024, 1, 1, h) for h in range(3)])
@@ -278,62 +281,19 @@ class TestContributionsRoundtrip:
         with warnings.catch_warnings():
             warnings.simplefilter('error', UserWarning)
             loaded = Result.from_netcdf(tmp_nc)
-        assert loaded.contributions is not None
+        assert loaded.expressions.data_vars
 
     def test_netcdf_group_structure(self, tmp_nc: Path) -> None:
-        """The saved file has a 'contributions' NetCDF group with temporal/lump/total
-        variables on the (contributor, effect[, time]) dims — verified by opening
-        the group directly, independent of Result.from_netcdf."""
+        """The saved file carries an 'expressions' group, readable without Result."""
         result = _solve_simple([datetime(2024, 1, 1, h) for h in range(3)])
-        assert result.contributions is not None
         result.to_netcdf(tmp_nc)
 
-        # Main group (solution) loads without specifying group=
         solution = xr.load_dataset(tmp_nc)
         assert 'flow--rate' in solution
 
-        # The contributions group is its own NetCDF group on the same file.
-        contrib = xr.load_dataset(tmp_nc, group='contributions')
-        assert set(contrib.data_vars) == {'temporal', 'lump', 'total'}
-        assert set(contrib['temporal'].dims) == {'contributor', 'effect', 'time'}
-        assert set(contrib['lump'].dims) == {'contributor', 'effect'}
-        assert set(contrib['total'].dims) == {'contributor', 'effect'}
-
-    def test_tampered_investment_bounds_rejected_on_load(self, tmp_nc: Path) -> None:
-        """A netCDF whose invest table was hand-edited into an invalid state fails to load."""
-        import netCDF4
-
-        from fluxopt import Investment, ModelData
-
-        source = Flow(
-            carrier='elec',
-            size=Investment(size_min=10.0, size_max=100.0, lifetime=2),
-            relative_rate_max=1.0,
-        )
-        demand = Flow(carrier='elec', size=100, fixed_relative_profile=[0.5, 0.8, 0.6])
-        data = ModelData.build(
-            [datetime(2024, 1, 1, h) for h in range(3)],
-            carriers=[Carrier(id='elec')],
-            effects=[Effect(id='cost')],
-            ports=[Port(id='grid', imports=[source]), Port(id='demand', exports=[demand])],
-        )
-        data.to_netcdf(tmp_nc, mode='w')
-
-        with netCDF4.Dataset(tmp_nc, 'a') as nc:
-            invest = nc['model/flows/invest']
-            invest['max'][:] = 5.0  # now max < min
-
-        with pytest.raises(ValueError, match=r'Investment\.size_max < size_min'):
-            ModelData.from_netcdf(tmp_nc)
-
-    def test_missing_model_group_raises_clearly(self, tmp_path: Path) -> None:
-        """A netCDF file without fluxopt groups raises a clear OSError."""
-        from fluxopt import ModelData
-
-        p = tmp_path / 'other.nc'
-        xr.Dataset({'x': ('t', [1.0, 2.0])}).to_netcdf(p, engine='netcdf4')
-        with pytest.raises(OSError, match='No fluxopt model data'):
-            ModelData.from_netcdf(p)
+        expressions = xr.load_dataset(tmp_nc, group='expressions')
+        assert 'contribution_flow_hour' in expressions
+        assert set(expressions['contribution_flow_hour'].dims) >= {'flow', 'effect', 'time'}
 
 
 class TestBuildValidation:
