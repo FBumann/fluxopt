@@ -1,9 +1,7 @@
-"""Bind a :class:`~fluxopt.model_data.ModelData` to the relational math program.
+"""Bind a :class:`~fluxopt.model_data.ModelData` to fluxopt's math program.
 
-This is the data half of fluxopt's second backend. Both backends consume the
-same ``ModelData``: :class:`~fluxopt.model.FlowSystemModel` turns it into a
-linopy model, while this module emits the parameter tables that
-:data:`MATH_PROGRAM` declares, for a memory-bounded streaming build.
+The data half of the build: this module emits the parameter tables
+:data:`MATH_PROGRAM` declares, and lpspec does the rest.
 
 Sparsity is carried by *row absence* — a parameter keeps its declared rank
 while its table holds only live entries. Arrays at or below a variable's own
@@ -235,7 +233,7 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
     Args:
         data: The model data to bind. Both backends read the same object.
         objective: Effect ids mapped to their objective weight, as
-            :class:`~fluxopt.model.FlowSystemModel` takes it.
+            :func:`~fluxopt.relational.solve.solve` takes it.
 
     Returns:
         ``(sources, coords)`` ready to pass to ``lpspec.solve``.
@@ -594,7 +592,11 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         zsel = {'flow': sizing_ids}
         smax = xr.DataArray(sz.max.values, dims=['flow'], coords={'flow': sizing_ids})
         sources['rate_max_at_size_max'] = tidy((fds.rel_ub.sel(zsel) * smax), drop_zero=True)
-        sources['rate_min_at_size_max'] = tidy((fds.rel_lb.sel(zsel) * smax), drop_zero=True)
+        # Dense: this one also stands on the constant side of
+        # `status_sizing_rate_min`, where a dropped zero is a bound rather
+        # than an absent coefficient. A flow whose lower bound is zero is the
+        # ordinary case, so dropping it would break exactly the common one.
+        sources['rate_min_at_size_max'] = tidy((fds.rel_lb.sel(zsel) * smax), drop_zero=False)
         lump_terms += [
             ('effects_per_size', 'flow', sz.effects_per_size.rename(zren)),
             ('effects_fixed', 'flow', sz.effects_fixed.sel({zdim: opt_ids}).rename(zren) if opt_ids else None),

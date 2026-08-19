@@ -45,7 +45,7 @@ def test_reference_build(benchmark: object, reference_system: str) -> None:
             ('effects', 'effects'),
             ('series', 'series'),
             ('variables', 'variables'),
-            ('binaries', 'binaries'),
+            ('nonzeros', 'nonzeros'),
             ('constraints', 'constraints'),
         ):
             if key in row:

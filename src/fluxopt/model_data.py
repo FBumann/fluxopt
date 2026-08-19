@@ -22,6 +22,37 @@ if TYPE_CHECKING:
     from fluxopt.types import TimeIndex, Timesteps
 
 
+def compute_previous_duration(
+    previous_status: xr.DataArray,
+    target_state: int,
+    dt: xr.DataArray | float,
+) -> float:
+    """Compute consecutive duration of target_state at end of previous_status.
+
+    Walks backward through previous_status counting timesteps that match
+    the target state, then multiplies by timestep duration.
+
+    Args:
+        previous_status: Previous status values (time dimension).
+        target_state: 1 for active (uptime), 0 for inactive (downtime).
+        dt: Duration per timestep (scalar or DataArray).
+
+    Returns:
+        Total duration in target state at end of previous period.
+    """
+    values = previous_status.values
+    count = 0
+    for v in reversed(values):
+        if (target_state == 1 and v > 0) or (target_state == 0 and v == 0):
+            count += 1
+        else:
+            break
+
+    if isinstance(dt, xr.DataArray):
+        return float(dt.values[-count:].sum()) if count > 0 else 0.0
+    return dt * count
+
+
 @dataclass(frozen=True)
 class _EffectTemplate:
     """Pre-computed shape/dims/coords for an effect-dimensioned zero array."""
@@ -401,8 +432,6 @@ class StatusData:
                 Only populated for component-level status; emits a 2D
                 ``(dim, governed_idx)`` string array.
         """
-        from fluxopt.constraints.status import compute_previous_duration
-
         if not items:
             return None
 

@@ -23,7 +23,7 @@ from conftest import ts, waste  # noqa: F401 — re-exported for test imports
 
 from fluxopt import ModelData
 from fluxopt import optimize as fluxopt_optimize
-from fluxopt.model import FlowSystemModel
+from fluxopt.relational import solve
 from fluxopt.results import Result
 
 
@@ -56,8 +56,7 @@ def optimize(request, tmp_path):
             path = tmp_path / 'data.nc'
             data.to_netcdf(path, mode='w')
             loaded = ModelData.from_netcdf(path)
-            model = FlowSystemModel(loaded)
-            return model.optimize(objective=objective)
+            return solve(loaded, objective)
         # optimize->save->reload->validate
         result = fluxopt_optimize(**kwargs, objective=objective)
         path = tmp_path / 'result.nc'
