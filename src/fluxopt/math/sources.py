@@ -319,14 +319,9 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
     sources['rate_max'] = tidy(ub, drop_zero=False)
 
     # --- carrier balance --------------------------------------------------
-    coeff = data.carriers.flow_coeff  # (carrier, flow), NaN = unconnected
-    live = coeff.notnull() & (coeff != 0)
-    car_idx = live.values.argmax(axis=0)
-    carriers = coeff.coords['carrier'].values
-    flow_index = pd.DataFrame({'flow': flow_ids, 'carrier_of': [str(carriers[i]) for i in car_idx]})
-    sources['carrier_sign'] = pd.DataFrame(
-        {'flow': flow_ids, 'value': [float(coeff.values[i, j]) for j, i in enumerate(car_idx)]},
-    )
+    carriers_of = [str(c) for c in data.carriers.carrier_of.values]
+    flow_index = pd.DataFrame({'flow': flow_ids, 'carrier_of': carriers_of})
+    sources['carrier_sign'] = pd.DataFrame({'flow': flow_ids, 'value': data.carriers.sign.values})
 
     # --- converters -------------------------------------------------------
     if data.converters is not None:
@@ -953,7 +948,7 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         'time': axis('time', ordinals),
         'period': axis('period', p_ordinals),
         'build_period': axis('build_period', p_ordinals),
-        'carrier': labels([str(c) for c in carriers]),
+        'carrier': labels([str(c) for c in data.carriers.unit.coords['carrier'].values]),
         # Both kinds: a converter states linear equations, a piecewise curve,
         # or one of each. The axis is the union, or a curve's own converter
         # would not be a coordinate of the dimension its rows are keyed on.

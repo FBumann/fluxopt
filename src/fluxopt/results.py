@@ -134,19 +134,16 @@ class Result:
         element ids to their ``inputs`` (flows that produce into the element)
         and ``outputs`` (flows that consume from it).
         """
-        fc = self.data.carriers.flow_coeff  # (carrier, flow), +1/-1/NaN
+        cd = self.data.carriers
+        flow_ids = [str(f) for f in cd.carrier_of.coords['flow'].values]
+        of = [str(c) for c in cd.carrier_of.values]
+        signs = cd.sign.values
 
-        # Per-flow sign lookup: nanmax collapses carrier dim (each flow has exactly one)
-        flow_ids = [str(f) for f in fc.coords['flow'].values]
-        signs = fc.max('carrier').values  # (flow,) — +1 or -1
-
-        carriers: dict[str, dict[str, list[str]]] = {}
-        for cid in fc.coords['carrier'].values:
-            row = fc.sel(carrier=cid).dropna('flow')
-            carriers[str(cid)] = {
-                'inputs': list(row.coords['flow'].values[row.values > 0]),
-                'outputs': list(row.coords['flow'].values[row.values < 0]),
-            }
+        carriers: dict[str, dict[str, list[str]]] = {
+            str(cid): {'inputs': [], 'outputs': []} for cid in cd.unit.coords['carrier'].values
+        }
+        for fid, carrier, sign in zip(flow_ids, of, signs, strict=True):
+            carriers[carrier]['inputs' if sign > 0 else 'outputs'].append(fid)
 
         flow_sign = dict(zip(flow_ids, signs, strict=True))
 

@@ -818,18 +818,29 @@ def _carrier_dim_id(flow: Flow) -> str:
 
 @dataclass
 class CarriersData:
-    flow_coeff: xr.DataArray  # (carrier, flow) — +1/-1/NaN
+    """Which carrier each flow balances on, and which way it points.
+
+    A flow is on exactly one carrier, so this is two columns rather than the
+    ``(carrier, flow)`` matrix it used to be: that matrix held one entry per
+    column and every reader collapsed it straight back, at a cost quadratic in
+    a size that is only ever linear.
+    """
+
+    carrier_of: xr.DataArray  # (flow,) — the carrier this flow balances on
+    sign: xr.DataArray  # (flow,) — +1 produces into it, -1 consumes from it
     unit: xr.DataArray  # (carrier,) — energy unit label
     color: xr.DataArray  # (carrier,) — plot color ('' if unset)
     description: xr.DataArray  # (carrier,) — human-readable description
 
     def __post_init__(self) -> None:
-        """Validate balance coefficients are +1 / -1 / NaN (also on netCDF reload)."""
-        coeff = self.flow_coeff.values
-        ok = np.isnan(coeff) | (coeff == 1.0) | (coeff == -1.0)
-        if not ok.all():
-            bad = sorted({float(v) for v in coeff[~ok].ravel()})
-            raise ValueError(f'CarriersData.flow_coeff must be +1, -1, or NaN; got {bad}')
+        """Validate signs are +1 / -1 and every carrier named exists."""
+        values = self.sign.values
+        if not np.isin(values, (1.0, -1.0)).all():
+            bad = sorted({float(v) for v in values[~np.isin(values, (1.0, -1.0))]})
+            raise ValueError(f'CarriersData.sign must be +1 or -1; got {bad}')
+        known = {str(c) for c in self.unit.coords['carrier'].values}
+        if unknown := sorted({str(c) for c in self.carrier_of.values} - known):
+            raise ValueError(f'CarriersData.carrier_of names carriers that are not declared: {unknown}')
 
     def to_dataset(self) -> xr.Dataset:
         """Serialize to xr.Dataset."""
@@ -840,10 +851,11 @@ class CarriersData:
         """Deserialize from xr.Dataset.
 
         Args:
-            ds: Dataset with ``flow_coeff``, ``unit``, ``color``, ``description``.
+            ds: Dataset with ``carrier_of``, ``sign``, ``unit``, ``color``, ``description``.
         """
         return cls(
-            flow_coeff=ds['flow_coeff'],
+            carrier_of=ds['carrier_of'],
+            sign=ds['sign'],
             unit=ds['unit'],
             color=ds['color'],
             description=ds['description'],
@@ -869,10 +881,8 @@ class CarriersData:
             else:
                 carrier_ids.append(c.id)
 
-        coeff = np.full((len(carrier_ids), len(flow_ids)), np.nan)
-        for fi, (fid, f, _sign) in enumerate(flows):
-            ci = carrier_ids.index(_carrier_dim_id(f))
-            coeff[ci, fi] = carrier_coeff[fid]
+        of = [_carrier_dim_id(f) for _fid, f, _sign in flows]
+        signs = np.array([carrier_coeff[bf.id] for bf in flows])
 
         # Expand carrier metadata to match carrier dim (one entry per node)
         units: list[str] = []
@@ -885,7 +895,8 @@ class CarriersData:
             descriptions.extend([c.description] * n)
 
         return cls(
-            flow_coeff=xr.DataArray(coeff, dims=['carrier', 'flow'], coords={'carrier': carrier_ids, 'flow': flow_ids}),
+            carrier_of=xr.DataArray(of, dims=['flow'], coords={'flow': flow_ids}),
+            sign=xr.DataArray(signs, dims=['flow'], coords={'flow': flow_ids}),
             unit=xr.DataArray(units, dims=['carrier'], coords={'carrier': carrier_ids}),
             color=xr.DataArray(colors, dims=['carrier'], coords={'carrier': carrier_ids}),
             description=xr.DataArray(descriptions, dims=['carrier'], coords={'carrier': carrier_ids}),
@@ -1680,7 +1691,7 @@ class ModelData:
         def coord_ids(da: xr.DataArray) -> list[str]:
             return [str(v) for v in da.coords[da.dims[0]].values]
 
-        check_flows([str(v) for v in self.carriers.flow_coeff.coords['flow'].values], 'carriers.flow_coeff')
+        check_flows([str(v) for v in self.carriers.carrier_of.coords['flow'].values], 'carriers.carrier_of')
         if self.flows.sizing is not None:
             check_flows(coord_ids(self.flows.sizing.min), 'flows.sizing')
         if self.flows.invest is not None:
