@@ -207,11 +207,10 @@ class Result:
             import warnings
 
             warnings.warn(
-                f"NetCDF file {p} has no 'contributions' group; per-contributor effect "
-                'breakdown will be re-derived from solution + ModelData on first access. '
-                'Results may differ from the original solve if the contribution-decomposition '
-                'logic has changed since the file was written. Re-save the Result to refresh '
-                'the cached breakdown.',
+                f"NetCDF file {p} has no 'contributions' group, so this Result carries no "
+                'per-contributor effect breakdown. It is read off the model at solve time and '
+                'cannot be recovered from the solution alone — re-solve, or re-save a Result '
+                'that has one.',
                 stacklevel=2,
             )
 

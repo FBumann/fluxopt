@@ -67,31 +67,6 @@ class Dim:
     PW_PAIR = 'pw_pair'
 
 
-class Contribution:
-    """Effect-contribution term keys (see :mod:`fluxopt.effect_terms`).
-
-    Each key names one way a solver variable (or constant) contributes to
-    the effects; the same keys identify the shares in the post-solve
-    decomposition.
-    """
-
-    FLOW_HOUR = 'flow_hour'
-    STATUS_RUNNING = 'status_running'
-    STATUS_STARTUP = 'status_startup'
-    COMPONENT_RUNNING = 'component_running'
-    COMPONENT_STARTUP = 'component_startup'
-    FLOW_SIZING_PER_SIZE = 'flow_sizing_per_size'
-    FLOW_SIZING_FIXED_OPTIONAL = 'flow_sizing_fixed_optional'
-    FLOW_SIZING_FIXED_MANDATORY = 'flow_sizing_fixed_mandatory'
-    STORAGE_SIZING_PER_SIZE = 'storage_sizing_per_size'
-    STORAGE_SIZING_FIXED_OPTIONAL = 'storage_sizing_fixed_optional'
-    STORAGE_SIZING_FIXED_MANDATORY = 'storage_sizing_fixed_mandatory'
-    INVEST_PER_SIZE_AT_BUILD = 'invest_per_size_at_build'
-    INVEST_FIXED_AT_BUILD = 'invest_fixed_at_build'
-    INVEST_PER_SIZE_RECURRING = 'invest_per_size_recurring'
-    INVEST_FIXED_RECURRING = 'invest_fixed_recurring'
-
-
 class Var:
     """Solution variable names, ``<family>--<field>`` (also keys of ``Result.solution``)."""
 

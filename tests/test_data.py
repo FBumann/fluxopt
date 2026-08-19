@@ -392,54 +392,23 @@ class TestDimsValidation:
             Dims(time=time, dt=dt, weights=bad_weights)
 
 
-class TestEffectTerms:
-    def test_terms_enumerate_declared_contributions(self):
-        """The term table names every contribution of a full-featured system."""
-        from fluxopt import Sizing, Status
-        from fluxopt.contract import Contribution
-        from fluxopt.effect_terms import effect_terms
+class TestContributionsAreDeclared:
+    def test_the_program_names_every_contribution_the_ledger_sums(self):
+        """The breakdown and the ledger are one declaration, so they must agree.
 
-        source = Flow(
-            carrier='elec',
-            size=Sizing(size_min=0, size_max=100, effects_per_size={'cost': 5.0}, mandatory=False),
-            relative_rate_min=0.1,
-            status=Status(effects_per_running_hour={'cost': 1.0}, effects_per_startup={'cost': 2.0}),
-            effects_per_flow_hour={'cost': 0.04},
-        )
-        demand = Flow(carrier='elec', size=100, fixed_relative_profile=[0.5, 0.8, 0.6])
-        bat = Storage(
-            id='bat',
-            charging=Flow(carrier='elec', size=10),
-            discharging=Flow(carrier='elec', size=10),
-            capacity=Sizing(size_min=0, size_max=50, effects_per_size={'cost': 3.0}, effects_fixed={'cost': 7.0}),
-        )
-        data = ModelData.build(
-            ts(3),
-            carriers=[Carrier(id='elec')],
-            effects=[Effect(id='cost')],
-            ports=[Port(id='grid', imports=[source]), Port(id='demand', exports=[demand])],
-            storages=[bat],
-        )
-        keys = {t.key for t in effect_terms(data)}
-        assert keys == {
-            Contribution.FLOW_HOUR,
-            Contribution.STATUS_RUNNING,
-            Contribution.STATUS_STARTUP,
-            Contribution.FLOW_SIZING_PER_SIZE,
-            Contribution.STORAGE_SIZING_PER_SIZE,
-            Contribution.STORAGE_SIZING_FIXED_MANDATORY,
-        }
+        `effect_temporal` and `effect_lump` sum exactly the expressions
+        `contributions.py` reads back; a contribution added to one and not the
+        other would attribute a cost nobody is charged, or charge one nobody
+        is attributed.
+        """
+        import lpspec
 
-    def test_zero_coefficient_terms_are_omitted(self):
-        """Terms whose coefficients are all zero do not appear."""
-        from fluxopt.effect_terms import effect_terms
+        from fluxopt.contributions import LUMP, TEMPORAL
+        from fluxopt.math import PROGRAM
 
-        flow = Flow(carrier='elec', size=100)
-        demand = Flow(carrier='elec', size=100, fixed_relative_profile=[0.5, 0.8, 0.6])
-        data = ModelData.build(
-            ts(3),
-            carriers=[Carrier(id='elec')],
-            effects=[Effect(id='cost')],
-            ports=[Port(id='grid', imports=[flow]), Port(id='demand', exports=[demand])],
-        )
-        assert effect_terms(data) == []
+        program = lpspec.load_model(PROGRAM)
+        declared = set(TEMPORAL) | set(LUMP)
+        assert declared <= set(program.expressions), 'a contribution is read that the program does not declare'
+        summed = program.expressions['effect_temporal'].expression + program.expressions['effect_lump'].expression
+        for name in declared:
+            assert name in summed, f'{name} is read back but the ledger never sums it'

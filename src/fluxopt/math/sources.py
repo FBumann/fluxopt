@@ -57,7 +57,6 @@ PERIOD_PARAMS = frozenset(
         'effects_fixed',
         'effects_per_capacity',
         'effects_fixed_capacity',
-        'effects_fixed_mandatory',
         'objective_weight',
         'prior_level',
         'periodic_min',
@@ -268,7 +267,6 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
     # (parameter name, entity dim, coefficients) — the entity dim is carried so
     # an absent term still emits a correctly keyed empty table.
     lump_terms: list[tuple[str, str, xr.DataArray | None]] = []
-    lump_consts: list[tuple[str, xr.DataArray]] = []
 
     # --- flow rate bounds: dense, they sit at the variable's own grid -----
     size, bt = fds.size, fds.bound_type
@@ -372,7 +370,6 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
             cap_ids = [str(v) for v in csz.min.coords[cdim].values]
             cmand = csz.mandatory.values.astype(bool)
             copt = [s for s, m in zip(cap_ids, cmand, strict=True) if not m]
-            cmand_ids = [s for s, m in zip(cap_ids, cmand, strict=True) if m]
             sources['has_capacity_sizing'] = _flags('has_capacity_sizing', 'storage', cap_ids)
             sources['capacity_optional'] = _flags('capacity_optional', 'storage', copt)
             sources['capacity_min'] = pd.DataFrame({'storage': cap_ids, 'value': csz.min.values})
@@ -385,12 +382,9 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
                 (
                     'effects_fixed_capacity',
                     'storage',
-                    csz.effects_fixed.sel({cdim: copt}).rename(cren) if copt else None,
+                    csz.effects_fixed.rename(cren),
                 ),
             ]
-            if cmand_ids:
-                cap_const = csz.effects_fixed.sel({cdim: cmand_ids}).rename(cren)
-                lump_consts.append(('storage', cap_const))
         sources['is_cyclic'] = pd.DataFrame(
             {'storage': storage_ids, 'value': sds.cyclic.values.astype(bool)},
         )
@@ -554,8 +548,8 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
             )
 
         ec_extra = [
-            ('effects_per_running_hour', on_entity('effects_running') * dims.dt * dims.weights),
-            ('effects_per_startup', on_entity('effects_startup') * dims.weights),
+            ('effects_per_running_hour', on_entity('effects_running') * dims.dt),
+            ('effects_per_startup', on_entity('effects_startup')),
         ]
     else:
         for n in ('has_uptime', 'has_downtime'):
@@ -585,7 +579,6 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         zren = {zdim: 'flow'}
         mandatory = sz.mandatory.values.astype(bool)
         opt_ids = [f for f, m in zip(sizing_ids, mandatory, strict=True) if not m]
-        mand_ids = [f for f, m in zip(sizing_ids, mandatory, strict=True) if m]
         sources['has_sizing'] = _flags('has_sizing', 'flow', sizing_ids)
         sources['size_optional'] = _flags('size_optional', 'flow', opt_ids)
         sources['size_min'] = pd.DataFrame({'flow': sizing_ids, 'value': sz.min.values})
@@ -600,10 +593,8 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         sources['rate_min_at_size_max'] = tidy((fds.rel_lb.sel(zsel) * smax), drop_zero=False)
         lump_terms += [
             ('effects_per_size', 'flow', sz.effects_per_size.rename(zren)),
-            ('effects_fixed', 'flow', sz.effects_fixed.sel({zdim: opt_ids}).rename(zren) if opt_ids else None),
+            ('effects_fixed', 'flow', sz.effects_fixed.rename(zren)),
         ]
-        if mand_ids:
-            lump_consts.append(('flow', sz.effects_fixed.sel({zdim: mand_ids}).rename(zren)))
     else:
         for n in ('has_sizing', 'size_optional', 'size_min', 'size_max'):
             sources[n] = _empty(n, 'flow')
@@ -728,7 +719,10 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
     # --- effects: the sparse one -----------------------------------------
     eds = data.effects
     effect_ids = [str(e) for e in eds.total_min.coords['effect'].values]
-    ec = fds.effect_coeff * dims.dt * dims.weights
+    # dt stays: a per-flow-hour rate times a duration is the step's energy.
+    # The aggregation weight does not — the program applies it in the sum,
+    # so a named contribution reads as the physical per-step quantity.
+    ec = fds.effect_coeff * dims.dt
     if eds.cf_temporal is not None:
         ec = apply_leontief(leontief(eds.cf_temporal), ec)
     sources['effects_per_flow_hour'] = tidy(ec, drop_zero=True)
@@ -756,16 +750,6 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         sources.setdefault(name, _empty(name, 'flow', 'effect', 'period', 'build_period'))
     for name in ('effects_per_size_recurring', 'effects_fixed_recurring'):
         sources.setdefault(name, _empty(name, 'flow', 'effect', 'period'))
-    total_const: xr.DataArray | None = None
-    for edim, arr in lump_consts:
-        part = fold(arr).sum(edim)
-        total_const = part if total_const is None else total_const + part
-    # Dense over `effect`, zeros included. This is the constant side of
-    # `effect_accounting`, where an absent row is not an absence: it is read as
-    # a zero that binds the row it sits in. Every effect therefore states its
-    # constant, even when that constant is nothing.
-    zero_const = xr.zeros_like(xr.DataArray(np.zeros(len(effect_ids)), dims=['effect'], coords={'effect': effect_ids}))
-    sources['effects_fixed_mandatory'] = _tidy(zero_const if total_const is None else total_const, drop_zero=False)
     # Objective weight x period weight, folded into one parameter.
     obj_w = xr.DataArray(
         [float(objective.get(e, 0.0)) for e in effect_ids],
@@ -795,6 +779,7 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
 
     # --- temporal boundary mask ------------------------------------------
     sources['is_first'] = pd.DataFrame({'time': ordinals, 'value': [i == 0 for i in ordinals]})
+    sources['time_weight'] = pd.DataFrame({'time': ordinals, 'value': dims.weights.values})
 
     # --- flow aggregates ------------------------------------------------
     # `size` here is the static one; a sized flow's is a variable, so its bound

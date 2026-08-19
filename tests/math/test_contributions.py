@@ -691,7 +691,7 @@ class TestValidateAgainstSolver:
     """The validation helper raises when per-contributor totals don't sum to solver totals."""
 
     def test_raises_on_mismatch(self):
-        from fluxopt.contributions import _validate_against_solver
+        from fluxopt.contributions import validate_against_solver
 
         total = xr.DataArray(
             [[1.0, 2.0], [3.0, 4.0]],
@@ -704,10 +704,10 @@ class TestValidateAgainstSolver:
             }
         )
         with pytest.raises(ValueError, match='Effect contributions do not sum to solver totals'):
-            _validate_against_solver(total, solution)
+            validate_against_solver(total, solution)
 
     def test_passes_on_exact_match(self):
-        from fluxopt.contributions import _validate_against_solver
+        from fluxopt.contributions import validate_against_solver
 
         total = xr.DataArray(
             [[1.0, 2.0], [3.0, 4.0]],
@@ -719,63 +719,41 @@ class TestValidateAgainstSolver:
                 'effect--total': xr.DataArray([4.0, 6.0], dims=['effect'], coords={'effect': ['cost', 'co2']}),
             }
         )
-        _validate_against_solver(total, solution)  # no exception
+        validate_against_solver(total, solution)  # no exception
 
 
-class TestComputeEffectContributionsAPI:
-    """Public ``compute_effect_contributions`` works directly (not just via stats)."""
+class TestBreakdownIsReadOffTheModel:
+    """The breakdown comes from the program's own expressions, not a recompute."""
 
-    def test_direct_call_with_cross_effects(self):
-        """Calling compute_effect_contributions(cross_effects=True) yields the same
-        with-cross result as accessing result.stats.effect_contributions."""
-        from fluxopt.contributions import compute_effect_contributions
-
+    def _result(self):
         source = Flow(carrier='elec', size=200, effects_per_flow_hour={'cost': 0.04, 'co2': 0.5})
         sink = Flow(carrier='elec', size=100, fixed_relative_profile=[0.5, 0.8, 0.6])
-
-        result = optimize(
+        return optimize(
             timesteps=ts(3),
             carriers=[Carrier(id='elec')],
-            effects=[
-                Effect(id='cost', contribution_from={'co2': 50}),
-                Effect(id='co2', unit='kg'),
-            ],
+            effects=[Effect(id='cost', contribution_from={'co2': 50}), Effect(id='co2', unit='kg')],
             objective='cost',
             ports=[Port(id='grid', imports=[source]), Port(id='demand', exports=[sink])],
         )
 
-        via_function = compute_effect_contributions(result.solution, result.data, cross_effects=True)
-        via_stats = result.stats.effect_contributions
-        xr.testing.assert_allclose(via_function['total'], via_stats['total'])
-        xr.testing.assert_allclose(via_function['temporal'], via_stats['temporal'])
-        xr.testing.assert_allclose(via_function['lump'], via_stats['lump'])
+    def test_the_solve_records_it(self):
+        """A named expression is evaluated at a solution, so the solve is where it can be had."""
+        assert self._result().contributions is not None
 
-    def test_direct_call_no_cross_effects(self):
-        """Calling compute_effect_contributions(cross_effects=False) yields the same
-        direct result as accessing result.stats.effect_contributions_direct.
+    def test_a_result_without_one_says_so_rather_than_guessing(self):
+        """Re-deriving from the solution alone would answer with today's logic."""
+        import dataclasses
 
-        This locks in the public-API contract for direct mode — if the stats
-        accessor ever grows post-processing on top of the function call, this
-        test catches the drift.
-        """
-        from fluxopt.contributions import compute_effect_contributions
+        stripped = dataclasses.replace(self._result(), contributions=None)
+        with pytest.raises(ValueError, match='cannot re-derive'):
+            _ = stripped.stats.effect_contributions
 
-        source = Flow(carrier='elec', size=200, effects_per_flow_hour={'cost': 0.04, 'co2': 0.5})
-        sink = Flow(carrier='elec', size=100, fixed_relative_profile=[0.5, 0.8, 0.6])
-
-        result = optimize(
-            timesteps=ts(3),
-            carriers=[Carrier(id='elec')],
-            effects=[
-                Effect(id='cost', contribution_from={'co2': 50}),
-                Effect(id='co2', unit='kg'),
-            ],
-            objective='cost',
-            ports=[Port(id='grid', imports=[source]), Port(id='demand', exports=[sink])],
-        )
-
-        via_function = compute_effect_contributions(result.solution, result.data, cross_effects=False)
-        via_stats = result.stats.effect_contributions_direct
-        xr.testing.assert_allclose(via_function['total'], via_stats['total'])
-        xr.testing.assert_allclose(via_function['temporal'], via_stats['temporal'])
-        xr.testing.assert_allclose(via_function['lump'], via_stats['lump'])
+    def test_the_two_views_differ_only_by_the_fold(self):
+        """`direct` is `(I - C) . charged`, so it strips exactly the priced-in share."""
+        result = self._result()
+        charged = result.stats.effect_contributions
+        direct = result.stats.effect_contributions_direct
+        # cost receives co2 priced at 50, so direct must be the smaller of the two
+        assert float(direct['total'].sel(effect='cost').sum()) < float(charged['total'].sel(effect='cost').sum())
+        # co2 emits into nothing, so both views agree on it
+        xr.testing.assert_allclose(direct['total'].sel(effect='co2'), charged['total'].sel(effect='co2'))

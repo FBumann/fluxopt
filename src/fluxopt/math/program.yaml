@@ -122,7 +122,6 @@ parameters:
   # Lump-domain effect coefficients, Leontief-folded like the temporal ones.
   effects_per_size: {dims: [flow, effect, period]}
   effects_fixed: {dims: [flow, effect, period]}
-  effects_fixed_mandatory: {dims: [effect, period]}
 
   # --- status x sizing: big-M decoupling of the binary from the size -------
   rate_max_at_size_max: {dims: [flow, time, period]}   # size_max * rel_ub
@@ -214,6 +213,8 @@ parameters:
   total_min: {dims: [effect]}
   total_max: {dims: [effect]}
   period_weight: {dims: [effect, period]}
+  # Aggregation weight per timestep; multiplies where the sum happens.
+  time_weight: {dims: [time]}
 
 variables:
   rate:
@@ -275,9 +276,13 @@ variables:
     where: "has_invest"
     bounds: {lower: 0, upper: invest_max}
 
+  # Every sized flow has one, not only the optional ones: a mandatory build
+  # is the same decision already taken, and pinning it to 1 is cheaper than a
+  # constant term — a constant cannot be attributed to the flow that owes it,
+  # and on the constant side of the ledger it has to be covered for every row.
   size_built:
     foreach: [flow, period]
-    where: "size_optional"
+    where: "has_sizing"
     domain: binary
 
   capacity:
@@ -287,7 +292,7 @@ variables:
 
   capacity_built:
     foreach: [storage, period]
-    where: "capacity_optional"
+    where: "has_capacity_sizing"
     domain: binary
 
   charging:
@@ -314,47 +319,73 @@ variables:
     foreach: [effect, period]
     bounds: {lower: -.inf, upper: .inf}
 
-macros:
-  # Every effect contribution has one of three shapes. Naming them turns the
-  # accounting equation into a ledger you can read line by line.
-  per_step:
-    args: [driver, coeff]
-    template: sum(sum(driver * coeff, over=time), over=flow)
-  per_entity:
-    args: [driver, coeff]
-    kwargs: [over]
-    template: sum(driver * coeff, over=over)
-  at_build:
-    args: [driver, coeff]
-    template: sum(sum(driver * coeff, over=build_period), over=flow)
-  # The status ledger is keyed by the decision, not by the flow it gates.
-  per_step_status:
-    args: [driver, coeff]
-    template: sum(sum(driver * coeff, over=time), over=status_entity)
-
 expressions:
   # The two halves of the ledger, named rather than inlined: each is a
   # quantity the model reports, and naming them is what makes them readable
   # after a solve through `result.expression(...)` — computed by the compiler
   # that built the accounting row, so the split cannot drift from the total.
+  # --- attribution -------------------------------------------------------
+  # Every contribution is named *before* it is summed, and keeps the entity it
+  # came from. The accounting row below sums these very expressions, so what a
+  # reader gets back from `result.expression(...)` is not a reconstruction of
+  # the model's arithmetic — it is the model's arithmetic, one step earlier.
+  #
+  # `time_weight` multiplies in the sum rather than in the coefficient, so a
+  # contribution reads as the physical per-step quantity and the aggregation
+  # weight stays where aggregation happens.
+  contribution_flow_hour:
+    expression: rate * effects_per_flow_hour
+    description: What each flow's throughput contributes, per timestep.
+  contribution_running:
+    expression: running * effects_per_running_hour
+    description: What being on costs, per timestep, for whatever carries the decision.
+  contribution_startup:
+    expression: startup * effects_per_startup
+    description: What each start costs, at the step it happens.
+
+  contribution_flow_per_size:
+    expression: size * effects_per_size
+    description: What a flow's built size costs, per period.
+  contribution_flow_fixed:
+    expression: size_built * effects_fixed
+    description: What deciding to build a flow costs at all, per period.
+  contribution_storage_per_capacity:
+    expression: capacity * effects_per_capacity
+    description: What a storage's built capacity costs, per period.
+  contribution_storage_fixed:
+    expression: capacity_built * effects_fixed_capacity
+    description: What deciding to build a storage costs at all, per period.
+
+  contribution_invest_per_size_at_build:
+    expression: invest_size_at_build * effects_per_size_at_build
+    description: What the built size costs, charged to the period it was built in.
+  contribution_invest_fixed_at_build:
+    expression: invest_build * effects_fixed_at_build
+    description: What the build decision costs, charged where it happened.
+  contribution_invest_per_size_recurring:
+    expression: size * effects_per_size_recurring
+    description: What keeping the size costs, every period it is alive.
+  contribution_invest_fixed_recurring:
+    expression: invest_active * effects_fixed_recurring
+    description: What keeping the unit costs, every period it is alive.
+
   effect_temporal:
     expression: >-
-      per_step(rate, effects_per_flow_hour)
-      + per_step_status(running, effects_per_running_hour)
-      + per_step_status(startup, effects_per_startup)
+      sum(sum(contribution_flow_hour * time_weight, over=time), over=flow)
+      + sum(sum(contribution_running * time_weight, over=time), over=status_entity)
+      + sum(sum(contribution_startup * time_weight, over=time), over=status_entity)
     description: What running the system costs, accumulated over the horizon.
 
   effect_lump:
     expression: >-
-      per_entity(size, effects_per_size, over=flow)
-      + per_entity(size_built, effects_fixed, over=flow)
-      + per_entity(capacity, effects_per_capacity, over=storage)
-      + per_entity(capacity_built, effects_fixed_capacity, over=storage)
-      + at_build(invest_size_at_build, effects_per_size_at_build)
-      + at_build(invest_build, effects_fixed_at_build)
-      + per_entity(size, effects_per_size_recurring, over=flow)
-      + per_entity(invest_active, effects_fixed_recurring, over=flow)
-      + effects_fixed_mandatory
+      sum(contribution_flow_per_size, over=flow)
+      + sum(contribution_flow_fixed, over=flow)
+      + sum(contribution_storage_per_capacity, over=storage)
+      + sum(contribution_storage_fixed, over=storage)
+      + sum(sum(contribution_invest_per_size_at_build, over=build_period), over=flow)
+      + sum(sum(contribution_invest_fixed_at_build, over=build_period), over=flow)
+      + sum(contribution_invest_per_size_recurring, over=flow)
+      + sum(contribution_invest_fixed_recurring, over=flow)
     description: What building it costs — one-time and recurring, never per step.
 
   net_charge:
@@ -493,6 +524,11 @@ constraints:
     where: "is_gated AND has_sizing AND size_optional AND NOT (size_min > 0)"
     expression: at(running, by=status_of) <= size_built
 
+  sizing_mandatory_built:
+    foreach: [flow, period]
+    where: "has_sizing AND NOT size_optional"
+    expression: size_built == 1
+
   sizing_min:
     foreach: [flow, period]
     where: "has_sizing AND NOT size_optional"
@@ -569,6 +605,11 @@ constraints:
     foreach: [storage, time, period]
     where: "has_capacity_sizing"
     expression: level <= relative_level_max * capacity
+
+  cap_mandatory_built:
+    foreach: [storage, period]
+    where: "has_capacity_sizing AND NOT capacity_optional"
+    expression: capacity_built == 1
 
   cap_min:
     foreach: [storage, period]
