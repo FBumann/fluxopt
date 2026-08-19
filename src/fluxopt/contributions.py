@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 import xarray as xr
 
-from fluxopt.contract import Dim, Var
+from fluxopt.contract import Var
 
 if TYPE_CHECKING:
     from fluxopt.model_data import ModelData
@@ -60,15 +60,14 @@ def _first_governed_flow(data: ModelData) -> dict[str, str]:
     attributes them to the component's first governed flow (a presentation
     policy of the breakdown, not part of the model math).
     """
-    cst = data.flows.cstatus
-    if cst is None or cst.governed_flows is None:
+    governed = data.flows.governed_by
+    if governed is None:
         return {}
-    gf = cst.governed_flows
-    return {
-        str(comp_id): str(gf.sel(cstatus_component=comp_id).values[0])
-        for comp_id in gf.coords[Dim.CSTATUS_COMPONENT].values
-        if str(gf.sel(cstatus_component=comp_id).values[0])
-    }
+    first: dict[str, str] = {}
+    for fid, owner in zip(governed.coords['flow'].values, governed.values, strict=True):
+        if str(owner):
+            first.setdefault(str(owner), str(fid))
+    return first
 
 
 def _onto_contributor(arr: xr.DataArray, entity: str, data: ModelData, flow_ids: list[str]) -> xr.DataArray:
