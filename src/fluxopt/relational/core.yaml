@@ -66,15 +66,15 @@ parameters:
   has_status: {dims: [flow], dtype: bool}
   is_bounded: {dims: [flow], dtype: bool}
   is_profile: {dims: [flow], dtype: bool}
-  rate_min_when_on: {dims: [flow, time, period]}     # size * rel_lb, gated by `on`
-  rate_max_when_on: {dims: [flow, time, period]}     # size * rel_ub, gated by `on`
-  rate_fixed_when_on: {dims: [flow, time, period]}    # size * profile, gated by `on`
+  rate_min_when_on: {dims: [flow, time, period]}     # size * rel_lb, gated by `running`
+  rate_max_when_on: {dims: [flow, time, period]}     # size * rel_ub, gated by `running`
+  rate_fixed_when_on: {dims: [flow, time, period]}    # size * profile, gated by `running`
   has_uptime: {dims: [flow], dtype: bool}
   uptime_min: {dims: [flow]}
   uptime_upper: {dims: [flow, time, period]}      # uptime_max where given, else mega
   uptime_big_m: {dims: [flow]}              # big-M: horizon + any prior uptime
   downtime_big_m: {dims: [flow]}            # big-M: horizon + any prior downtime
-  dt_previous: {dims: [time]}              # dt at t-1
+  dt: {dims: [time]}                       # timestep duration [h]
   is_last: {dims: [time], dtype: bool}
   has_downtime: {dims: [flow], dtype: bool}
   downtime_min: {dims: [flow]}
@@ -84,7 +84,6 @@ parameters:
   previous_downtime: {dims: [flow]}
   forced_on_at_start: {dims: [flow], dtype: bool}    # prior run shorter than uptime_min
   forced_off_at_start: {dims: [flow], dtype: bool}
-  dt_at_start: {dims: [flow]}                       # dt at t=0, per flow (broadcast)
   effects_per_running_hour: {dims: [flow, effect, time, period]}       # running effects * dt
   effects_per_startup: {dims: [flow, effect, time, period]}  # startup effects
 
@@ -173,7 +172,7 @@ variables:
     foreach: [storage, time, period]
     bounds: {lower: level_min, upper: level_max}
 
-  on:
+  running:
     foreach: [flow, time, period]
     where: "has_status"
     binary: true
@@ -291,40 +290,40 @@ constraints:
       - expression: level == prior_level * retention + net_charge
         where: "NOT is_cyclic AND is_first"
 
-  # Semi-continuous rate: {0} u [size*rel_lb, size*rel_ub], gated by `on`.
+  # Semi-continuous rate: {0} u [size*rel_lb, size*rel_ub], gated by `running`.
   status_rate:
     foreach: [flow, time, period]
     where: "has_status AND NOT has_sizing"
     equations:
-      - expression: rate >= rate_min_when_on * on
+      - expression: rate >= rate_min_when_on * running
         where: "is_bounded"
-      - expression: rate <= rate_max_when_on * on
+      - expression: rate <= rate_max_when_on * running
         where: "is_bounded"
-      - expression: rate == rate_fixed_when_on * on
+      - expression: rate == rate_fixed_when_on * running
         where: "is_profile"
 
   status_transition:
     foreach: [flow, time, period]
     where: "has_status"
     equations:
-      - expression: startup - shutdown == on - shift(on, time=1)
+      - expression: startup - shutdown == running - shift(running, time=1)
         where: "NOT is_first"
-      - expression: startup - shutdown == on - initial_status
+      - expression: startup - shutdown == running - initial_status
         where: "initial_status AND is_first"
       - expression: startup + shutdown <= 1
 
-  # Big-M duration tracking: uptime[t] accumulates dt while `on` holds.
+  # Big-M duration tracking: uptime[t] accumulates dt while `running` holds.
   uptime_track:
     foreach: [flow, time, period]
     where: "has_uptime"
     equations:
-      - expression: uptime <= uptime_big_m * on
-      - expression: uptime <= shift(uptime, time=1) + dt_previous
+      - expression: uptime <= uptime_big_m * running
+      - expression: uptime <= shift(uptime, time=1) + shift(dt, time=1)
         where: "NOT is_first"
-      - expression: uptime >= shift(uptime, time=1) + dt_previous + (on - 1) * uptime_big_m
+      - expression: uptime >= shift(uptime, time=1) + shift(dt, time=1) + (running - 1) * uptime_big_m
         where: "NOT is_first"
       # minimum run length, read one step ahead
-      - expression: uptime >= uptime_min * (on - shift(on, time=-1))
+      - expression: uptime >= uptime_min * (running - shift(running, time=-1))
         where: "uptime_min AND NOT is_last"
 
   # P in [rel_lb, rel_ub] * S with S a decision variable — so these leave
@@ -340,23 +339,23 @@ constraints:
       - expression: rate == fixed_relative_profile * size
         where: "is_profile"
 
-  # P <= on*M+, P <= S*rel_ub, P >= (on-1)*M- + S*rel_lb
+  # P <= running*M+, P <= S*rel_ub, P >= (running-1)*M- + S*rel_lb
   status_sizing_rate:
     foreach: [flow, time, period]
     where: "has_status AND has_sizing"
     equations:
-      - expression: rate <= rate_max_at_size_max * on
+      - expression: rate <= rate_max_at_size_max * running
       - expression: rate <= relative_rate_max * size
-      - expression: rate - rate_min_at_size_max * on - relative_rate_min * size >= 0 - rate_min_at_size_max
+      - expression: rate - rate_min_at_size_max * running - relative_rate_min * size >= 0 - rate_min_at_size_max
 
-  # an unbuilt unit cannot be on
+  # an unbuilt unit cannot be running
   status_sizing_gate:
     foreach: [flow, time, period]
     where: "has_status AND has_sizing"
     equations:
-      - expression: size >= size_min * on
+      - expression: size >= size_min * running
         where: "size_min > 0"
-      - expression: on <= size_built
+      - expression: running <= size_built
         where: "size_optional AND NOT (size_min > 0)"
 
   sizing_bounds:
@@ -418,18 +417,18 @@ constraints:
       - expression: capacity <= capacity_max * capacity_built
         where: "capacity_optional"
 
-  # Downtime mirrors uptime with the state inverted: (1 - on).
-  # (1-on[t]) - (1-on[t+1]) reduces to shift(on, time=-1) - on.
+  # Downtime mirrors uptime with the state inverted: (1 - running).
+  # (1-running[t]) - (1-running[t+1]) reduces to shift(running, time=-1) - running.
   downtime_track:
     foreach: [flow, time, period]
     where: "has_downtime"
     equations:
-      - expression: downtime + downtime_big_m * on <= downtime_big_m
-      - expression: downtime <= shift(downtime, time=1) + dt_previous
+      - expression: downtime + downtime_big_m * running <= downtime_big_m
+      - expression: downtime <= shift(downtime, time=1) + shift(dt, time=1)
         where: "NOT is_first"
-      - expression: downtime >= shift(downtime, time=1) + dt_previous - downtime_big_m * on
+      - expression: downtime >= shift(downtime, time=1) + shift(dt, time=1) - downtime_big_m * running
         where: "NOT is_first"
-      - expression: downtime >= downtime_min * (shift(on, time=-1) - on)
+      - expression: downtime >= downtime_min * (shift(running, time=-1) - running)
         where: "downtime_min AND NOT is_last"
 
   # Carry-over from before the horizon: duration[0] = state[0] * (previous + dt[0]),
@@ -438,13 +437,13 @@ constraints:
     foreach: [flow, time, period]
     where: "is_first"
     equations:
-      - expression: uptime == on * (previous_uptime + dt_at_start)
+      - expression: uptime == running * (previous_uptime + dt)
         where: "previous_uptime"
-      - expression: downtime + on * (previous_downtime + dt_at_start) == previous_downtime + dt_at_start
+      - expression: downtime + running * (previous_downtime + dt) == previous_downtime + dt
         where: "previous_downtime"
-      - expression: on >= 1
+      - expression: running >= 1
         where: "forced_on_at_start"
-      - expression: on <= 0
+      - expression: running <= 0
         where: "forced_off_at_start"
 
   storage_final:
@@ -519,7 +518,7 @@ constraints:
     equations:
       - expression: >-
           effect_total == per_step(rate, effects_per_flow_hour)
-          + per_step(on, effects_per_running_hour)
+          + per_step(running, effects_per_running_hour)
           + per_step(startup, effects_per_startup)
           + per_entity(size, effects_per_size, over=flow)
           + per_entity(size_built, effects_fixed, over=flow)
