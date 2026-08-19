@@ -23,7 +23,7 @@ import polars as pl
 import xarray as xr
 
 from fluxopt.contract import BoundType, Dim
-from fluxopt.contributions import _apply_leontief, _leontief
+from fluxopt.leontief import apply_leontief, leontief
 from fluxopt.validation import reject_varying_contribution_into_lump
 
 if TYPE_CHECKING:
@@ -730,21 +730,21 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
     effect_ids = [str(e) for e in eds.total_min.coords['effect'].values]
     ec = fds.effect_coeff * dims.dt * dims.weights
     if eds.cf_temporal is not None:
-        ec = _apply_leontief(_leontief(eds.cf_temporal), ec)
+        ec = apply_leontief(leontief(eds.cf_temporal), ec)
     sources['effects_per_flow_hour'] = tidy(ec, drop_zero=True)
-    leo = _leontief(eds.cf_temporal) if eds.cf_temporal is not None else None
+    leo = leontief(eds.cf_temporal) if eds.cf_temporal is not None else None
     for name, arr in ec_extra:
-        sources[name] = tidy(_apply_leontief(leo, arr) if leo is not None else arr, drop_zero=True)
+        sources[name] = tidy(apply_leontief(leo, arr) if leo is not None else arr, drop_zero=True)
     for name in ('effects_per_running_hour', 'effects_per_startup'):
         sources.setdefault(name, _empty(name, 'status_entity', 'effect', 'time'))
 
     # Lump domain: effect_lump = (I - cf_lump)^-1 . lump_direct, folded into
     # the coefficients so no self-referential effect_lump variable is needed.
-    leo_lump = _leontief(eds.cf_temporal.mean('time')) if eds.cf_temporal is not None else None
+    leo_lump = leontief(eds.cf_temporal.mean('time')) if eds.cf_temporal is not None else None
 
     def fold(arr: xr.DataArray) -> xr.DataArray:
         """Apply the lump-domain Leontief inverse, if there are cross-effects."""
-        return arr if leo_lump is None else _apply_leontief(leo_lump, arr)
+        return arr if leo_lump is None else apply_leontief(leo_lump, arr)
 
     for name, entity_dim, arr in lump_terms:
         sources[name] = tidy(fold(arr), drop_zero=True) if arr is not None else _empty(name, entity_dim, 'effect')
