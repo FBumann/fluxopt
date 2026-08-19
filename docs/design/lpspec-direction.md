@@ -99,7 +99,7 @@ the backend reaches it.
 |---|---|---|
 | `model.py` | 1693 | the math, stated a second time |
 | `constraints/` | 465 | `sparse.py` is a sparse weighted-sum kernel that exists because linopy is dense; lpspec is sparse by construction, where a mask is an absent row |
-| `contributions.py` | 254 | effect decomposition reconstructed post-solve, then checked against the solver. Becomes `expressions:` + `result.expression(name)`, lowered by the compiler that built the constraints — so `_validate_against_solver` disappears *with* the reconstruction, there being nothing left to disagree |
+| `contributions.py` | 254 | effect decomposition reconstructed post-solve, then checked against the solver. Becomes a view over `expressions:` — see [what actually happened](#what-this-page-got-wrong) |
 | `effect_terms.py` | 216 | a single declaration kept so `model.py` and `contributions.py` could not drift. One consumer, no drift, no abstraction |
 | most of `contract.py` | 117 | the NaN-as-absent convention and `BoundType` dispatch are dense-array workarounds |
 | most of `model_data.py` | 1872 | see below |
@@ -214,12 +214,65 @@ Each step is a PR stacked on the one above it.
    `UnsupportedFeatureError`. Parity green across the full feature matrix is the
    gate: it is what "the YAML is the whole math" means, and nothing after it may
    start before it passes.
-4. **`Result` off the lpspec result**; effect terms become `expressions:`;
-   `contributions.py` and `effect_terms.py` go.
+4. **`Result` off the lpspec result**, so both lanes answer with one object.
+   Effect contributions become named expressions the ledger sums, and the
+   `Result` carries every named quantity — `effect_terms.py` goes.
 5. **Delete `model.py` and `constraints/`**; declare the linopy extra.
 6. **Re-cut `ModelData` as tidy frames**, parquet for serialization.
 
 Steps 2 and 3 carry the risk. Step 5 is mostly `git rm`.
+
+## What this page got wrong
+
+Written before the work, and two of its claims did not survive it. Left in
+place above with this section as the correction, because a design note that
+quietly edits itself is worth less than one that says what it learned.
+
+**The parity test did not retire.** The plan assumed it goes with `model.py`,
+both sides of it being hand-written models. Instead it became a *differential
+between engines* — the same `program.yaml` built relationally and by lpspec's
+eager lane — which is a sharper instrument than what it replaced: a
+disagreement is now an engine bug rather than possibly a bug in either model.
+It is skipped pending [lpspec#1108](https://github.com/fluxopt/lpspec/issues/1108),
+and what stands in its place is `tests/math` + `tests/math_port` running on
+the shipping lane. That is the stronger gate anyway — it was the math suite,
+not parity, that caught flow aggregates going missing.
+
+**`contributions.py` shrank rather than went, by a better route than
+described.** The plan said each contribution becomes a named expression read
+back with `result.expression(name)`. Costed that way it is a bad trade: the
+program's coefficients are pre-scaled and Leontief-folded *for the solver*, so
+reading contributions off them means either dividing the scaling back out or
+carrying raw coefficients beside the folded ones — undoing the fold that took
+the effects build from 18.5 s to 4.2 s.
+
+What works instead is to **name the contribution and have the ledger sum that
+very expression**:
+
+```yaml
+expressions:
+  contribution_flow_hour:
+    expression: rate * effects_per_flow_hour       # keeps the entity
+  effect_temporal:
+    expression: sum(sum(contribution_flow_hour * time_weight, over=time), over=flow) + ...
+```
+
+One declaration, two readings — no second implementation and no second set of
+coefficients. The scaling question dissolves because the aggregation weight
+moves into the sum; the attribution question dissolves because the entity is
+still there when the reader looks. `effect_terms.py` and the `Contribution`
+vocabulary go; `contributions.py` becomes the assembly onto a contributor axis
+and nothing else.
+
+The general lesson is the one the ceiling notes already state and this page
+restated badly: a named expression costs nothing where it is *referenced*, so
+naming a quantity the model already computes is free. Paying to compute it
+twice is what is expensive.
+
+**A consequence neither anticipated**: a named expression is evaluated against
+a solution, so it can only be had at solve time. A `Result` therefore carries
+every quantity the model names — a caller's own included — and the effect
+breakdown is a view over those rather than a second thing stored beside them.
 
 ## What this costs
 
