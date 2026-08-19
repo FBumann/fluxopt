@@ -8,12 +8,11 @@ variables/constraints, so each has its own time/memory fingerprint. Deterministi
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 from fluxopt import Carrier, Converter, Effect, Flow, ModelData, PiecewiseConversion, Port, Sizing, Status, Storage
-from fluxopt.model import FlowSystemModel
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -281,8 +280,12 @@ def make_model_data(builder: Callable[..., Elements], **scale: int) -> ModelData
     return ModelData.build(**builder(**scale))
 
 
-def build_model(data: ModelData, objective: str = 'cost') -> FlowSystemModel:
-    """ModelData → linopy model, without solving (mirrors optimize() before solve)."""
-    fs = FlowSystemModel(data, objective=objective)
-    fs.build()
-    return fs
+def build_model(data: ModelData, objective: str = 'cost') -> Any:
+    """ModelData → a built model, without solving (mirrors optimize() before solve)."""
+    import lpspec
+
+    from fluxopt.relational import MATH_PROGRAM, build_sources
+    from fluxopt.relational.results import objective_weights
+
+    sources, coords = build_sources(data, objective_weights(data, objective))
+    return lpspec.build(MATH_PROGRAM, {**sources, **coords})

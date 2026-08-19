@@ -27,12 +27,11 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
 import numpy as np
+import xarray as xr
 
 from fluxopt.contract import Contribution, Dim, Var
 
 if TYPE_CHECKING:
-    import xarray as xr
-
     from fluxopt.model_data import ModelData, SizingData
 
 
@@ -214,3 +213,27 @@ def effect_terms(data: ModelData) -> list[EffectTerm]:
         )
 
     return terms
+
+
+def _lump_bearing_effects(terms: list[EffectTerm], cf_lump: xr.DataArray) -> xr.DataArray:
+    """Boolean mask over ``effect``: which effects receive lump contributions.
+
+    An effect is lump-bearing when a lump-domain term contributes to it
+    directly, or when it receives from a lump-bearing effect through the
+    (acyclic) cross-effect matrix ``(effect, source_effect[, ...])``.
+    """
+    effect_ids = cf_lump.indexes['effect']
+    bearing = xr.DataArray(np.zeros(len(effect_ids), dtype=bool), coords={'effect': effect_ids}, dims='effect')
+    for term in (t for t in terms if t.domain == 'lump'):
+        nonzero = (term.coeff.notnull() & (term.coeff != 0)).any([d for d in term.coeff.dims if d != 'effect'])
+        bearing = bearing | nonzero.reindex_like(bearing, fill_value=False)
+
+    adjacency = (cf_lump.notnull() & (cf_lump != 0)).any(
+        [d for d in cf_lump.dims if d not in ('effect', 'source_effect')]
+    )
+    for _ in range(bearing.sizes['effect']):
+        grown = bearing | (adjacency & bearing.rename({'effect': 'source_effect'})).any('source_effect')
+        if grown.equals(bearing):
+            break
+        bearing = grown
+    return bearing

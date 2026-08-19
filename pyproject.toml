@@ -57,13 +57,11 @@ dependencies = [
 # an unreleased linopy branch (the v1 arithmetic convention — no release has
 # `options['semantics']`), so this extra and a PyPI release of fluxopt cannot
 # both stand.
-# linopy = ["lpspec[linopy]"]
-#
-# Deliberately not declared yet. uv resolves one version per package across the
-# whole lock, extras included, so declaring this pulls the branch linopy into
-# the *base* environment — where `model.py` still builds against 0.7 semantics
-# and becomes 2900 LinopySemanticsWarnings. It is uncommented in the same
-# commit that deletes `model.py`, which is when nothing in core imports linopy.
+# The eager lane. Nothing in fluxopt imports linopy any more, so the branch
+# pin lpspec's own extra carries reaches only an installation that asks for
+# it. What it buys is an independent engine for the same `core.yaml`, which
+# is what `tests/test_relational_parity.py` uses as its oracle.
+linopy = ["lpspec[linopy]"]
 
 [tool.uv.sources]
 # Pinned to a tag: lpspec is pre-1.0 and its language surface still moves, so

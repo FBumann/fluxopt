@@ -16,7 +16,6 @@ except ImportError:
     PlotAccessor = None
 
 if TYPE_CHECKING:
-    from fluxopt.model import FlowSystemModel
     from fluxopt.model_data import ModelData
     from fluxopt.stats import StatsAccessor
 
@@ -224,90 +223,3 @@ class Result:
         if PlotAccessor is None:
             raise ImportError('Plotting requires fluxopt-plot. Install it with: pip install fluxopt-plot')
         return PlotAccessor(self)
-
-    @classmethod
-    def from_model(cls, model: FlowSystemModel) -> Result:
-        """Extract solution from a solved linopy model.
-
-        Args:
-            model: Solved FlowSystemModel instance.
-        """
-        sol_vars: dict[str, xr.DataArray] = {
-            Var.FLOW_RATE: model.flow_rate.solution,
-            Var.EFFECT_TOTAL: model.effect_total.solution,
-            Var.EFFECT_LUMP: model.effect_lump.solution,
-        }
-
-        if model.storage_level is not None:
-            sol_vars[Var.STORAGE_LEVEL] = model.storage_level.solution
-        if model.flow_size is not None:
-            sol_vars[Var.FLOW_SIZE] = model.flow_size.solution
-        if model.flow_size_indicator is not None:
-            sol_vars[Var.FLOW_SIZE_INDICATOR] = model.flow_size_indicator.solution
-        if model.storage_capacity is not None:
-            sol_vars[Var.STORAGE_CAPACITY] = model.storage_capacity.solution
-        if model.storage_capacity_indicator is not None:
-            sol_vars[Var.STORAGE_SIZE_INDICATOR] = model.storage_capacity_indicator.solution
-        if model.invest_size is not None:
-            sol_vars[Var.INVEST_SIZE] = model.invest_size.solution
-        if model.invest_build is not None:
-            sol_vars[Var.INVEST_BUILD] = model.invest_build.solution
-        if model.invest_active is not None:
-            sol_vars[Var.INVEST_ACTIVE] = model.invest_active.solution
-        if model.invest_size_at_build is not None:
-            sol_vars[Var.INVEST_SIZE_AT_BUILD] = model.invest_size_at_build.solution
-        if model.flow_on is not None:
-            sol_vars[Var.FLOW_ON] = model.flow_on.solution
-        if model.flow_startup is not None:
-            sol_vars[Var.FLOW_STARTUP] = model.flow_startup.solution
-        if model.flow_shutdown is not None:
-            sol_vars[Var.FLOW_SHUTDOWN] = model.flow_shutdown.solution
-        if model.component_on is not None:
-            sol_vars[Var.COMPONENT_ON] = model.component_on.solution
-        if model.component_startup is not None:
-            sol_vars[Var.COMPONENT_STARTUP] = model.component_startup.solution
-        if model.component_shutdown is not None:
-            sol_vars[Var.COMPONENT_SHUTDOWN] = model.component_shutdown.solution
-
-        # Piecewise auxiliary variables (from linopy.add_piecewise_formulation).
-        # Stored under their linopy-generated names so they survive IO roundtrip.
-        for formulation in model._piecewise.values():
-            for var_name in formulation.variable_names:
-                if var_name not in sol_vars:
-                    sol_vars[var_name] = model.m.variables[var_name].solution
-
-        # Include custom variables added after build()
-        for var_name in model.m.variables:
-            if var_name not in model._builtin_var_names and var_name not in sol_vars:
-                sol_vars[var_name] = model.m.variables[var_name].solution
-
-        raw = model.m.objective.value
-        obj_val = float(raw) if raw is not None else 0.0
-
-        solution = xr.Dataset(
-            sol_vars,
-            attrs={'objective': obj_val, 'objective_weights': json.dumps(model._objective_weights)},
-        )
-        duals = model.m.dual
-
-        from fluxopt.contributions import _with_cross_effects, compute_effect_contributions
-
-        try:
-            # Cache the direct (no cross-effect) view — it's the primitive both
-            # accessors build on. effect_contributions applies Leontief on top
-            # via _with_cross_effects, which is cheap relative to _compute_direct.
-            contributions = compute_effect_contributions(solution, model.data, cross_effects=False)
-            # Sanity-check at solve time: applying cross-effects must reproduce
-            # the solver's effect--total. Result discarded; caches stay direct.
-            _with_cross_effects(contributions, model.data, solution)
-        except Exception as exc:
-            import warnings
-
-            warnings.warn(
-                f'Failed to compute effect contributions during solve ({exc!r}); '
-                'result.contributions will be None (re-derive via result.stats.effect_contributions)',
-                stacklevel=2,
-            )
-            contributions = None
-
-        return cls(solution=solution, data=model.data, duals=duals, contributions=contributions)

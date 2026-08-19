@@ -108,10 +108,9 @@ class TestRoundtrip:
         assert loaded.data is not None
 
         # Re-solve from loaded data
-        from fluxopt.model import FlowSystemModel
+        from fluxopt.relational import solve
 
-        model = FlowSystemModel(loaded.data)
-        result2 = model.optimize(objective='cost')
+        result2 = solve(loaded.data, 'cost')
         assert result2.objective == pytest.approx(result.objective, abs=1e-6)
 
 
@@ -220,10 +219,9 @@ class TestRoundtripContributionFrom:
         xr.testing.assert_equal(loaded.data.effects.cf_temporal, result.data.effects.cf_temporal)
 
         # Re-solve gives same objective
-        from fluxopt.model import FlowSystemModel
+        from fluxopt.relational import solve
 
-        model = FlowSystemModel(loaded.data)
-        result2 = model.optimize(objective='cost')
+        result2 = solve(loaded.data, 'cost')
         assert result2.objective == pytest.approx(result.objective, abs=1e-6)
 
 

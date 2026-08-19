@@ -64,10 +64,15 @@ class TestStorageStatusValidation:
         )
         assert s.status is not None
 
-    def test_sized_flow_with_status_raises_at_build(self):
-        """Sizing/Investment on a governed flow is not yet supported and raises clearly."""
+    def test_sized_flow_with_status_builds(self):
+        """A governed flow may be sized — the linopy lane could not do this.
+
+        `_constrain_flow_rates_component_status` raised NotImplementedError
+        here. One status axis makes the case ordinary: `status_sizing_*` does
+        not care whether the binary is the flow's own or its component's.
+        """
         from fluxopt import ModelData
-        from fluxopt.model import FlowSystemModel
+        from fluxopt.relational import build_sources
 
         data = ModelData.build(
             timesteps=ts(3),
@@ -88,9 +93,9 @@ class TestStorageStatusValidation:
                 ),
             ],
         )
-        fs = FlowSystemModel(data, objective='cost')
-        with pytest.raises(NotImplementedError, match='Sizing/Investment'):
-            fs.build()
+        # Builds rather than refusing. (The system has no source, so it is
+        # infeasible on its own merits — that is a different statement.)
+        assert build_sources(data, {'cost': 1.0})
 
 
 class TestStorageComponentStatus:

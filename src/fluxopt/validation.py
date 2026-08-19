@@ -128,8 +128,7 @@ def reject_varying_contribution_into_lump(data: ModelData) -> None:
         ValueError: Naming each ``effect<-source_effect`` pair that is
             ill-defined, and the two ways to state it instead.
     """
-    from fluxopt.effect_terms import effect_terms
-    from fluxopt.model import _lump_bearing_effects
+    from fluxopt.effect_terms import _lump_bearing_effects, effect_terms
 
     ds = data.effects
     if ds.cf_temporal is None:

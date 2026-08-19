@@ -62,7 +62,7 @@ uvx --from 'pytest-benchmem[plot]' benchmem compare .benchmarks/sweep/*.json
 in `extra_info` — the temporal grid, element stats and the measured
 solver-model size — via `--columns`, e.g.
 `--columns time,peak,extra:flows,extra:variables`; the full set is
-`timesteps/periods/components/flows/effects/series/variables/binaries/constraints`
+`timesteps/periods/components/flows/effects/series/variables/nonzeros/constraints`
 (pytest-benchmem >= 0.4.12).
 
 Sweep resolves one fresh venv per ref (no lockfile — it can't, the dependency
