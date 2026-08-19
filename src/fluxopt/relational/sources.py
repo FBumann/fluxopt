@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pandas as pd
+import polars as pl
 import xarray as xr
 
 from fluxopt.contract import BoundType
@@ -90,6 +91,80 @@ def _size_upper(data: ModelData, fid: str) -> float:
         if fid in ids:
             return float(fds.sizing.max.sel({zdim: fid}).values)
     return 0.0
+
+
+#: Index columns the program declares with an integer dtype; every other index
+#: column is a string label.
+_INT_DIMS = frozenset({'time', 'period', 'build_period', 'eq_idx'})
+
+#: Parameters the program declares ``dtype: bool``.
+_BOOL_PARAMS = frozenset(
+    {
+        'is_first',
+        'is_last',
+        'conversion_active',
+        'is_cyclic',
+        'has_status',
+        'is_bounded',
+        'is_profile',
+        'has_uptime',
+        'has_downtime',
+        'forced_on_at_start',
+        'forced_off_at_start',
+        'has_sizing',
+        'size_optional',
+        'has_invest',
+        'invest_mandatory',
+        'has_prior_capacity',
+        'has_ramp_up',
+        'has_ramp_down',
+        'prevent_simultaneous',
+        'has_capacity_sizing',
+        'capacity_optional',
+    }
+)
+
+
+def _stamp_empty_dtypes(sources: dict[str, Any]) -> None:
+    """Give every zero-row table the dtypes its parameter declares.
+
+    Pandas cannot type an empty column and picks ``float64``, which the engine
+    reads as a numeric label space and refuses against a string dimension. A
+    frame with rows carries its own types and is left alone; a frame without
+    any has nothing to carry, so the declared types are stamped on here rather
+    than guarded at each of the two dozen places one can be produced —
+    ``_tidy`` over an all-masked array and the period re-indexing both make
+    them.
+    """
+    for name, df in sources.items():
+        if not isinstance(df, pd.DataFrame) or not df.empty:
+            continue
+        typed = {c: pd.Series([], dtype='int64' if c in _INT_DIMS else 'object') for c in df.columns if c != 'value'}
+        typed['value'] = pd.Series([], dtype='bool' if name in _BOOL_PARAMS else 'float64')
+        sources[name] = pd.DataFrame(typed)
+
+
+def _flags(name: str, dim: str, ids: list[str]) -> pd.DataFrame:
+    """A boolean table marking *ids* true — typed even when none qualify.
+
+    The empty case is the one that bites: a list comprehension that filters
+    everything out leaves pandas to type the label column, and it picks
+    ``float64``. :func:`_empty` is what an absent feature looks like.
+    """
+    return _empty(name, dim) if not ids else pd.DataFrame({dim: ids, 'value': True})
+
+
+def _empty(name: str, *index_cols: str) -> pd.DataFrame:
+    """An empty table for *name*, carrying the dtypes the program declares.
+
+    A parameter with no live entries still binds, and the engine checks a
+    label column against its dimension's own — so an all-empty frame has to
+    say what it would have held. Pandas types an empty column ``float64``,
+    which reads as a numeric label space and is refused.
+    """
+    cols = {c: pd.Series([], dtype='int64' if c in _INT_DIMS else 'object') for c in index_cols}
+    cols['value'] = pd.Series([], dtype='bool' if name in _BOOL_PARAMS else 'float64')
+    return pd.DataFrame(cols)
 
 
 class UnsupportedFeatureError(RuntimeError):
@@ -232,7 +307,7 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
     live = coeff.notnull() & (coeff != 0)
     car_idx = live.values.argmax(axis=0)
     carriers = coeff.coords['carrier'].values
-    flow_index = pd.DataFrame({'flow': flow_ids, 'carrier': [str(carriers[i]) for i in car_idx]})
+    flow_index = pd.DataFrame({'flow': flow_ids, 'carrier_of': [str(carriers[i]) for i in car_idx]})
     sources['carrier_sign'] = pd.DataFrame(
         {'flow': flow_ids, 'value': [float(coeff.values[i, j]) for j, i in enumerate(car_idx)]},
     )
@@ -243,14 +318,14 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         pair_flow = [str(v) for v in cds.pair_flow.values]
         pair_conv = [str(v) for v in cds.pair_converter.values]
         conv_of = dict(zip(pair_flow, pair_conv, strict=True))
-        flow_index['converter'] = [conv_of.get(f) for f in flow_ids]
+        flow_index['converter_of'] = [conv_of.get(f) for f in flow_ids]
         pc = cds.pair_coeff.assign_coords(pair=pair_flow).rename({'pair': 'flow'})
         sources['conversion_factor'] = tidy(pc, drop_zero=True)
         sources['conversion_active'] = _tidy(cds.eq_mask.astype(float), drop_zero=True).assign(value=True)
     else:
-        flow_index['converter'] = None
-        sources['conversion_factor'] = pd.DataFrame({'flow': [], 'eq_idx': [], 'time': [], 'value': []})
-        sources['conversion_active'] = pd.DataFrame({'converter': [], 'eq_idx': [], 'value': []})
+        flow_index['converter_of'] = None
+        sources['conversion_factor'] = _empty('conversion_factor', 'flow', 'eq_idx', 'time')
+        sources['conversion_active'] = _empty('conversion_active', 'converter', 'eq_idx')
 
     # --- storage ----------------------------------------------------------
     storage_ids: list[str] = []
@@ -280,8 +355,8 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
             cmand = csz.mandatory.values.astype(bool)
             copt = [s for s, m in zip(cap_ids, cmand, strict=True) if not m]
             cmand_ids = [s for s, m in zip(cap_ids, cmand, strict=True) if m]
-            sources['has_capacity_sizing'] = pd.DataFrame({'storage': cap_ids, 'value': True})
-            sources['capacity_optional'] = pd.DataFrame({'storage': copt, 'value': True})
+            sources['has_capacity_sizing'] = _flags('has_capacity_sizing', 'storage', cap_ids)
+            sources['capacity_optional'] = _flags('capacity_optional', 'storage', copt)
             sources['capacity_min'] = pd.DataFrame({'storage': cap_ids, 'value': csz.min.values})
             sources['capacity_max'] = pd.DataFrame({'storage': cap_ids, 'value': csz.max.values})
             sources['relative_level_min'] = tidy(sds.rel_level_lb.sel(storage=cap_ids), drop_zero=True)
@@ -304,7 +379,7 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         sources['prior_level'] = pd.DataFrame({'storage': storage_ids, 'value': sds.prior_level.fillna(0.0).values})
         for key, arr in (('final_level_min', sds.final_level_min), ('final_level_max', sds.final_level_max)):
             if arr is None:
-                sources[key] = pd.DataFrame({'storage': [], 'value': []})
+                sources[key] = _empty(key, 'storage')
                 continue
             live = arr.notnull()
             sources[key] = _tidy(arr.where(live), drop_zero=False)
@@ -314,7 +389,7 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
             else np.zeros(len(storage_ids), dtype=bool)
         )
         prev_ids = [s for s, p in zip(storage_ids, prevent, strict=True) if p]
-        sources['prevent_simultaneous'] = pd.DataFrame({'storage': prev_ids, 'value': True})
+        sources['prevent_simultaneous'] = _flags('prevent_simultaneous', 'storage', prev_ids)
         sources['charge_size_bound'] = pd.DataFrame(
             {'storage': storage_ids, 'value': [_size_upper(data, f) for f in charge]},
         )
@@ -347,7 +422,7 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
     ec_extra: list[tuple[str, xr.DataArray]] = []
     if st is not None:
         ren = {sdim: 'flow'}
-        sources['has_status'] = pd.DataFrame({'flow': status_ids, 'value': True})
+        sources['has_status'] = _flags('has_status', 'flow', status_ids)
         sources['is_bounded'] = pd.DataFrame(
             {'flow': flow_ids, 'value': (bt == BoundType.BOUNDED).values},
         )
@@ -364,7 +439,7 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         horizon = float(dims.dt.sum())
         has_up = (up_min.notnull() | up_max.notnull()).values
         up_ids = [f for f, h in zip(status_ids, has_up, strict=True) if h]
-        sources['has_uptime'] = pd.DataFrame({'flow': up_ids, 'value': True})
+        sources['has_uptime'] = _flags('has_uptime', 'flow', up_ids)
         min_ids = [f for f, h in zip(status_ids, up_min.notnull().values, strict=True) if h]
         sources['uptime_min'] = pd.DataFrame(
             {'flow': min_ids, 'value': up_min.sel(flow=min_ids).values if min_ids else []},
@@ -388,7 +463,7 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         dn_min, dn_max = st.downtime_min.rename(ren), st.downtime_max.rename(ren)
         dn_ids = [f for f, h in zip(status_ids, (dn_min.notnull() | dn_max.notnull()).values, strict=True) if h]
         dn_min_ids = [f for f, h in zip(status_ids, dn_min.notnull().values, strict=True) if h]
-        sources['has_downtime'] = pd.DataFrame({'flow': dn_ids, 'value': True})
+        sources['has_downtime'] = _flags('has_downtime', 'flow', dn_ids)
         sources['downtime_min'] = pd.DataFrame(
             {'flow': dn_min_ids, 'value': dn_min.sel(flow=dn_min_ids).values if dn_min_ids else []},
         )
@@ -409,15 +484,15 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
             ('previous_downtime', 'forced_off_at_start', prev_dn, dn_min),
         ):
             if prev is None:
-                sources[value_key] = pd.DataFrame({'flow': [], 'value': []})
-                sources[forced_key] = pd.DataFrame({'flow': [], 'value': []})
+                sources[value_key] = _empty(value_key, 'flow')
+                sources[forced_key] = _empty(forced_key, 'flow')
                 continue
             pids = [f for f, h in zip(status_ids, prev.notnull().values, strict=True) if h]
-            sources[value_key] = pd.DataFrame({'flow': pids, 'value': prev.sel(flow=pids).values if pids else []})
-            forced = ((prev > 0) & lo.notnull() & (prev < lo)).values
-            sources[forced_key] = pd.DataFrame(
-                {'flow': [f for f, h in zip(status_ids, forced, strict=True) if h], 'value': True},
+            sources[value_key] = (
+                pd.DataFrame({'flow': pids, 'value': prev.sel(flow=pids).values}) if pids else _empty(value_key, 'flow')
             )
+            forced = ((prev > 0) & lo.notnull() & (prev < lo)).values
+            sources[forced_key] = _flags(forced_key, 'flow', [f for f, h in zip(status_ids, forced, strict=True) if h])
 
         ec_extra = [
             ('effects_per_running_hour', (st.effects_running.rename(ren) * dims.dt * dims.weights)),
@@ -425,7 +500,7 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         ]
     else:
         for n in ('has_status', 'has_uptime'):
-            sources[n] = pd.DataFrame({'flow': [], 'value': []})
+            sources[n] = _empty(n, 'flow')
         sources['is_bounded'] = pd.DataFrame({'flow': flow_ids, 'value': (bt == BoundType.BOUNDED).values})
         sources['is_profile'] = pd.DataFrame({'flow': flow_ids, 'value': (bt == BoundType.PROFILE).values})
         for n in (
@@ -440,9 +515,9 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
             'forced_on_at_start',
             'forced_off_at_start',
         ):
-            sources[n] = pd.DataFrame({'flow': [], 'value': []})
+            sources[n] = _empty(n, 'flow')
         for n in ('rate_min_when_on', 'rate_max_when_on', 'rate_fixed_when_on', 'uptime_upper', 'downtime_upper'):
-            sources[n] = pd.DataFrame({'flow': [], 'time': [], 'value': []})
+            sources[n] = _empty(n, 'flow', 'time')
         ec_extra = []
 
     sources['dt'] = pd.DataFrame({'time': ordinals, 'value': dims.dt.values})
@@ -454,8 +529,8 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         mandatory = sz.mandatory.values.astype(bool)
         opt_ids = [f for f, m in zip(sizing_ids, mandatory, strict=True) if not m]
         mand_ids = [f for f, m in zip(sizing_ids, mandatory, strict=True) if m]
-        sources['has_sizing'] = pd.DataFrame({'flow': sizing_ids, 'value': True})
-        sources['size_optional'] = pd.DataFrame({'flow': opt_ids, 'value': True})
+        sources['has_sizing'] = _flags('has_sizing', 'flow', sizing_ids)
+        sources['size_optional'] = _flags('size_optional', 'flow', opt_ids)
         sources['size_min'] = pd.DataFrame({'flow': sizing_ids, 'value': sz.min.values})
         sources['size_max'] = pd.DataFrame({'flow': sizing_ids, 'value': sz.max.values})
         zsel = {'flow': sizing_ids}
@@ -470,28 +545,28 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
             lump_consts.append(('flow', sz.effects_fixed.sel({zdim: mand_ids}).rename(zren)))
     else:
         for n in ('has_sizing', 'size_optional', 'size_min', 'size_max'):
-            sources[n] = pd.DataFrame({'flow': [], 'value': []})
+            sources[n] = _empty(n, 'flow')
         for n in ('rate_max_at_size_max', 'rate_min_at_size_max'):
-            sources[n] = pd.DataFrame({'flow': [], 'time': [], 'value': []})
+            sources[n] = _empty(n, 'flow', 'time')
 
     if 'has_capacity_sizing' not in sources:
         for n in ('has_capacity_sizing', 'capacity_optional', 'capacity_min', 'capacity_max'):
-            sources[n] = pd.DataFrame({'storage': [], 'value': []})
+            sources[n] = _empty(n, 'storage')
         for n in ('relative_level_min', 'relative_level_max'):
-            sources[n] = pd.DataFrame({'storage': [], 'time': [], 'value': []})
+            sources[n] = _empty(n, 'storage', 'time')
 
     # --- ramps ------------------------------------------------------------
     sized_set = set(sizing_ids) if sz is not None else set()
     for kind, arr in (('up', fds.ramp_up), ('down', fds.ramp_down)):
         if arr is None:
-            sources[f'has_ramp_{kind}'] = pd.DataFrame({'flow': [], 'value': []})
-            sources[f'ramp_{kind}_limit'] = pd.DataFrame({'flow': [], 'time': [], 'value': []})
-            sources[f'ramp_{kind}_coeff'] = pd.DataFrame({'flow': [], 'time': [], 'value': []})
+            sources[f'has_ramp_{kind}'] = _empty(f'has_ramp_{kind}', 'flow')
+            sources[f'ramp_{kind}_limit'] = _empty(f'ramp_{kind}_limit', 'flow', 'time')
+            sources[f'ramp_{kind}_coeff'] = _empty(f'ramp_{kind}_coeff', 'flow', 'time')
             continue
         nonflow = [d for d in arr.dims if d != 'flow']
         live = arr.notnull().any(nonflow) if nonflow else arr.notnull()
         ids = [str(f) for f in arr.coords['flow'].values[live.values]]
-        sources[f'has_ramp_{kind}'] = pd.DataFrame({'flow': ids, 'value': True})
+        sources[f'has_ramp_{kind}'] = _flags(f'has_ramp_{kind}', 'flow', ids)
         coeff = (arr * dims.dt).sel(flow=ids)
         sources[f'ramp_{kind}_coeff'] = tidy(coeff.sel(flow=[f for f in ids if f in sized_set]), drop_zero=True)
         fixed = [f for f in ids if f not in sized_set]
@@ -528,13 +603,13 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
             ),
             drop_zero=False,
         )
-        sources['has_invest'] = pd.DataFrame({'flow': invest_ids, 'value': True})
+        sources['has_invest'] = _flags('has_invest', 'flow', invest_ids)
         sources['invest_mandatory'] = pd.DataFrame({'flow': invest_ids, 'value': inv.mandatory.values.astype(bool)})
         sources['invest_min'] = pd.DataFrame({'flow': invest_ids, 'value': inv.min.values})
         sources['invest_max'] = pd.DataFrame({'flow': invest_ids, 'value': inv.max.values})
         sources['prior_capacity'] = pd.DataFrame({'flow': invest_ids, 'value': prior})
-        sources['has_prior_capacity'] = pd.DataFrame(
-            {'flow': [f for f, ps in zip(invest_ids, prior, strict=True) if ps > 0], 'value': True}
+        sources['has_prior_capacity'] = _flags(
+            'has_prior_capacity', 'flow', [f for f, ps in zip(invest_ids, prior, strict=True) if ps > 0]
         )
         # Diagonal in (period, build_period): a one-time cost belongs to the
         # period the build happened in, not to every period the unit is alive.
@@ -566,9 +641,9 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
             'prior_capacity',
             'has_prior_capacity',
         ):
-            sources[name] = pd.DataFrame({'flow': [], 'value': []})
-        sources['lifetime_window'] = pd.DataFrame({'flow': [], 'period': [], 'build_period': [], 'value': []})
-        sources['prior_capacity_active'] = pd.DataFrame({'flow': [], 'period': [], 'value': []})
+            sources[name] = _empty(name, 'flow')
+        sources['lifetime_window'] = _empty('lifetime_window', 'flow', 'period', 'build_period')
+        sources['prior_capacity_active'] = _empty('prior_capacity_active', 'flow', 'period')
 
     # `sizing_rate` covers both mechanisms, so its envelope must span both.
     sized_ids = [*sizing_ids, *invest_ids]
@@ -600,7 +675,7 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
     for name, arr in ec_extra:
         sources[name] = tidy(_apply_leontief(leo, arr) if leo is not None else arr, drop_zero=True)
     for name in ('effects_per_running_hour', 'effects_per_startup'):
-        sources.setdefault(name, pd.DataFrame({'flow': [], 'effect': [], 'time': [], 'value': []}))
+        sources.setdefault(name, _empty(name, 'flow', 'effect', 'time'))
 
     # Lump domain: effect_lump = (I - cf_lump)^-1 . lump_direct, folded into
     # the coefficients so no self-referential effect_lump variable is needed.
@@ -611,28 +686,25 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         return arr if leo_lump is None else _apply_leontief(leo_lump, arr)
 
     for name, entity_dim, arr in lump_terms:
-        sources[name] = (
-            tidy(fold(arr), drop_zero=True)
-            if arr is not None
-            else pd.DataFrame({entity_dim: [], 'effect': [], 'value': []})
-        )
+        sources[name] = tidy(fold(arr), drop_zero=True) if arr is not None else _empty(name, entity_dim, 'effect')
     for name in ('effects_per_size', 'effects_fixed'):
-        sources.setdefault(name, pd.DataFrame({'flow': [], 'effect': [], 'value': []}))
+        sources.setdefault(name, _empty(name, 'flow', 'effect'))
     for name in ('effects_per_capacity', 'effects_fixed_capacity'):
-        sources.setdefault(name, pd.DataFrame({'storage': [], 'effect': [], 'value': []}))
+        sources.setdefault(name, _empty(name, 'storage', 'effect'))
     for name in ('effects_per_size_at_build', 'effects_fixed_at_build'):
-        sources.setdefault(
-            name, pd.DataFrame({'flow': [], 'effect': [], 'period': [], 'build_period': [], 'value': []})
-        )
+        sources.setdefault(name, _empty(name, 'flow', 'effect', 'period', 'build_period'))
     for name in ('effects_per_size_recurring', 'effects_fixed_recurring'):
-        sources.setdefault(name, pd.DataFrame({'flow': [], 'effect': [], 'period': [], 'value': []}))
+        sources.setdefault(name, _empty(name, 'flow', 'effect', 'period'))
     total_const: xr.DataArray | None = None
     for edim, arr in lump_consts:
         part = fold(arr).sum(edim)
         total_const = part if total_const is None else total_const + part
-    sources['effects_fixed_mandatory'] = (
-        _tidy(total_const, drop_zero=True) if total_const is not None else pd.DataFrame({'effect': [], 'value': []})
-    )
+    # Dense over `effect`, zeros included. This is the constant side of
+    # `effect_accounting`, where an absent row is not an absence: it is read as
+    # a zero that binds the row it sits in. Every effect therefore states its
+    # constant, even when that constant is nothing.
+    zero_const = xr.zeros_like(xr.DataArray(np.zeros(len(effect_ids)), dims=['effect'], coords={'effect': effect_ids}))
+    sources['effects_fixed_mandatory'] = _tidy(zero_const if total_const is None else total_const, drop_zero=False)
     # Objective weight x period weight, folded into one parameter.
     obj_w = xr.DataArray(
         [float(objective.get(e, 0.0)) for e in effect_ids],
@@ -663,7 +735,15 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
     # --- temporal boundary mask ------------------------------------------
     sources['is_first'] = pd.DataFrame({'time': ordinals, 'value': [i == 0 for i in ordinals]})
 
-    sources['flow'] = flow_index
+    # Stated as a schema rather than inferred. Every column here is a label
+    # or a lookup into one, and a system with no storages leaves
+    # `charge_storage` all-null — which infers as a null column and fails the
+    # join against the storage labels. The schema says what each column is
+    # regardless of what this particular system happens to fill in.
+    sources['flow'] = pl.DataFrame(
+        {c: flow_index[c].tolist() for c in flow_index.columns},
+        schema=dict.fromkeys(flow_index.columns, pl.String),
+    )
     # Single-period models supply a length-1 period so one program serves both.
     period_labels = list(dims.period.values) if dims.period is not None else [0]
     period_ord = {v: i for i, v in enumerate(period_labels)}
@@ -683,16 +763,28 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         if df is not None and 'build_period' in df.columns:
             sources[name] = df.assign(build_period=[period_ord[v] for v in df['build_period']])
 
+    def labels(values: Any) -> np.ndarray:
+        """A string dimension's labels, carrying their type even when empty.
+
+        A system with no storages still declares the dimension, and its
+        lookups are string maps into it. A bare ``[]`` has no dtype to infer,
+        binds as a null label space and fails the join against those columns —
+        so the labels travel as a string array, which says what the space
+        would have held.
+        """
+        return np.array(list(values), dtype=str)
+
     coords: dict[str, Any] = {
         'time': ordinals,
         'period': p_ordinals,
         'build_period': p_ordinals,
-        'carrier': [str(c) for c in carriers],
-        'converter': [str(c) for c in data.converters.eq_mask.coords['converter'].values]
-        if data.converters is not None
-        else empty,
+        'carrier': labels([str(c) for c in carriers]),
+        'converter': labels(
+            [str(c) for c in data.converters.eq_mask.coords['converter'].values] if data.converters is not None else []
+        ),
         'eq_idx': list(range(data.converters.eq_mask.sizes['eq_idx'])) if data.converters is not None else empty,
-        'storage': storage_ids,
-        'effect': effect_ids,
+        'storage': labels(storage_ids),
+        'effect': labels(effect_ids),
     }
+    _stamp_empty_dtypes(sources)
     return sources, coords
