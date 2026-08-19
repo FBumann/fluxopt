@@ -6,8 +6,8 @@ from typing import TYPE_CHECKING, Any
 
 import lpspec
 
-from fluxopt.relational.results import objective_weights, to_result
-from fluxopt.relational.sources import MATH_PROGRAM, build_sources
+from fluxopt.math.results import objective_weights, to_result
+from fluxopt.math.sources import PROGRAM, build_sources
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -61,7 +61,7 @@ def solve(
             raise ValueError(msg)
         bound |= dict(parameters)
     solved = lpspec.solve(
-        MATH_PROGRAM if math is None else math,
+        PROGRAM if math is None else math,
         bound,
         solver_name,
         solver_options=solver_options,

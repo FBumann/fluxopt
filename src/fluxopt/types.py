@@ -1,16 +1,15 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Literal, Protocol, get_args, overload, override, runtime_checkable
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 import pandas as pd
 import xarray as xr
-from pydantic import BaseModel, ConfigDict, GetCoreSchemaHandler
-from pydantic_core import core_schema
+from pydantic import BaseModel, ConfigDict
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Iterator, Mapping
+    from collections.abc import Mapping
 
 
 class ProfileRef(BaseModel):
@@ -71,80 +70,6 @@ type TimeIndex = pd.DatetimeIndex | pd.Index
 
 # -- Piecewise formulation method (mirrors linopy.add_piecewise_formulation) --
 type PiecewiseMethod = Literal['auto', 'sos2', 'incremental', 'lp']
-
-
-@runtime_checkable
-class Identified(Protocol):
-    @property
-    def id(self) -> str: ...
-
-
-class IdList[T: Identified]:
-    """Frozen, ordered container with access by id (str) or position (int).
-
-    Supports concatenation via ``+``.
-
-    Args:
-        items: Elements to store. Must have unique ids.
-
-    Raises:
-        ValueError: On duplicate ids.
-    """
-
-    __slots__ = ('_by_id', '_items')
-
-    def __init__(self, items: Iterable[T]) -> None:
-        self._items: tuple[T, ...] = tuple(items)
-        self._by_id: dict[str, T] = {}
-        for item in self._items:
-            if item.id in self._by_id:
-                raise ValueError(f"Duplicate id: '{item.id}'")
-            self._by_id[item.id] = item
-
-    @overload
-    def __getitem__(self, key: str) -> T: ...
-    @overload
-    def __getitem__(self, key: int) -> T: ...
-    def __getitem__(self, key: str | int) -> T:
-        if isinstance(key, str):
-            return self._by_id[key]
-        return self._items[key]
-
-    def __iter__(self) -> Iterator[T]:
-        return iter(self._items)
-
-    def __len__(self) -> int:
-        return len(self._items)
-
-    def __contains__(self, key: object) -> bool:
-        if isinstance(key, str):
-            return key in self._by_id
-        return key in self._items
-
-    def __add__(self, other: IdList[T]) -> IdList[T]:
-        return IdList([*self._items, *other._items])
-
-    @override
-    def __repr__(self) -> str:
-        return f'IdList({list(self._items)!r})'
-
-    @classmethod
-    def __get_pydantic_core_schema__(cls, source: Any, handler: GetCoreSchemaHandler) -> core_schema.CoreSchema:
-        """Validate from a list (or existing IdList) and serialize to a list."""
-        args = get_args(source)
-        item_schema = handler.generate_schema(args[0]) if args else core_schema.any_schema()
-        list_schema = core_schema.list_schema(item_schema)
-
-        def _coerce(value: object) -> IdList[Any]:
-            return value if isinstance(value, IdList) else IdList(value)  # type: ignore[arg-type]
-
-        return core_schema.no_info_after_validator_function(
-            _coerce,
-            core_schema.union_schema([core_schema.is_instance_schema(IdList), list_schema]),
-            serialization=core_schema.plain_serializer_function_ser_schema(
-                list, return_schema=list_schema, when_used='always'
-            ),
-        )
 
 
 def fast_concat(arrays: list[xr.DataArray], dim: pd.Index) -> xr.DataArray:

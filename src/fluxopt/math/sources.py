@@ -1,7 +1,7 @@
 """Bind a :class:`~fluxopt.model_data.ModelData` to fluxopt's math program.
 
 The data half of the build: this module emits the parameter tables
-:data:`MATH_PROGRAM` declares, and lpspec does the rest.
+:data:`PROGRAM` declares, and lpspec does the rest.
 
 Sparsity is carried by *row absence* — a parameter keeps its declared rank
 while its table holds only live entries. Arrays at or below a variable's own
@@ -30,7 +30,7 @@ if TYPE_CHECKING:
     from fluxopt.model_data import ModelData
 
 #: The YAML program holding fluxopt's math. Shipped as package data.
-MATH_PROGRAM = Path(__file__).with_name('core.yaml')
+PROGRAM = Path(__file__).with_name('program.yaml')
 
 #: Parameters the YAML declares with a `period` axis. Anything emitted from an
 #: array that has no period dim is cross-joined onto every period.
@@ -182,7 +182,7 @@ def _empty(name: str, *index_cols: str) -> pd.DataFrame:
 
 
 class UnsupportedFeatureError(RuntimeError):
-    """The ModelData uses a feature the relational program does not express yet.
+    """The ModelData uses a feature the program does not express yet.
 
     Raised rather than silently dropping the feature: a missing constraint
     would still solve, just to the wrong answer.
@@ -228,12 +228,12 @@ def _reject_unsupported(data: ModelData) -> None:
 
 
 def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Emit the parameter tables and coordinates for :data:`MATH_PROGRAM`.
+    """Emit the parameter tables and coordinates for :data:`PROGRAM`.
 
     Args:
         data: The model data to bind. Both backends read the same object.
         objective: Effect ids mapped to their objective weight, as
-            :func:`~fluxopt.relational.solve.solve` takes it.
+            :func:`~fluxopt.math.solve.solve` takes it.
 
     Returns:
         ``(sources, coords)`` ready to pass to ``lpspec.solve``.

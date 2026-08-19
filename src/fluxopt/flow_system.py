@@ -23,7 +23,7 @@ from fluxopt.components import Converter, Port
 from fluxopt.elements import Carrier, Effect, Storage
 from fluxopt.model_data import ModelData
 from fluxopt.schema import from_dict, to_dict
-from fluxopt.types import IdList, ProfileRef, Timesteps
+from fluxopt.types import ProfileRef, Timesteps
 from fluxopt.validation import validate_system
 
 if TYPE_CHECKING:
@@ -38,7 +38,7 @@ _PYDANTIC_CFG = ConfigDict(arbitrary_types_allowed=True)
 def _resolve_refs(obj: Any, profiles: Mapping[str, Any]) -> Any:
     """Recursively replace every ``ProfileRef`` in *obj* with a resolved array.
 
-    Walks element dataclasses, dicts, lists, and ``IdList`` containers,
+    Walks element dataclasses, dicts and lists,
     mutating in place. Non-container leaves (scalars, arrays) pass through.
 
     Args:
@@ -54,10 +54,6 @@ def _resolve_refs(obj: Any, profiles: Mapping[str, Any]) -> Any:
     if isinstance(obj, list):
         for i, value in enumerate(obj):
             obj[i] = _resolve_refs(value, profiles)
-        return obj
-    if isinstance(obj, IdList):
-        for item in obj:
-            _resolve_refs(item, profiles)
         return obj
     if isinstance(obj, BaseModel):
         for name in type(obj).model_fields:
@@ -82,7 +78,7 @@ def _collect_profile_refs(obj: Any, path: str, out: list[tuple[str, ProfileRef]]
     elif isinstance(obj, dict):
         for key, value in obj.items():
             _collect_profile_refs(value, f'{path}[{key!r}]', out)
-    elif isinstance(obj, (list, IdList)):
+    elif isinstance(obj, list):
         for i, value in enumerate(obj):
             _collect_profile_refs(value, f'{path}[{i}]', out)
     elif isinstance(obj, BaseModel):
@@ -215,9 +211,9 @@ class FlowSystem(BaseModel):
         """
         import lpspec
 
-        from fluxopt.relational import MATH_PROGRAM
+        from fluxopt.math import PROGRAM
 
-        return lpspec.load_model(MATH_PROGRAM)
+        return lpspec.load_model(PROGRAM)
 
     def build_data(self, profiles: Mapping[str, Any] | None = None) -> ModelData:
         """Materialize this declaration's data, resolving profile references.
@@ -286,7 +282,7 @@ class FlowSystem(BaseModel):
                 shipped program, which declares none of its own.
             **kwargs: Passed to the solver verbatim, in its own vocabulary.
         """
-        from fluxopt.relational import solve
+        from fluxopt.math import solve
 
         return solve(
             self.build_data(profiles),

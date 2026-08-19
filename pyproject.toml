@@ -27,7 +27,7 @@ classifiers = [
 ]
 dependencies = [
     "highspy>=1.13.1,!=1.14.*",  # 1.14.x has MIP presolve bug producing wrong results (ERGO-Code/HiGHS#2975)
-    # The modeling layer. fluxopt's math is `relational/core.yaml`; lpspec
+    # The modeling layer. fluxopt's math is `math/program.yaml`; lpspec
     # validates it, lowers it and streams it to the solver.
     "lpspec",
     # Leaving. `model.py` is the last core module importing linopy; it is
@@ -60,7 +60,7 @@ dependencies = [
 # The eager lane. Nothing in fluxopt imports linopy any more, so the branch
 # pin lpspec's own extra carries reaches only an installation that asks for
 # it. What it buys is an independent engine for the same `core.yaml`, which
-# is what `tests/test_relational_parity.py` uses as its oracle.
+# is what `tests/test_engines_agree.py` uses as its oracle.
 linopy = ["lpspec[linopy]"]
 
 [tool.uv.sources]
@@ -80,7 +80,7 @@ source = "vcs"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/fluxopt"]
-artifacts = ["src/fluxopt/relational/*.yaml"]
+artifacts = ["src/fluxopt/math/*.yaml"]
 
 [tool.hatch.build.targets.sdist]
 include = ["src/fluxopt/", "LICENSE", "README.md"]

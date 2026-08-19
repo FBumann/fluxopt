@@ -284,8 +284,8 @@ def build_model(data: ModelData, objective: str = 'cost') -> Any:
     """ModelData → a built model, without solving (mirrors optimize() before solve)."""
     import lpspec
 
-    from fluxopt.relational import MATH_PROGRAM, build_sources
-    from fluxopt.relational.results import objective_weights
+    from fluxopt.math import PROGRAM, build_sources
+    from fluxopt.math.results import objective_weights
 
     sources, coords = build_sources(data, objective_weights(data, objective))
-    return lpspec.build(MATH_PROGRAM, {**sources, **coords})
+    return lpspec.build(PROGRAM, {**sources, **coords})

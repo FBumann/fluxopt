@@ -72,7 +72,7 @@ class TestStorageStatusValidation:
         not care whether the binary is the flow's own or its component's.
         """
         from fluxopt import ModelData
-        from fluxopt.relational import build_sources
+        from fluxopt.math import build_sources
 
         data = ModelData.build(
             timesteps=ts(3),

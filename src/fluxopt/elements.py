@@ -6,9 +6,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from fluxopt.types import PiecewiseMethod, Variate
 
-# Element models hold arbitrary xarray/numpy/pandas values (Variate) and
-# IdList containers; pydantic validates ids/scalars/structure while passing
-# those through by isinstance.
+# Element models hold arbitrary xarray/numpy/pandas values (Variate);
+# pydantic validates ids/scalars/structure while passing those through by
+# isinstance.
 _PYDANTIC_CFG = ConfigDict(arbitrary_types_allowed=True)
 
 
