@@ -22,6 +22,8 @@ def solve(
     *,
     solver_name: str = 'highs',
     solver_options: Mapping[str, Any] | None = None,
+    math: Any = None,
+    parameters: Mapping[str, Any] | None = None,
 ) -> Result:
     """Build *data* as a streaming program and solve it.
 
@@ -33,6 +35,14 @@ def solve(
         solver_options: Forwarded to the solver verbatim, in *its own*
             vocabulary rather than linopy's (``{'mip_rel_gap': 1e-9}`` is
             HiGHS's own spelling).
+        math: An edited program to solve instead of the shipped one — the
+            model returned by :meth:`~fluxopt.flow_system.FlowSystem.math`,
+            with whatever the caller added to it. It goes through validation
+            and lowering exactly as a file does.
+        parameters: Data for the parameters *math* adds. Merged with the
+            program's own, which it may not overwrite: a caller who could
+            silently replace `rate_max` could change the model without
+            editing it.
 
     Returns:
         The same :class:`~fluxopt.results.Result` the linopy lane returns.
@@ -44,9 +54,15 @@ def solve(
     """
     weights = objective_weights(data, objective)
     sources, coords = build_sources(data, weights)
+    bound = {**sources, **coords}
+    if parameters:
+        if clashes := sorted(set(parameters) & set(bound)):
+            msg = f"these names are the program's own and cannot be supplied: {clashes}"
+            raise ValueError(msg)
+        bound |= dict(parameters)
     solved = lpspec.solve(
-        MATH_PROGRAM,
-        {**sources, **coords},
+        MATH_PROGRAM if math is None else math,
+        bound,
         solver_name,
         solver_options=solver_options,
     )

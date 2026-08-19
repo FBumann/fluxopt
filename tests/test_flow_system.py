@@ -81,19 +81,23 @@ class TestProfileRefResolution:
 
 
 class TestBuildModel:
-    def test_build_model_returns_inspectable_unbuilt_model(self) -> None:
+    def test_build_data_returns_the_data_both_lanes_read(self) -> None:
         spec = _merit_order_spec([30, 30])
-        model = spec.build_model()
-        assert model.objective == {'cost': 1.0}
-        model.build()
-        assert 'flow--rate' in model.m.variables
-        result = model.solve()
-        assert result.effect_totals.sel(effect='cost').item() == pytest.approx(80.0)
+        data = spec.build_data()
+        assert 'cost' in [str(e) for e in data.effects.total_min.coords['effect'].values]
+        assert spec.optimize().effect_totals.sel(effect='cost').item() == pytest.approx(80.0)
+
+    def test_math_is_readable_without_data(self) -> None:
+        """The equations are an artefact, available before anything is bound."""
+        math = _merit_order_spec([30, 30]).math()
+        assert 'carrier_balance' in math.constraints
+        assert 'rate' in math.variables
+        assert 'constraints:' in math.to_yaml()
 
     def test_build_model_resolves_sources(self) -> None:
         spec = _merit_order_spec(ProfileRef(dataset='load', variable='demand'))
         profiles = {'load': {'demand': xr.DataArray([30.0, 30.0], dims=['time'])}}
-        result = spec.build_model(profiles).optimize()
+        result = spec.optimize(profiles)
         assert result.effect_totals.sel(effect='cost').item() == pytest.approx(80.0)
         # spec still carries the ref — resolution ran on a copy
         assert isinstance(spec.ports[0].exports[0].fixed_relative_profile, ProfileRef)

@@ -98,6 +98,12 @@ def _relabel(arr: xr.DataArray, data: ModelData) -> xr.DataArray:
     ):
         if name in arr.dims:
             arr = arr.assign_coords({name: [labels[int(i)] for i in arr.coords[name].values]})
+    # The build axis is a second period axis, and the solution names it
+    # `period` — a build decision is indexed by the period it was taken in.
+    # The program keeps the two apart only so a build can be summed into the
+    # periods it keeps alive, which is a modelling need, not a reading one.
+    if 'build_period' in arr.dims:
+        arr = arr.rename({'build_period': 'period'}) if 'period' not in arr.dims else arr
     for name, labels in _entity_order(data).items():
         if name in arr.dims:
             have = {str(x) for x in arr.coords[name].values}
@@ -196,13 +202,38 @@ def to_result(result: Any, data: ModelData, weights: dict[str, float]) -> Result
     effects = [str(e) for e in data.effects.total_min.coords['effect'].values]
     solution[Var.EFFECT_LUMP] = _relabel(_frame_to_array(lump, 'effect_lump', effects, data), data)
 
-    return Result(
-        solution=xr.Dataset(
-            solution,
-            attrs={'objective': float(result.objective), 'objective_weights': json.dumps(weights)},
-        ),
-        data=data,
+    dataset = xr.Dataset(
+        solution,
+        attrs={'objective': float(result.objective), 'objective_weights': json.dumps(weights)},
     )
+    return Result(solution=dataset, data=data, contributions=_contributions(dataset, data))
+
+
+def _contributions(solution: xr.Dataset, data: ModelData) -> xr.Dataset | None:
+    """The direct per-contributor breakdown, cached at solve time.
+
+    Cached rather than derived on demand for the same reason the linopy lane
+    caches it: a ``Result`` that outlives its process is read back from NetCDF,
+    and re-deriving there would answer with today's decomposition logic rather
+    than the one that produced the numbers.
+    """
+    import warnings
+
+    from fluxopt.contributions import _with_cross_effects, compute_effect_contributions
+
+    try:
+        direct = compute_effect_contributions(solution, data, cross_effects=False)
+        # Applying cross-effects has to reproduce the solver's own totals.
+        # Result discarded; what is cached is the direct view it builds on.
+        _with_cross_effects(direct, data, solution)
+    except Exception as exc:
+        warnings.warn(
+            f'Failed to compute effect contributions during solve ({exc!r}); '
+            'result.contributions will be None (re-derive via result.stats.effect_contributions)',
+            stacklevel=2,
+        )
+        return None
+    return direct
 
 
 def _frame_to_array(frame: Any, name: str, effects: list[str], data: ModelData) -> xr.DataArray:

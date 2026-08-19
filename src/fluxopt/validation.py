@@ -10,6 +10,11 @@ same mistakes with the same messages.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from fluxopt.model_data import ModelData
+
 from collections import Counter
 from typing import TYPE_CHECKING
 
@@ -106,3 +111,43 @@ def validate_system(
                 'objective must name at least one non-penalty effect to minimize — '
                 'the built-in penalty effect is added automatically and cannot be the sole objective'
             )
+
+
+def reject_varying_contribution_into_lump(data: ModelData) -> None:
+    """Refuse a time-varying ``contribution_from`` into a lump-bearing effect.
+
+    A per-timestep factor has no meaning for a one-time quantity, so the mean
+    is only ever a safe reading where the source effect's lump share is
+    structurally zero. Checked on the data rather than while building, because
+    it is a fact about the model and both lanes have to refuse it alike.
+
+    Args:
+        data: The model data to check.
+
+    Raises:
+        ValueError: Naming each ``effect<-source_effect`` pair that is
+            ill-defined, and the two ways to state it instead.
+    """
+    from fluxopt.effect_terms import effect_terms
+    from fluxopt.model import _lump_bearing_effects
+
+    ds = data.effects
+    if ds.cf_temporal is None:
+        return
+    varying = (ds.cf_temporal != ds.cf_temporal.isel(time=0)).any('time')
+    if not bool(varying.any().item()):
+        return
+    bearing = _lump_bearing_effects(effect_terms(data), ds.cf_temporal.mean('time'))
+    mask = varying & bearing.rename({'effect': 'source_effect'})
+    mask = mask.any([d for d in mask.dims if d not in ('effect', 'source_effect')])
+    if not bool(mask.any().item()):
+        return
+    pairs = ', '.join(
+        f'{mask.effect.values[i]}<-{mask.source_effect.values[j]}' for i, j in zip(*mask.values.nonzero(), strict=True)
+    )
+    raise ValueError(
+        f'Time-varying contribution_from for {pairs} is ill-defined: the source effect '
+        'carries lump (sizing/fixed) contributions, and a per-timestep factor has no meaning '
+        'for one-time quantities. Use a scalar factor, or move the lump share into a '
+        'separate effect with a scalar factor.'
+    )
