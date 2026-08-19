@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "fluxopt"
 dynamic = ["version"]
-description = "Energy system optimization with linopy — progressive modeling, from simple to complex."
+description = "Energy system optimization with lpspec — progressive modeling, from simple to complex."
 readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"
@@ -15,7 +15,7 @@ authors = [
 maintainers = [
     { name = "Felix Bumann", email = "felixbumann387@gmail.com" },
 ]
-keywords = ["optimization", "energy systems", "linopy", "linear programming"]
+keywords = ["optimization", "energy systems", "lpspec", "linear programming"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Programming Language :: Python :: 3.12",
@@ -27,6 +27,12 @@ classifiers = [
 ]
 dependencies = [
     "highspy>=1.13.1,!=1.14.*",  # 1.14.x has MIP presolve bug producing wrong results (ERGO-Code/HiGHS#2975)
+    # The modeling layer. fluxopt's math is `relational/core.yaml`; lpspec
+    # validates it, lowers it and streams it to the solver.
+    "lpspec",
+    # Leaving. `model.py` is the last core module importing linopy; it is
+    # deleted rather than ported, and this line goes with it — the eager lane
+    # lives in the `linopy` extra below.
     "linopy>=0.7.0",
     "netcdf4>=1.6.0",
     "numpy>=1.26",
@@ -37,13 +43,28 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# The relational/streaming backend. `farkas` is not on PyPI yet, so this
-# resolves through [tool.uv.sources] and must become a normal version
-# constraint before fluxopt is released with this extra.
-relational = ["farkas", "duckdb>=1.0", "pyarrow>=15"]
+# The eager lane: `lpspec.linopy` builds the same YAML program as a
+# `linopy.Model` instead of streaming it. Optional, and deliberately so — the
+# math is the YAML either way, so this buys solver breadth and linopy's
+# post-solve object, not a second formulation.
+#
+# It is a git requirement all the way down: lpspec's own `linopy` extra pins
+# an unreleased linopy branch (the v1 arithmetic convention — no release has
+# `options['semantics']`), so this extra and a PyPI release of fluxopt cannot
+# both stand.
+# linopy = ["lpspec[linopy]"]
+#
+# Deliberately not declared yet. uv resolves one version per package across the
+# whole lock, extras included, so declaring this pulls the branch linopy into
+# the *base* environment — where `model.py` still builds against 0.7 semantics
+# and becomes 2900 LinopySemanticsWarnings. It is uncommented in the same
+# commit that deletes `model.py`, which is when nothing in core imports linopy.
 
 [tool.uv.sources]
-farkas = { git = "https://github.com/FBumann/linopy-yaml.git" }
+# Pinned to a tag: lpspec is pre-1.0 and its language surface still moves, so
+# an unpinned git ref would let a `uv sync` change what `core.yaml` means.
+# Bumping this is a deliberate change with `pytest tests/` behind it.
+lpspec = { git = "https://github.com/fluxopt/lpspec.git", tag = "v0.0.1-alpha.213" }
 
 [project.urls]
 repository = "https://github.com/FBumann/fluxopt"

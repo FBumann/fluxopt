@@ -145,7 +145,7 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
             :class:`~fluxopt.model.FlowSystemModel` takes it.
 
     Returns:
-        ``(sources, coords)`` ready to pass to ``farkas.solve``.
+        ``(sources, coords)`` ready to pass to ``lpspec.solve``.
 
     Raises:
         UnsupportedFeatureError: If *data* uses a feature the program does
