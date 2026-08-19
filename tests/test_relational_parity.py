@@ -16,7 +16,19 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from fluxopt import Carrier, Converter, Effect, Flow, Investment, ModelData, Port, Sizing, Status, Storage
+from fluxopt import (
+    Carrier,
+    Converter,
+    Effect,
+    Flow,
+    Investment,
+    ModelData,
+    PiecewiseConversion,
+    Port,
+    Sizing,
+    Status,
+    Storage,
+)
 from fluxopt.model import FlowSystemModel
 from fluxopt.relational import UnsupportedFeatureError, build_sources, solve
 
@@ -152,6 +164,44 @@ def _system(n: int, periods: list[int] | None = None, co2_cap: float | None = CO
     }
 
 
+def _invest_system(n: int, periods: list[int], lifetime: int) -> dict:
+    """A multi-period system whose capacity is a build-timing decision."""
+    rng = np.random.default_rng(1)
+    hours = np.arange(n)
+    demand = np.clip(0.5 + 0.3 * np.cos(2 * np.pi * hours / 24) + 0.05 * rng.standard_normal(n), 0.05, 1.0)
+    return {
+        'periods': periods,
+        'timesteps': pd.date_range('2025-01-01', periods=n, freq='h'),
+        'carriers': [Carrier(id='gas'), Carrier(id='heat')],
+        'effects': [Effect(id='cost', unit='EUR')],
+        'ports': [
+            Port(id='gas_grid', imports=[Flow(carrier='gas', size=60.0, effects_per_flow_hour={'cost': 35.0})]),
+            Port(
+                id='heat_network',
+                exports=[Flow(carrier='heat', size=20.0, fixed_relative_profile=demand.tolist())],
+            ),
+        ],
+        'converters': [
+            Converter.boiler(
+                'gas_boiler',
+                0.92,
+                Flow(carrier='gas'),
+                Flow(
+                    carrier='heat',
+                    size=Investment(
+                        size_min=2.0,
+                        size_max=20.0,
+                        lifetime=lifetime,
+                        effects_per_size_at_build={'cost': 900.0},
+                        effects_fixed_at_build={'cost': 4000.0},
+                        effects_per_size_recurring={'cost': 30.0},
+                    ),
+                ),
+            ),
+        ],
+    }
+
+
 def _linopy_optimum(data: ModelData) -> FlowSystemModel:
     model = FlowSystemModel(data, objective=OBJECTIVE)
     model.build()
@@ -190,6 +240,28 @@ def test_flow_rates_match_linopy() -> None:
         assert pivot[flow_id].to_numpy() == pytest.approx(expected, abs=1e-9)
 
 
+@pytest.mark.parametrize(
+    ('periods', 'lifetime'),
+    # Builds happen once, so the lifetime has to span the horizon or the last
+    # periods have no capacity at all and the model is infeasible on both sides.
+    [([2025, 2030], 2), ([2025, 2030, 2035], 3)],
+    ids=['2-periods', '3-periods'],
+)
+def test_investment_matches_linopy(periods: list[int], lifetime: int) -> None:
+    """Build timing, lifetime windows and the at-build effect terms."""
+    data = ModelData.build(**_invest_system(24, periods, lifetime))
+    reference = _linopy_optimum(data)
+    result = solve(data, OBJECTIVE, solver_options=SOLVER_OPTIONS)
+
+    assert result.objective >= float(reference.m.objective.value) - 1e-6
+    assert result.objective == pytest.approx(float(reference.m.objective.value), rel=1e-9)
+
+    # The build decision itself must agree, not only its cost.
+    built = result.primal('invest_build').set_index(['flow', 'build_period'])['value']
+    expected = reference.invest_build.solution.to_series()
+    assert built.to_numpy().round() == pytest.approx(expected.to_numpy().round())
+
+
 @pytest.mark.slow
 def test_effect_limit_binds() -> None:
     """A tight cap must actually hold — a dropped limit would solve cheaper."""
@@ -202,17 +274,59 @@ def test_effect_limit_binds() -> None:
     assert result.objective == pytest.approx(reference, rel=1e-9)
 
 
+def test_mandatory_storage_sizing_binds_the_right_dims() -> None:
+    """An absent lump term must still be keyed by its own entity dim.
+
+    A storage sized with `mandatory=True` has no build indicator, so the
+    `cap_ind_coeff` table is empty — and an empty table keyed by `flow`
+    instead of `storage` fails to bind. Regression for a real benchmark
+    system (`green_city`).
+    """
+    elements = _system(24)
+    elements['storages'] = [
+        Storage(
+            id='tank',
+            charging=Flow(carrier='heat', size=10.0),
+            discharging=Flow(carrier='heat', size=10.0),
+            capacity=Sizing(size_min=10.0, size_max=200.0, effects_per_size={'cost': 55.0}),
+            relative_loss_per_hour=0.003,
+        )
+    ]
+    data = ModelData.build(**elements)
+    reference = float(_linopy_optimum(data).m.objective.value)
+    result = solve(data, OBJECTIVE, solver_options=SOLVER_OPTIONS)
+
+    assert result.objective == pytest.approx(reference, rel=1e-9)
+
+
 def test_sparse_coefficients_are_not_materialised() -> None:
     """`effect_coeff` is declared dense but only live rows are emitted."""
     data = ModelData.build(**_system(48))
     sources, coords = build_sources(data, OBJECTIVE)
 
     dense = len(sources['flow']) * len(coords['effect']) * len(coords['time']) * len(coords['period'])
-    assert len(sources['effect_coeff']) < dense / 2
+    assert len(sources['effects_per_flow_hour']) < dense / 2
 
 
 def test_unsupported_feature_raises_rather_than_dropping() -> None:
     """A feature with no formulation must fail loudly, not solve to a wrong answer."""
+    elements = _system(24)
+    elements['converters'] = [
+        Converter(
+            id='pw_boiler',
+            inputs=[Flow(carrier='gas', size=100.0)],
+            outputs=[Flow(carrier='heat', size=70.0)],
+            conversion=PiecewiseConversion(points={'gas': [0, 50, 100], 'heat': [0, 45, 70]}),
+        )
+    ]
+    data = ModelData.build(**elements)
+
+    with pytest.raises(UnsupportedFeatureError, match='piecewise'):
+        build_sources(data, OBJECTIVE)
+
+
+def test_investment_requires_periods() -> None:
+    """Investment is period-timed; without periods it must not build silently."""
     elements = _system(24)
     elements['converters'] = [
         Converter.boiler(
@@ -224,5 +338,5 @@ def test_unsupported_feature_raises_rather_than_dropping() -> None:
     ]
     data = ModelData.build(**elements)
 
-    with pytest.raises(UnsupportedFeatureError, match='investment'):
+    with pytest.raises(UnsupportedFeatureError, match='multi-period'):
         build_sources(data, OBJECTIVE)

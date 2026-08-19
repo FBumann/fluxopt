@@ -16,8 +16,14 @@ agree, with a solution that never beats the linopy lane's proven optimum.
 
     uv sync --extra relational
 
-Not every feature is expressed yet — investment, piecewise and component
-status raise :class:`UnsupportedFeatureError` rather than being dropped.
+Not every feature is expressed yet. Piecewise conversion and component-level
+status both need an *indexed lookup* — the adjoint of ``group_sum``, joining a
+mapping table without aggregating — so that a per-component quantity can be
+read on each of its flows. That primitive is planned upstream as
+``at(x, over=dim, index=map)`` (farkas ROADMAP, Track 1 item 2) and does not
+exist yet. Until it does, both raise :class:`UnsupportedFeatureError` rather
+than being dropped: a missing constraint still solves, just to the wrong
+answer.
 """
 
 from fluxopt.relational.solve import solve
