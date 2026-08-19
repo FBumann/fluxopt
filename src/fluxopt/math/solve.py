@@ -60,10 +60,6 @@ def solve(
             msg = f"these names are the program's own and cannot be supplied: {clashes}"
             raise ValueError(msg)
         bound |= dict(parameters)
-    solved = lpspec.solve(
-        PROGRAM if math is None else math,
-        bound,
-        solver_name,
-        solver_options=solver_options,
-    )
-    return to_result(solved, data, weights)
+    program = lpspec.load_model(PROGRAM if math is None else math)
+    solved = lpspec.solve(program, bound, solver_name, solver_options=solver_options)
+    return to_result(solved, data, weights, program)
