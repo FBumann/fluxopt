@@ -318,6 +318,30 @@ macros:
     template: sum(sum(driver * coeff, over=time), over=status_entity)
 
 expressions:
+  # The two halves of the ledger, named rather than inlined: each is a
+  # quantity the model reports, and naming them is what makes them readable
+  # after a solve through `result.expression(...)` — computed by the compiler
+  # that built the accounting row, so the split cannot drift from the total.
+  effect_temporal:
+    expression: >-
+      per_step(rate, effects_per_flow_hour)
+      + per_step_status(running, effects_per_running_hour)
+      + per_step_status(startup, effects_per_startup)
+    description: What running the system costs, accumulated over the horizon.
+
+  effect_lump:
+    expression: >-
+      per_entity(size, effects_per_size, over=flow)
+      + per_entity(size_built, effects_fixed, over=flow)
+      + per_entity(capacity, effects_per_capacity, over=storage)
+      + per_entity(capacity_built, effects_fixed_capacity, over=storage)
+      + at_build(invest_size_at_build, effects_per_size_at_build)
+      + at_build(invest_build, effects_fixed_at_build)
+      + per_entity(size, effects_per_size_recurring, over=flow)
+      + per_entity(invest_active, effects_fixed_recurring, over=flow)
+      + effects_fixed_mandatory
+    description: What building it costs — one-time and recurring, never per step.
+
   net_charge:
     expression: >-
       sum(rate * charge_gain, by=charge_storage)
@@ -754,19 +778,7 @@ constraints:
 
   effect_accounting:
     foreach: [effect, period]
-    expression: >-
-      effect_total == per_step(rate, effects_per_flow_hour)
-      + per_step_status(running, effects_per_running_hour)
-      + per_step_status(startup, effects_per_startup)
-      + per_entity(size, effects_per_size, over=flow)
-      + per_entity(size_built, effects_fixed, over=flow)
-      + per_entity(capacity, effects_per_capacity, over=storage)
-      + per_entity(capacity_built, effects_fixed_capacity, over=storage)
-      + at_build(invest_size_at_build, effects_per_size_at_build)
-      + at_build(invest_build, effects_fixed_at_build)
-      + per_entity(size, effects_per_size_recurring, over=flow)
-      + per_entity(invest_active, effects_fixed_recurring, over=flow)
-      + effects_fixed_mandatory
+    expression: effect_total == effect_temporal + effect_lump
 
   effect_periodic_min:
     foreach: [effect, period]

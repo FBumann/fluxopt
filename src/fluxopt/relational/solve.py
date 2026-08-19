@@ -6,12 +6,14 @@ from typing import TYPE_CHECKING, Any
 
 import lpspec
 
+from fluxopt.relational.results import objective_weights, to_result
 from fluxopt.relational.sources import MATH_PROGRAM, build_sources
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from fluxopt.model_data import ModelData
+    from fluxopt.results import Result
 
 
 def solve(
@@ -20,7 +22,7 @@ def solve(
     *,
     solver_name: str = 'highs',
     solver_options: Mapping[str, Any] | None = None,
-) -> lpspec.relational.result.Result:
+) -> Result:
     """Build *data* as a streaming program and solve it.
 
     Args:
@@ -33,20 +35,19 @@ def solve(
             HiGHS's own spelling).
 
     Returns:
-        The lpspec result: ``.objective``, ``.status``, ``.primal(name)``,
-        ``.dual(name)`` and ``.expression(name)``. Not yet a
-        :class:`~fluxopt.results.Result` — effect contributions are not
-        ported.
+        The same :class:`~fluxopt.results.Result` the linopy lane returns.
 
     Raises:
         UnsupportedFeatureError: If *data* uses a feature the program does not
             express yet.
+        RuntimeError: If the solve produced no primal solution.
     """
-    weights = {objective: 1.0} if isinstance(objective, str) else dict(objective)
+    weights = objective_weights(data, objective)
     sources, coords = build_sources(data, weights)
-    return lpspec.solve(
+    solved = lpspec.solve(
         MATH_PROGRAM,
         {**sources, **coords},
         solver_name,
         solver_options=solver_options,
     )
+    return to_result(solved, data, weights)

@@ -29,8 +29,10 @@ from fluxopt import (
     Status,
     Storage,
 )
+from fluxopt.contract import Var
 from fluxopt.model import FlowSystemModel
 from fluxopt.relational import UnsupportedFeatureError, build_sources, solve
+from fluxopt.results import Result
 
 OBJECTIVE = {'cost': 1.0}
 SOLVER_OPTIONS = {'mip_rel_gap': 1e-9}
@@ -231,11 +233,10 @@ def test_flow_rates_match_linopy() -> None:
     reference = _linopy_optimum(data)
     result = solve(data, OBJECTIVE, solver_options=SOLVER_OPTIONS)
 
-    rates = result.to_pandas('rate').drop(columns='period')
-    pivot = rates.pivot(index='time', columns='flow', values='value').sort_index()
-    for flow_id in pivot.columns:
+    rates = result.flow_rates
+    for flow_id in rates.coords['flow'].values:
         expected = reference.flow_rate.solution.sel(flow=flow_id).values
-        assert pivot[flow_id].to_numpy() == pytest.approx(expected, abs=1e-9)
+        assert rates.sel(flow=flow_id).values == pytest.approx(expected, abs=1e-9)
 
 
 @pytest.mark.parametrize(
@@ -255,9 +256,13 @@ def test_investment_matches_linopy(periods: list[int], lifetime: int) -> None:
     assert result.objective == pytest.approx(float(reference.m.objective.value), rel=1e-9)
 
     # The build decision itself must agree, not only its cost.
-    built = result.to_pandas('invest_build').set_index(['flow', 'build_period'])['value']
-    expected = reference.invest_build.solution.to_series()
-    assert built.to_numpy().round() == pytest.approx(expected.to_numpy().round())
+    # Both sides read through `Result`, because a Dataset aligns its members
+    # to the union of their coordinates — comparing one lane's Dataset entry
+    # against the other lane's raw variable compares two different shapes.
+    built = result.solution[Var.INVEST_BUILD]
+    expected = Result.from_model(reference).solution[Var.INVEST_BUILD]
+    assert list(built.coords['flow'].values) == list(expected.coords['flow'].values)
+    assert np.nan_to_num(built.values).round() == pytest.approx(np.nan_to_num(expected.values).round())
 
 
 @pytest.mark.slow
@@ -267,8 +272,7 @@ def test_effect_limit_binds() -> None:
     reference = float(_linopy_optimum(data).m.objective.value)
     result = solve(data, OBJECTIVE, solver_options=SOLVER_OPTIONS)
 
-    totals = result.to_pandas('effect_total').set_index('effect')['value']
-    assert totals['co2'] == pytest.approx(BINDING_CO2_CAP, rel=1e-9)
+    assert float(result.effect_totals.sel(effect='co2')) == pytest.approx(BINDING_CO2_CAP, rel=1e-9)
     assert result.objective == pytest.approx(reference, rel=1e-9)
 
 
@@ -325,9 +329,34 @@ def test_component_status_matches_linopy() -> None:
 
     # The binary itself must agree, not only its cost — a dropped gate would
     # still solve, and cheaper.
-    on = result.to_pandas('running').set_index(['status_entity', 'time'])['value']
-    expected = reference.component_on.solution.sel(component='tank').values
-    assert on.loc['tank'].to_numpy().round() == pytest.approx(expected.round())
+    on = result.solution[Var.COMPONENT_ON].sel(component='tank')
+    expected = reference.component_on.solution.sel(component='tank')
+    assert on.values.round() == pytest.approx(expected.values.round())
+
+
+def test_both_lanes_answer_with_the_same_result() -> None:
+    """One `Result`, whichever lane built it — including the derived views.
+
+    The point of the object being shared is that parity compares *answers*
+    rather than shapes: effect contributions are reconstructed from the
+    solution and the same ModelData either way, so agreeing here means the
+    solution agrees everywhere it is read from.
+    """
+    data = ModelData.build(**_system(48))
+    theirs = Result.from_model(_linopy_optimum(data))
+    ours = solve(data, OBJECTIVE, solver_options=SOLVER_OPTIONS)
+
+    assert ours.objective == pytest.approx(theirs.objective, rel=1e-9)
+    assert ours.objective_weights == theirs.objective_weights
+
+    for view in ('effect_totals', 'effects_lump'):
+        mine, other = getattr(ours, view), getattr(theirs, view)
+        assert list(mine.coords['effect'].values) == list(other.coords['effect'].values), view
+        assert mine.values == pytest.approx(other.values, abs=1e-7), view
+
+    # Reconstructed per-timestep effects: the accessor that goes through
+    # `stats`, so this covers the contributions path as well.
+    assert ours.effects_temporal.values == pytest.approx(theirs.effects_temporal.values, abs=1e-7)
 
 
 def test_sparse_coefficients_are_not_materialised() -> None:
@@ -372,10 +401,9 @@ def test_piecewise_matches_linopy() -> None:
 
     # Two curves of different arity in one system is the case a static link
     # list cannot express, so assert both were actually built.
-    rates = result.to_pandas('rate').set_index(['flow', 'time', 'period'])['value']
     for flow_id in ('pw_boiler(gas)', 'pw_chp(gas)', 'pw_chp(elec)'):
         expected = reference.flow_rate.solution.sel(flow=flow_id).values.ravel()
-        assert rates.loc[flow_id].to_numpy() == pytest.approx(expected, abs=1e-7)
+        assert result.flow_rates.sel(flow=flow_id).values.ravel() == pytest.approx(expected, abs=1e-7)
 
 
 def test_piecewise_lp_method_raises_rather_than_answering_differently() -> None:
