@@ -71,15 +71,12 @@ PERIOD_PARAMS = frozenset(
         'size_upper',
         'lifetime_window',
         'prior_capacity_active',
-        'effects_per_size_recurring',
-        'effects_fixed_recurring',
-        'effects_per_size_at_build',
-        'effects_fixed_at_build',
     }
 )
 
 #: Parameters carrying the `build_period` axis; its labels map to ordinals too.
-BUILD_PERIOD_PARAMS = frozenset({'lifetime_window', 'effects_per_size_at_build', 'effects_fixed_at_build'})
+#: The at-build coefficient tables are frame-backed and already carry theirs.
+BUILD_PERIOD_PARAMS = frozenset({'lifetime_window'})
 
 
 def _size_upper(data: ModelData, fid: str) -> float:
@@ -336,6 +333,8 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
     lump_terms: list[tuple[str, str, xr.DataArray | None]] = []
     #: (parameter, entity dim, frame, value column) — the frame-backed ones
     lump_frames: list[tuple[str, str, pl.DataFrame, str]] = []
+    #: (parameter, frame, value column) — charged where the build happened
+    at_build_frames: list[tuple[str, pl.DataFrame, str]] = []
 
     # --- flow rate bounds: dense, they sit at the variable's own grid -----
     size, bt = fds.size, fds.bound_type
@@ -356,11 +355,9 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
 
     inv = fds.invest
     invest_ids: list[str] = []
-    idim = ''
     has_invest = xr.zeros_like(fds.size, dtype=bool)
     if inv is not None:
-        idim = inv.min.dims[0]
-        invest_ids = [str(v) for v in inv.min.coords[idim].values]
+        invest_ids = inv.ids
         has_invest = xr.DataArray(
             [f in set(invest_ids) for f in flow_ids], dims=['flow'], coords={'flow': fds.size.coords['flow']}
         )
@@ -694,16 +691,16 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
 
     # --- investment -------------------------------------------------------
     if inv is not None:
-        iren = {idim: 'flow'}
         period_labels_inv: list[Any] = list(dims.period.values) if dims.period is not None else []
         n_p = len(period_labels_inv)
-        lifetime = inv.lifetime.values
-        prior = inv.prior_size.values
+        # No row means forever, so the lookup's default is the absence.
+        expires = dict(zip(inv.lifetime['entity'], inv.lifetime['periods'], strict=True))
+        lifetime = [expires.get(f) for f in invest_ids]
+        prior = inv.bounds['prior_size'].to_numpy()
         window = np.zeros((len(invest_ids), n_p, n_p))
         prior_active = np.zeros((len(invest_ids), n_p))
         for f_idx in range(len(invest_ids)):
-            lt = lifetime[f_idx]
-            lt_int = None if np.isnan(lt) else int(lt)
+            lt_int = lifetime[f_idx]
             for p_idx in range(n_p):
                 for b_idx in range(n_p):
                     alive = b_idx <= p_idx if lt_int is None else b_idx <= p_idx < b_idx + lt_int
@@ -721,33 +718,23 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
             drop_zero=False,
         )
         sources['has_invest'] = _flags('has_invest', 'flow', invest_ids)
-        sources['invest_mandatory'] = pd.DataFrame({'flow': invest_ids, 'value': inv.mandatory.values.astype(bool)})
-        sources['invest_min'] = pd.DataFrame({'flow': invest_ids, 'value': inv.min.values})
-        sources['invest_max'] = pd.DataFrame({'flow': invest_ids, 'value': inv.max.values})
+        sources['invest_mandatory'] = pd.DataFrame({'flow': invest_ids, 'value': inv.bounds['mandatory'].to_numpy()})
+        sources['invest_min'] = pd.DataFrame({'flow': invest_ids, 'value': inv.bounds['size_min'].to_numpy()})
+        sources['invest_max'] = pd.DataFrame({'flow': invest_ids, 'value': inv.bounds['size_max'].to_numpy()})
         sources['prior_capacity'] = pd.DataFrame({'flow': invest_ids, 'value': prior})
         sources['has_prior_capacity'] = _flags(
             'has_prior_capacity', 'flow', [f for f, ps in zip(invest_ids, prior, strict=True) if ps > 0]
         )
-        # Diagonal in (period, build_period): a one-time cost belongs to the
-        # period the build happened in, not to every period the unit is alive.
-        eye = xr.DataArray(
-            np.eye(n_p),
-            dims=['period', 'build_period'],
-            coords={'period': period_labels_inv, 'build_period': period_labels_inv},
-        )
-        lump_terms += [
-            (
-                'effects_per_size_at_build',
-                'flow',
-                inv.effects_per_size_at_build.rename(iren).rename({'period': 'build_period'}) * eye,
-            ),
-            (
-                'effects_fixed_at_build',
-                'flow',
-                inv.effects_fixed_at_build.rename(iren).rename({'period': 'build_period'}) * eye,
-            ),
-            ('effects_per_size_recurring', 'flow', inv.effects_per_size_recurring.rename(iren)),
-            ('effects_fixed_recurring', 'flow', inv.effects_fixed_recurring.rename(iren)),
+        lump_frames += [
+            ('effects_per_size_recurring', 'flow', inv.effects, 'per_size_recurring'),
+            ('effects_fixed_recurring', 'flow', inv.effects, 'fixed_recurring'),
+        ]
+        # A one-time cost belongs to the period the build happened in, not to
+        # every period the unit is alive — which as rows is the diagonal: the
+        # same period twice, rather than a square matrix multiplied by an eye.
+        at_build_frames += [
+            ('effects_per_size_at_build', inv.effects, 'per_size_at_build'),
+            ('effects_fixed_at_build', inv.effects, 'fixed_at_build'),
         ]
     else:
         for name in (
@@ -773,7 +760,7 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
     size_upper = xr.full_like(fds.size, np.inf)
     for ids, maxima in (
         (sizing_ids, sz.bounds['size_max'].to_numpy() if sz is not None else None),
-        (invest_ids, inv.max.values if inv is not None else None),
+        (invest_ids, inv.bounds['size_max'].to_numpy() if inv is not None else None),
     ):
         if maxima is None or not ids:
             continue
@@ -807,6 +794,9 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         sources[name] = tidy(fold(arr), drop_zero=True) if arr is not None else _empty(name, entity_dim, 'effect')
     for name, entity_dim, frame, column in lump_frames:
         sources[name] = _fold_lump_rows(frame, entity_dim, column, leo_lump)
+    for name, frame, column in at_build_frames:
+        folded = _fold_lump_rows(frame, 'flow', column, leo_lump)
+        sources[name] = folded.with_columns(pl.col('period').alias('build_period'))
     for name in ('effects_per_size', 'effects_fixed'):
         sources.setdefault(name, _empty(name, 'flow', 'effect', 'period'))
     for name in ('effects_per_capacity', 'effects_fixed_capacity'):

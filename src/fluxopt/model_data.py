@@ -159,6 +159,26 @@ def dataset_to_frame(ds: xr.Dataset) -> pl.DataFrame:
     return pl.DataFrame({name: ds[name].values for name in columns})
 
 
+def _frames_to_dataset(frames: dict[str, pl.DataFrame]) -> xr.Dataset:
+    """Several named frames as one Dataset, ready for a netCDF group.
+
+    Each frame gets its own row dim and its columns are prefixed by its name,
+    so frames of different lengths sit in one group without xarray trying to
+    align them.
+    """
+    return xr.merge(
+        [
+            frame_to_dataset(frame, dim=f'{key}_row').rename({n: f'{key}__{n}' for n in frame.columns})
+            for key, frame in frames.items()
+        ]
+    ).assign_attrs({key: list(frame.columns) for key, frame in frames.items()})
+
+
+def _frames_from_dataset(ds: xr.Dataset, keys: tuple[str, ...]) -> dict[str, pl.DataFrame]:
+    """The inverse of :func:`_frames_to_dataset`, by frame name."""
+    return {key: pl.DataFrame({n: ds[f'{key}__{n}'].values for n in ds.attrs[key]}) for key in keys}
+
+
 def _to_dataset(obj: DataclassInstance) -> xr.Dataset:
     """Convert a data dataclass to an xr.Dataset.
 
@@ -228,20 +248,12 @@ class SizingData:
 
     def to_dataset(self) -> xr.Dataset:
         """Serialize to xr.Dataset — one group's worth, via the frame bridge."""
-        return xr.merge(
-            [
-                frame_to_dataset(frame, dim=f'{key}_row').rename({n: f'{key}__{n}' for n in frame.columns})
-                for key, frame in (('bounds', self.bounds), ('effects', self.effects))
-            ]
-        ).assign_attrs(bounds=list(self.bounds.columns), effects=list(self.effects.columns))
+        return _frames_to_dataset({'bounds': self.bounds, 'effects': self.effects})
 
     @classmethod
     def from_dataset(cls, ds: xr.Dataset) -> Self:
         """Deserialize from xr.Dataset."""
-        return cls(
-            bounds=pl.DataFrame({n: ds[f'bounds__{n}'].values for n in ds.attrs['bounds']}),
-            effects=pl.DataFrame({n: ds[f'effects__{n}'].values for n in ds.attrs['effects']}),
-        )
+        return cls(**_frames_from_dataset(ds, ('bounds', 'effects')))
 
     @classmethod
     def build(
@@ -319,42 +331,49 @@ def _per_period(value: Any, n_periods: int) -> list[float]:
 
 @dataclass
 class InvestmentData:
-    """Investment (build-timing optimization) arrays for one entity family."""
+    """Investment (build-timing optimization) parameters for one entity family.
 
-    min: xr.DataArray  # (invest_dim,)
-    max: xr.DataArray  # (invest_dim,)
-    mandatory: xr.DataArray  # (invest_dim,)
-    lifetime: xr.DataArray  # (invest_dim,) — NaN = forever
-    prior_size: xr.DataArray  # (invest_dim,)
-    effects_per_size_at_build: xr.DataArray  # (invest_dim, effect, period?) — once
-    effects_fixed_at_build: xr.DataArray  # (invest_dim, effect, period?) — once
-    effects_per_size_recurring: xr.DataArray  # (invest_dim, effect, period?)
-    effects_fixed_recurring: xr.DataArray  # (invest_dim, effect, period?)
+    Absence is a missing row, not a sentinel. An entity with no `lifetime`
+    has no row in `lifetime` and is alive forever; a coefficient nobody
+    declared has no row in `effects` and charges nothing. That is the
+    convention frames make available and the one lpspec's language already
+    uses, so the two now agree.
+    """
+
+    #: (entity, size_min, size_max, mandatory, prior_size) — one row each
+    bounds: pl.DataFrame
+    #: (entity, periods) — only those that expire. No row means forever.
+    lifetime: pl.DataFrame
+    #: (entity, effect, period, per_size_at_build, fixed_at_build,
+    #: per_size_recurring, fixed_recurring) — declared pairs only
+    effects: pl.DataFrame
+
+    @property
+    def ids(self) -> list[str]:
+        """The entities this table invests in, in declaration order."""
+        return self.bounds['entity'].to_list()
 
     def __post_init__(self) -> None:
         """Re-check the bounds `Investment` already refuses, for a reloaded file.
 
         A reload guard — see docs/design/validation-layers.md.
         """
-        dim = self.min.dims[0]
-        ids = self.min.coords[dim]
-        if (mask := self.min < 0).any():
-            raise ValueError(f'Investment.size_min < 0 on {list(ids[mask].values)}')
-        if (mask := self.max < self.min).any():
-            raise ValueError(f'Investment.size_max < size_min on {list(ids[mask].values)}')
-        if (mask := self.prior_size < 0).any():
-            raise ValueError(f'Investment.prior_size < 0 on {list(ids[mask].values)}')
-        if (mask := self.lifetime <= 0).any():
-            raise ValueError(f'Investment.lifetime must be positive on {list(ids[mask].values)}')
+        bad = self.bounds.filter(
+            (pl.col('size_min') < 0) | (pl.col('size_max') < pl.col('size_min')) | (pl.col('prior_size') < 0)
+        )
+        if len(bad):
+            raise ValueError(f'Investment bounds are not orderable on {bad["entity"].to_list()}')
+        if len(short := self.lifetime.filter(pl.col('periods') <= 0)):
+            raise ValueError(f'Investment.lifetime must be positive on {short["entity"].to_list()}')
 
     def to_dataset(self) -> xr.Dataset:
-        """Serialize to xr.Dataset."""
-        return _to_dataset(self)
+        """Serialize to xr.Dataset — one group's worth, via the frame bridge."""
+        return _frames_to_dataset({'bounds': self.bounds, 'lifetime': self.lifetime, 'effects': self.effects})
 
     @classmethod
     def from_dataset(cls, ds: xr.Dataset) -> Self:
         """Deserialize from xr.Dataset."""
-        return _container_from_dataset(cls, ds)
+        return cls(**_frames_from_dataset(ds, ('bounds', 'lifetime', 'effects')))
 
     @classmethod
     def build(
@@ -364,63 +383,72 @@ class InvestmentData:
         dim: str,
         period: pd.Index | None = None,
     ) -> Self | None:
-        """Validate Investment objects and collect into DataArrays, or None if empty.
+        """Collect Investment objects into frames, or None if there are none.
 
         Args:
             items: Pairs of (element_id, Investment).
-            effect_ids: Known effect ids for validation.
-            dim: Dimension name for the resulting arrays.
+            effect_ids: Declared effects; the pairs name their own.
+            dim: Historic dimension name; the frames key on ``entity``.
             period: Period index for period-varying effects.
         """
+        del effect_ids, dim
         if not items:
             return None
 
-        tmpl = _effect_template({'effect': effect_ids}, period)
+        periods = list(range(len(period))) if period is not None else [0]
+        n_periods = len(periods)
+        kinds = (
+            ('per_size_at_build', 'effects_per_size_at_build'),
+            ('fixed_at_build', 'effects_fixed_at_build'),
+            ('per_size_recurring', 'effects_per_size_recurring'),
+            ('fixed_recurring', 'effects_fixed_recurring'),
+        )
 
-        ids: list[str] = []
-        mins: list[float] = []
-        maxs: list[float] = []
-        mandatories: list[bool] = []
-        lifetimes: list[float] = []
-        prior_sizes: list[float] = []
-        all_slices: dict[str, list[xr.DataArray]] = {
-            'eps': [],
-            'ef': [],
-            'eps_p': [],
-            'ef_p': [],
-        }
-
+        entities: list[str] = []
+        effects: list[str] = []
+        values: dict[str, list[float]] = {column: [] for column, _ in kinds}
         for item_id, inv in items:
-            ids.append(item_id)
-            mins.append(inv.size_min)
-            maxs.append(inv.size_max)
-            mandatories.append(inv.mandatory)
-            lifetimes.append(float(inv.lifetime) if inv.lifetime is not None else np.nan)
-            prior_sizes.append(inv.prior_size)
+            declared: set[str] = set()
+            for _, field in kinds:
+                declared |= set(getattr(inv, field))
+            for ek in sorted(declared):
+                entities.extend([item_id] * n_periods)
+                effects.extend([ek] * n_periods)
+                for column, field in kinds:
+                    values[column].extend(_per_period(getattr(inv, field).get(ek, 0.0), n_periods))
 
-            for src_dict, dest_key in [
-                (inv.effects_per_size_at_build, 'eps'),
-                (inv.effects_fixed_at_build, 'ef'),
-                (inv.effects_per_size_recurring, 'eps_p'),
-                (inv.effects_fixed_recurring, 'ef_p'),
-            ]:
-                arr = tmpl.zeros()
-                for ek, ev in src_dict.items():
-                    arr.loc[ek] = as_dataarray(ev, tmpl.as_da_coords)
-                all_slices[dest_key].append(arr)
-
-        coords = {dim: ids}
-        invest_idx = pd.Index(ids, name=dim)
+        with_lifetime = [(i, inv) for i, inv in items if inv.lifetime is not None]
         return cls(
-            min=xr.DataArray(np.array(mins), dims=[dim], coords=coords),
-            max=xr.DataArray(np.array(maxs), dims=[dim], coords=coords),
-            mandatory=xr.DataArray(np.array(mandatories), dims=[dim], coords=coords),
-            lifetime=xr.DataArray(np.array(lifetimes), dims=[dim], coords=coords),
-            prior_size=xr.DataArray(np.array(prior_sizes), dims=[dim], coords=coords),
-            effects_per_size_at_build=fast_concat(all_slices['eps'], invest_idx),
-            effects_fixed_at_build=fast_concat(all_slices['ef'], invest_idx),
-            effects_per_size_recurring=fast_concat(all_slices['eps_p'], invest_idx),
-            effects_fixed_recurring=fast_concat(all_slices['ef_p'], invest_idx),
+            bounds=pl.DataFrame(
+                {
+                    'entity': [i for i, _ in items],
+                    'size_min': [float(v.size_min) for _, v in items],
+                    'size_max': [float(v.size_max) for _, v in items],
+                    'mandatory': [bool(v.mandatory) for _, v in items],
+                    'prior_size': [float(v.prior_size) for _, v in items],
+                }
+            ),
+            lifetime=pl.DataFrame(
+                {
+                    'entity': [i for i, _ in with_lifetime],
+                    'periods': [int(v.lifetime) for _, v in with_lifetime],  # type: ignore[arg-type]
+                },
+                schema={'entity': pl.String, 'periods': pl.Int64},
+            ),
+            effects=pl.DataFrame(
+                {
+                    'entity': entities,
+                    'effect': effects,
+                    'period': periods * (len(entities) // n_periods),
+                    **values,
+                },
+                schema={
+                    'entity': pl.String,
+                    'effect': pl.String,
+                    'period': pl.Int64,
+                    **{column: pl.Float64 for column, _ in kinds},
+                },
+            ),
         )
 
 
@@ -634,7 +662,7 @@ class FlowsData:
         if self.sizing is not None:
             extra |= set(self.sizing.ids)
         if self.invest is not None:
-            extra |= set(map(str, self.invest.min.coords[self.invest.min.dims[0]].values))
+            extra |= set(self.invest.ids)
         sized = self.size.notnull().values | np.isin(flow_ids, list(extra))
 
         for da, label in (
@@ -1810,7 +1838,7 @@ class ModelData:
         if self.flows.sizing is not None:
             check_flows(self.flows.sizing.ids, 'flows.sizing')
         if self.flows.invest is not None:
-            check_flows(coord_ids(self.flows.invest.min), 'flows.invest')
+            check_flows(self.flows.invest.ids, 'flows.invest')
         if self.flows.status is not None:
             check_flows(coord_ids(self.flows.status.uptime_min), 'flows.status')
         if self.flows.governed_by is not None:
@@ -1836,7 +1864,7 @@ class ModelData:
             ):
                 if container is None:
                     continue
-                ids = container.ids if isinstance(container, SizingData) else coord_ids(container.min)
+                ids = container.ids
                 if unknown := sorted(set(ids) - storage_ids):
                     raise ValueError(f'{what} references unknown storage id(s) {unknown}')
 
