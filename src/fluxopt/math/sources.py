@@ -323,10 +323,10 @@ def _reject_unsupported(data: ModelData) -> None:
             )
     if fds.invest is not None and not data.dims.has_periods:
         raise UnsupportedFeatureError('investment requires multi-period optimization (periods must be specified)')
-    if fds.sizing is not None and fds.status is not None:
-        sz = set(fds.sizing.ids)
-        stt = set(fds.status.ids)
-        both = sz & stt
+    if fds.sizing is not None and data.status is not None:
+        # Component entities never collide with a flow-sizing id, so the
+        # intersection picks out exactly the flows carrying their own Status.
+        both = set(fds.sizing.ids) & set(data.status.ids)
         profile = both & set(_of_type(fds, BoundType.PROFILE))
         if profile:
             # fluxopt rejects this combination too — no formulation exists.
@@ -386,10 +386,12 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
     profile = fds.fixed_profile.rename({'value': 'fixed'})
     grid = envelope.join(fds.sizes, on='flow', how='left').join(profile, on=['flow', 'time', 'period'], how='left')
 
-    sz, inv, st = fds.sizing, fds.invest, fds.status
+    sz, inv, st = fds.sizing, fds.invest, data.status
     sizing_ids = sz.ids if sz is not None else []
     invest_ids = inv.ids if inv is not None else []
-    status_ids = st.ids if st is not None else []
+    # The status axis holds both kinds; these are the flows whose own rate
+    # bounds the binary takes over, so components have no business here.
+    status_ids = [e for e in st.ids if e in set(flow_ids)] if st is not None else []
     is_bounded = _of_type(fds, BoundType.BOUNDED)
     is_profile = _of_type(fds, BoundType.PROFILE)
 
@@ -552,55 +554,40 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
             sources[name] = pd.DataFrame({c: [] for c in [*dcols, 'value']})
 
     # --- status -----------------------------------------------------------
-    # Two containers, one axis. `flows.status` is a flow's own on/off decision;
-    # `flows.cstatus` is a component's, governing several flows at once. They
-    # carry the same fields and obey the same math, so they are bound to one
-    # `status_entity` dimension and the program states the family once. Which
-    # rows read which binary is `status_of`, and nothing else distinguishes
-    # them.
+    # One table, one axis. An entity here is a flow carrying its own on/off
+    # decision or a component whose decision governs several flows; they carry
+    # the same fields and obey the same math, so the program states the family
+    # once over `status_entity`. Which rows read which binary is `status_of`,
+    # and nothing else distinguishes them.
     ec_extra: list[tuple[str, xr.DataArray]] = []
     #: (parameter, frame, value column) — status coefficients, per timestep
     status_effect_frames: list[tuple[str, pl.DataFrame, str]] = []
-    cst = fds.cstatus
-    blocks: list[tuple[Any, list[str]]] = []
     #: flow id -> the entity whose binary gates it. A self-status flow maps to
     #: itself; a governed flow to its component; an ungated flow to nothing.
-    status_of: dict[str, str] = {}
-    if st is not None:
-        blocks.append((st, status_ids))
-        status_of.update({f: f for f in status_ids})
-    if cst is not None:
-        comp_ids = cst.ids
-        blocks.append((cst, comp_ids))
-        # A piecewise curve's flows are gated by its convexity row, which
-        # already pins every weight to zero when the binary is off. Gating
-        # them a second time per flow would be redundant, and wrong for the
-        # links the curve only bounds.
-        pw_comps = set(data.piecewise.converter_ids()) if data.piecewise is not None else set()
-        status_of.update(
-            {
-                fid: owner
-                for fid, owner in zip(fds.governed_by['flow'], fds.governed_by['component'], strict=True)
-                if owner not in pw_comps
-            }
-        )
+    status_of: dict[str, str] = {f: f for f in status_ids}
+    # A piecewise curve's flows are gated by its convexity row, which already
+    # pins every weight to zero when the binary is off. Gating them a second
+    # time per flow would be redundant, and wrong for the links the curve
+    # only bounds.
+    pw_comps = set(data.piecewise.converter_ids()) if data.piecewise is not None else set()
+    status_of.update(
+        {
+            fid: owner
+            for fid, owner in zip(fds.governed_by['flow'], fds.governed_by['component'], strict=True)
+            if owner not in pw_comps
+        }
+    )
 
     flow_index['status_of'] = [status_of.get(f) for f in flow_ids]
-    entity_ids = [e for _, ids in blocks for e in ids]
+    entity_ids = st.ids if st is not None else []
     gated_ids = [f for f in flow_ids if f in status_of]
 
     sources['is_gated'] = _flags('is_gated', 'flow', gated_ids)
     sources['is_bounded'] = _flags('is_bounded', 'flow', is_bounded)
     sources['is_profile'] = _flags('is_profile', 'flow', is_profile)
 
-    if blocks:
-        # Every block's frames stacked on the shared entity axis. A vertical
-        # concat is what "the same table for another family" means, and the
-        # nulls that stood for "this block does not set that field" are now
-        # simply rows that are not there.
-        durations = pl.concat([b.durations for b, _ in blocks], how='vertical')
-        prior = pl.concat([b.prior for b, _ in blocks], how='vertical')
-        status_effects = pl.concat([b.effects for b, _ in blocks], how='vertical')
+    if st is not None:
+        durations, prior, status_effects = st.durations, st.prior, st.effects
         all_entities = pl.DataFrame({'status_entity': entity_ids}, schema={'status_entity': pl.String})
 
         def per_entity(frame: pl.DataFrame, column: str) -> Any:

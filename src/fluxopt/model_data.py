@@ -109,7 +109,7 @@ _NC_GROUPS = {
 
 # Nested container fields on FlowsData / StoragesData — written to a
 # sub-directory of their own, not as frames of the parent container.
-_CONTAINER_FIELD_NAMES = frozenset({'sizing', 'status', 'invest', 'cstatus'})
+_CONTAINER_FIELD_NAMES = frozenset({'sizing', 'invest'})
 
 
 @dataclass
@@ -543,10 +543,7 @@ class FlowsData:
     #: ragged padded matrix it used to be on the component's Status.
     governed_by: pl.DataFrame
     sizing: SizingData | None = None
-    status: StatusData | None = None
     invest: InvestmentData | None = None
-    #: A component's Status, governing several flows at once
-    cstatus: StatusData | None = None
 
     @property
     def ids(self) -> list[str]:
@@ -566,24 +563,7 @@ class FlowsData:
         crossed = self.envelope.filter(pl.col('relative_rate_min') > pl.col('relative_rate_max') + 1e-12)['flow']
         if bad := crossed.unique(maintain_order=True).to_list():
             raise ValueError(f'Lower bound > upper bound on flows: {bad}')
-        self._check_status_not_degenerate()
         self._check_sized_features()
-
-    def _check_status_not_degenerate(self) -> None:
-        """Status flows need rel_lb > 0 everywhere, else on/off is indistinguishable.
-
-        Enforced here (not only on the ``Flow`` element) because ModelData can
-        be edited directly or reloaded from file — a zero lower bound would
-        make the model solve with silently meaningless status results.
-        """
-        if self.status is None:
-            return
-        gated = self.envelope.filter(pl.col('flow').is_in(pl.Series(self.status.ids).implode()))
-        degenerate = gated.filter(pl.col('relative_rate_min') <= 0)['flow'].unique(maintain_order=True).to_list()
-        if degenerate:
-            raise ValueError(
-                f'Status flows must have rel_lb > 0 (else on/off is indistinguishable); violated on {degenerate}'
-            )
 
     def _check_sized_features(self) -> None:
         """Ramp limits and load-factor bounds need a sized flow (fixed, Sizing, or Investment).
@@ -611,7 +591,6 @@ class FlowsData:
         cls,
         flows: list[_BoundFlow],
         time: TimeIndex,
-        dt: float = 1.0,
         period: pd.Index | None = None,
         component_status_items: list[tuple[str, Status, list[str]]] | None = None,
     ) -> Self:
@@ -620,16 +599,15 @@ class FlowsData:
         Args:
             flows: All collected flows with qualified ids.
             time: Time index.
-            dt: Scalar timestep duration in hours for prior duration computation.
             period: Period index for multi-period models. `envelope`,
                 `fixed_profile`, `effect_pairs` and `ramps` carry a period
                 column either way, so the relative bounds, the profile, the
                 per-flow-hour coefficients and the ramp limits can all vary
                 across periods.
             component_status_items: Component-level status entries as
-                ``(component_id, Status, [governed flow ids])``. Each entry
-                produces an on/startup/shutdown binary keyed by the
-                component, gating all listed flows together.
+                ``(component_id, Status, [governed flow ids])``. Only
+                ``governed_by`` is read off them here; the Status objects
+                themselves become rows of `ModelData.status`.
         """
         from fluxopt.elements import Investment, Sizing
 
@@ -660,8 +638,6 @@ class FlowsData:
         fixed_sizes: list[tuple[str, float]] = []
         sizing_items: list[tuple[str, Sizing]] = []
         invest_items: list[tuple[str, Investment]] = []
-        status_items: list[tuple[str, Status]] = []
-        prior_rates_map: dict[str, list[float]] = {}
         aggregate_rows: list[tuple[str, Any, Any, Any, Any]] = []
         # Each table is built as value columns plus the keys of the blocks that
         # went into it — every block is one whole (time, period) grid, so the
@@ -706,11 +682,6 @@ class FlowsData:
             for effect_label, factor in f.effects_per_flow_hour.items():
                 pair_keys.append((fid, effect_label))
                 pair_cols['value'].append(spread(factor))
-
-            if f.status is not None:
-                status_items.append((fid, f.status))
-            if f.prior_rates is not None:
-                prior_rates_map[fid] = f.prior_rates
 
         def frame(
             keys: dict[str, list[Any]], cols: dict[str, list[np.ndarray]], schema: dict[str, Any]
@@ -776,8 +747,6 @@ class FlowsData:
             ),
             sizing=SizingData.build(sizing_items, period=period),
             invest=InvestmentData.build(invest_items, period=period),
-            status=StatusData.build(status_items, time, prior_rates_map=prior_rates_map, dt=dt, period=period),
-            cstatus=StatusData.build([(cid, s) for cid, s, _ in (component_status_items or [])], time, period=period),
         )
 
 
@@ -1673,7 +1642,7 @@ class Dims:
 #: Which sub-container each top-level one carries, and of what class. Read by
 #: :meth:`ModelData.load` to rebuild them from their own directories.
 _SUB_CONTAINERS: dict[str, dict[str, Any]] = {
-    'flows': {'sizing': SizingData, 'invest': InvestmentData, 'status': StatusData, 'cstatus': StatusData},
+    'flows': {'sizing': SizingData, 'invest': InvestmentData},
     'storages': {'sizing': SizingData, 'invest': InvestmentData},
 }
 
@@ -1701,6 +1670,11 @@ class ModelData:
     storages: StoragesData | None  # None when no storages
     dims: Dims
     piecewise: PiecewiseData | None = None  # None when no piecewise converters
+    #: Every on/off decision in the system, whether a flow carries it or a
+    #: component does. One table because the program has one `status_entity`
+    #: dimension: the two differ only in which rows read the binary, and
+    #: `flows.governed_by` is what says which.
+    status: StatusData | None = None
 
     def __post_init__(self) -> None:
         """Check ids referenced *between* tables resolve.
@@ -1728,12 +1702,10 @@ class ModelData:
             check_flows(self.flows.sizing.ids, 'flows.sizing')
         if self.flows.invest is not None:
             check_flows(self.flows.invest.ids, 'flows.invest')
-        if self.flows.status is not None:
-            check_flows(self.flows.status.ids, 'flows.status')
-        components = set(self.flows.cstatus.ids) if self.flows.cstatus is not None else set()
-        named = set(self.flows.governed_by['component'].to_list())
-        if unknown := sorted(named - components):
+        entities: set[str] = set(self.status.ids) if self.status is not None else set()
+        if unknown := sorted(set(self.flows.governed_by['component'].to_list()) - entities):
             raise ValueError(f'flows.governed_by names components without a Status: {unknown}')
+        self._check_status_not_degenerate(entities & flow_ids)
         if self.converters is not None:
             check_flows(self.converters.coefficients['flow'].to_list(), 'converters.coefficients')
         if self.piecewise is not None:
@@ -1823,7 +1795,29 @@ class ModelData:
             storages=read('storages', StoragesData, read_subs('storages', StoragesData)),
             dims=read('dims', Dims),
             piecewise=read('piecewise', PiecewiseData),
+            status=read('status', StatusData),
         )
+
+    def _check_status_not_degenerate(self, gated: set[str]) -> None:
+        """A flow carrying its own Status needs rel_lb > 0, else on/off is degenerate.
+
+        A zero lower bound lets the solver sit at zero with the binary on, so
+        the status results mean nothing. `Flow` refuses it at construction;
+        this is the guard for a direct edit or a reload, and it lives here
+        rather than on `FlowsData` because the envelope and the status table
+        are two containers now.
+
+        Args:
+            gated: Flows carrying a Status of their own.
+        """
+        if not gated:
+            return
+        rows = self.flows.envelope.filter(pl.col('flow').is_in(pl.Series(sorted(gated)).implode()))
+        degenerate = rows.filter(pl.col('relative_rate_min') <= 0)['flow'].unique(maintain_order=True).to_list()
+        if degenerate:
+            raise ValueError(
+                f'Status flows must have rel_lb > 0 (else on/off is indistinguishable); violated on {degenerate}'
+            )
 
     def _containers(self) -> dict[str, Any]:
         """Every top-level container, by the name its directory takes."""
@@ -1834,6 +1828,7 @@ class ModelData:
             'effects': self.effects,
             'storages': self.storages,
             'piecewise': self.piecewise,
+            'status': self.status,
             'dims': self.dims,
         }
 
@@ -1903,8 +1898,18 @@ class ModelData:
             if c.conversion is not None and c.conversion.status is not None
         )
 
-        flows_data = FlowsData.build(
-            flows, time, dt=dt_scalar, period=period_idx, component_status_items=comp_status_items
+        flows_data = FlowsData.build(flows, time, period=period_idx, component_status_items=comp_status_items)
+        # One table for one dimension: a flow's own Status and a component's
+        # differ only in which rows read the binary, and the program says so
+        # with a single `status_entity`. Flows first, so the axis reads in
+        # declaration order.
+        status_data = StatusData.build(
+            [(bf.id, bf.flow.status) for bf in flows if bf.flow.status is not None]
+            + [(cid, z) for cid, z, _ in comp_status_items],
+            time,
+            prior_rates_map={bf.id: bf.flow.prior_rates for bf in flows if bf.flow.prior_rates is not None},
+            dt=dt_scalar,
+            period=period_idx,
         )
         carriers_data = CarriersData.build(carriers, flows, carrier_coeff)
         converters_data = ConvertersData.build(converters, time)
@@ -1920,6 +1925,7 @@ class ModelData:
             storages=storages_data,
             dims=dims,
             piecewise=piecewise_data,
+            status=status_data,
         )
 
 
