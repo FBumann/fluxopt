@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import polars as pl
 import pytest
 from conftest import ts
 
@@ -96,7 +97,9 @@ class TestEndToEnd:
         )
 
         # Change demand from 0.5 to 0.7 (relative); absolute = 0.7 * 100 = 70
-        data.flows.fixed_profile.loc[{'flow': 'demand(elec)'}] = 0.7
+        data.flows.fixed_profile = data.flows.fixed_profile.with_columns(
+            pl.when(pl.col('flow') == 'demand(elec)').then(0.7).otherwise(pl.col('value')).alias('value')
+        )
 
         result = solve(data, 'cost')
 

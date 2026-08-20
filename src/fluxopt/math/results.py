@@ -79,7 +79,7 @@ def _entity_order(data: ModelData) -> dict[str, list[str]]:
     loudly instead of being silently reindexed away.
     """
     order = {
-        'flow': [str(f) for f in data.flows.size.coords['flow'].values],
+        'flow': data.flows.ids,
         'effect': data.effects.ids,
     }
     if data.storages is not None:
@@ -151,7 +151,7 @@ def _split_status(arr: xr.DataArray, data: ModelData) -> tuple[xr.DataArray | No
     same math; a solution keeps them apart because they are different things to
     read. Membership decides: an entity that is a flow is a flow.
     """
-    flow_ids = {str(f) for f in data.flows.size.coords['flow'].values}
+    flow_ids = set(data.flows.ids)
     entities = [str(e) for e in arr.coords['status_entity'].values]
     parts: list[xr.DataArray | None] = []
     for wanted, dim in ((True, 'flow'), (False, 'component')):

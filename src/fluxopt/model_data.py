@@ -13,7 +13,7 @@ import polars as pl
 import xarray as xr
 
 from fluxopt.contract import BoundType, Dim
-from fluxopt.types import PiecewiseMethod, as_dataarray, fast_concat, normalize_timesteps
+from fluxopt.types import PiecewiseMethod, as_dataarray, normalize_timesteps
 from fluxopt.validation import validate_system
 
 if TYPE_CHECKING:
@@ -584,46 +584,61 @@ def _series(value: Any, coords: dict[str, Any], p_index: int, n_time: int) -> np
 
 @dataclass
 class FlowsData:
-    bound_type: xr.DataArray  # (flow,) — BoundType.UNSIZED | BoundType.BOUNDED | BoundType.PROFILE
-    rel_lb: xr.DataArray  # (flow, time[, period])
-    rel_ub: xr.DataArray  # (flow, time[, period])
-    fixed_profile: xr.DataArray  # (flow, time[, period]) — NaN where not fixed
-    size: xr.DataArray  # (flow,) — NaN for unsized
-    #: One row per (flow, effect) a flow actually charges, each carrying its
-    #: own ``(time[, period])`` series. Dense over the pair product it is not:
-    #: on the stress reference system that product is 443 MB at 4% live.
-    effect_pair_flow: xr.DataArray  # (pair,) — flow id
-    effect_pair_effect: xr.DataArray  # (pair,) — effect id
-    effect_pair_coeff: xr.DataArray  # (pair, time[, period])
-    #: (flow,) — every flow, in order. The pair table names only the flows
-    #: that charge something, so the roster cannot be read off it.
-    flow_id: xr.DataArray
-    flow_hours_min: xr.DataArray | None = None  # (flow,) — NaN = unbounded, per period
-    flow_hours_max: xr.DataArray | None = None  # (flow,) — NaN = unbounded, per period
-    load_factor_min: xr.DataArray | None = None  # (flow,) — NaN = unbounded, per period
-    load_factor_max: xr.DataArray | None = None  # (flow,) — NaN = unbounded, per period
-    ramp_up: xr.DataArray | None = None  # (flow, time[, period]) — NaN = no limit [1/h]
-    ramp_down: xr.DataArray | None = None  # (flow, time[, period]) — NaN = no limit [1/h]
+    """Flow parameters, as the tables a flow declares.
+
+    Absence is a missing row. A flow whose size is being optimized has no row
+    in `sizes`; one that limits no ramp has none in `ramps`; a flow charges
+    only the effects it has rows for in `effect_pairs`. `envelope` is the
+    exception and is dense on purpose: the relative bounds sit at the rate
+    variable's own grid, where a missing row reads as a binding zero.
+    """
+
+    #: (flow, bound_type) — every flow, in declaration order. The roster: the
+    #: other tables name only the flows that declare the thing they hold.
+    flows: pl.DataFrame
+    #: (flow, size) — only flows sized to a fixed value
+    sizes: pl.DataFrame
+    #: (flow, time, period, relative_rate_min, relative_rate_max) — dense
+    envelope: pl.DataFrame
+    #: (flow, time, period, value) — only flows whose rate follows a profile
+    fixed_profile: pl.DataFrame
+    #: (flow, effect, time, period, value) — one row per (flow, effect) a flow
+    #: actually charges. Dense over that product it is not: on the stress
+    #: reference system the product is 443 MB at 4% live.
+    effect_pairs: pl.DataFrame
+    #: (flow, time, period, ramp_up, ramp_down) [1/h] — only flows limiting a
+    #: ramp, and only the direction they limit
+    ramps: pl.DataFrame
+    #: (flow, flow_hours_min, flow_hours_max, load_factor_min, load_factor_max)
+    #: — only flows bounding an aggregate, per period
+    aggregates: pl.DataFrame
+    #: (flow, component) — only flows a component's Status governs. A flow is
+    #: governed by at most one component, so this is a column rather than the
+    #: ragged padded matrix it used to be on the component's Status.
+    governed_by: pl.DataFrame
     sizing: SizingData | None = None  # dim Dim.SIZING_FLOW
     status: StatusData | None = None  # dim Dim.STATUS_FLOW
     invest: InvestmentData | None = None  # dim Dim.INVEST_FLOW
     cstatus: StatusData | None = None  # dim Dim.CSTATUS_COMPONENT, entity coord 'component'
-    #: (flow,) — the component whose Status governs this flow, '' where none.
-    #: A fact about the flow, so it sits here rather than as a ragged padded
-    #: matrix on the component's Status, which is what it used to be.
-    governed_by: xr.DataArray | None = None
+
+    @property
+    def ids(self) -> list[str]:
+        """Every flow, in declaration order."""
+        return self.flows['flow'].to_list()
+
+    @property
+    def sized_ids(self) -> set[str]:
+        """Flows whose size is known here — fixed, not optimized."""
+        return set(self.sizes['flow'].to_list())
 
     def __post_init__(self) -> None:
         """Validate relative bounds, status non-degeneracy, and sized-feature requirements."""
-        reduce_dims = [d for d in self.rel_lb.dims if d != 'flow']
-        bad_neg = (self.rel_lb < -1e-12).any(reduce_dims)
-        if bad_neg.any():
-            raise ValueError(f'Negative lower bounds on flows: {list(self.rel_lb.coords["flow"][bad_neg].values)}')
-        bad_order = (self.rel_lb > self.rel_ub + 1e-12).any(reduce_dims)
-        if bad_order.any():
-            raise ValueError(
-                f'Lower bound > upper bound on flows: {list(self.rel_lb.coords["flow"][bad_order].values)}'
-            )
+        negative = self.envelope.filter(pl.col('relative_rate_min') < -1e-12)['flow']
+        if bad := negative.unique(maintain_order=True).to_list():
+            raise ValueError(f'Negative lower bounds on flows: {bad}')
+        crossed = self.envelope.filter(pl.col('relative_rate_min') > pl.col('relative_rate_max') + 1e-12)['flow']
+        if bad := crossed.unique(maintain_order=True).to_list():
+            raise ValueError(f'Lower bound > upper bound on flows: {bad}')
         self._check_status_not_degenerate()
         self._check_sized_features()
 
@@ -636,64 +651,33 @@ class FlowsData:
         """
         if self.status is None:
             return
-        status_ids = self.status.ids
-        lb = self.rel_lb.sel(flow=status_ids)
-        degenerate = (lb <= 0).any([d for d in lb.dims if d != 'flow'])
-        if degenerate.any():
+        gated = self.envelope.filter(pl.col('flow').is_in(pl.Series(self.status.ids).implode()))
+        degenerate = gated.filter(pl.col('relative_rate_min') <= 0)['flow'].unique(maintain_order=True).to_list()
+        if degenerate:
             raise ValueError(
-                f'Status flows must have rel_lb > 0 (else on/off is indistinguishable); '
-                f'violated on {list(lb.coords["flow"][degenerate].values)}'
+                f'Status flows must have rel_lb > 0 (else on/off is indistinguishable); violated on {degenerate}'
             )
 
     def _check_sized_features(self) -> None:
         """Ramp limits and load-factor bounds need a sized flow (fixed, Sizing, or Investment).
 
-        Without a size these features would feed NaN into constraint
+        Without a size these features would feed a null into constraint
         coefficients; the element layer already rejects this at authoring
         time, this is the guard for direct data edits and reloads.
         """
-        flow_ids = self.size.coords['flow'].values
-        extra: set[str] = set()
-        if self.sizing is not None:
-            extra |= set(self.sizing.ids)
-        if self.invest is not None:
-            extra |= set(self.invest.ids)
-        sized = self.size.notnull().values | np.isin(flow_ids, list(extra))
+        sized = self.sized_ids
+        for container in (self.sizing, self.invest):
+            if container is not None:
+                sized |= set(container.ids)
 
-        for da, label in (
-            (self.ramp_up, 'ramp_up'),
-            (self.ramp_down, 'ramp_down'),
-            (self.load_factor_min, 'load_factor_min'),
-            (self.load_factor_max, 'load_factor_max'),
+        for frame, columns in (
+            (self.ramps, ('ramp_up', 'ramp_down')),
+            (self.aggregates, ('load_factor_min', 'load_factor_max')),
         ):
-            if da is None:
-                continue
-            has = da.notnull()
-            if extra_dims := [d for d in has.dims if d != 'flow']:
-                has = has.any(extra_dims)
-            if (bad := has.values & ~sized).any():
-                raise ValueError(
-                    f'{label} requires a sized flow (fixed, Sizing, or Investment) on {list(flow_ids[bad])}'
-                )
-
-    def to_dataset(self) -> xr.Dataset:
-        """Serialize to xr.Dataset."""
-        return _to_dataset(self)
-
-    @classmethod
-    def from_dataset(cls, ds: xr.Dataset, containers: dict[str, Any] | None = None) -> Self:
-        """Deserialize from xr.Dataset plus reconstructed nested containers.
-
-        Args:
-            ds: Dataset with the table's plain-DataArray variables.
-            containers: Nested container objects (``sizing``/``status``/
-                ``invest``/``cstatus``) parsed from netCDF sub-groups.
-        """
-        containers = containers or {}
-        kwargs: dict[str, Any] = {
-            f.name: containers.get(f.name) if f.name in _CONTAINER_FIELD_NAMES else ds.get(f.name) for f in fields(cls)
-        }
-        return cls(**kwargs)
+            for column in columns:
+                declared = frame.filter(pl.col(column).is_not_null())['flow'].unique(maintain_order=True).to_list()
+                if bad := [f for f in declared if f not in sized]:
+                    raise ValueError(f'{column} requires a sized flow (fixed, Sizing, or Investment) on {bad}')
 
     @classmethod
     def build(
@@ -712,11 +696,11 @@ class FlowsData:
             time: Time index.
             effects: Effect definitions for cost coefficients.
             dt: Scalar timestep duration in hours for prior duration computation.
-            period: Period index for multi-period models. When provided,
-                ``effect_pair_coeff``, ``rel_lb``, ``rel_ub`` and ``fixed_profile``
-                gain a ``period`` dimension so that ``effects_per_flow_hour``,
-                ``relative_rate_min``, ``relative_rate_max`` and
-                ``fixed_relative_profile`` can vary across periods.
+            period: Period index for multi-period models. `envelope`,
+                `fixed_profile`, `effect_pairs` and `ramps` carry a period
+                column either way, so the relative bounds, the profile, the
+                per-flow-hour coefficients and the ramp limits can all vary
+                across periods.
             component_status_items: Component-level status entries as
                 ``(component_id, Status, [governed flow ids])``. Each entry
                 produces an on/startup/shutdown binary keyed by the
@@ -726,115 +710,146 @@ class FlowsData:
 
         flow_ids = [bf.id for bf in flows]
         effect_ids = [e.id for e in effects]
-        n_time = len(time)
+        n_time = len(np.asarray(time))
+        n_period = len(period) if period is not None else 1
+        envelope_coords: dict[str, Any] = {'time': time}
+        if period is not None:
+            envelope_coords['period'] = period
+
+        #: The (time, period) grid every per-timestep table is laid out on,
+        #: time-major so one `np.tile`/`np.repeat` pair keys every one of them.
+        #: Both axes are positions, not labels: the program indexes them that
+        #: way and `Dims` holds the labels. A timestamp is a poor join key —
+        #: integer timesteps and datetime ones would need different dtypes,
+        #: and rounding a datetime to a coarser unit silently collides.
+        grid_time = np.repeat(np.arange(n_time), n_period)
+        grid_period = np.tile(np.arange(n_period), n_time)
+
+        def spread(value: Any) -> np.ndarray:
+            """A flow's per-timestep value, flattened onto the (time, period) grid."""
+            return np.broadcast_to(
+                np.asarray(as_dataarray(value, envelope_coords).values, dtype=float).reshape(n_time, -1),
+                (n_time, n_period),
+            ).ravel()
 
         bound_type: list[str] = []
-        rel_lbs: list[xr.DataArray] = []
-        rel_ubs: list[xr.DataArray] = []
-        profiles: list[xr.DataArray] = []
-        size_vals = np.full(len(flows), np.nan)
-        fh_min_vals = np.full(len(flows), np.nan)
-        fh_max_vals = np.full(len(flows), np.nan)
-        lf_min_vals = np.full(len(flows), np.nan)
-        lf_max_vals = np.full(len(flows), np.nan)
-        ramp_ups: list[xr.DataArray] = []
-        ramp_downs: list[xr.DataArray] = []
-        has_ramp_up = False
-        has_ramp_down = False
-        effect_coeffs: list[xr.DataArray] = []
-        pair_flows: list[str] = []
-        pair_effects: list[str] = []
+        fixed_sizes: list[tuple[str, float]] = []
         sizing_items: list[tuple[str, Sizing]] = []
         invest_items: list[tuple[str, Investment]] = []
         status_items: list[tuple[str, Status]] = []
         prior_rates_map: dict[str, list[float]] = {}
+        aggregate_rows: list[tuple[str, Any, Any, Any, Any]] = []
+        # Each table is built as value columns plus the keys of the blocks that
+        # went into it — every block is one whole (time, period) grid, so the
+        # key columns are one `repeat`/`tile` at the end rather than an array
+        # built per flow.
+        env_cols: dict[str, list[np.ndarray]] = {k: [] for k in ('relative_rate_min', 'relative_rate_max')}
+        env_keys: list[str] = []
+        profile_cols: dict[str, list[np.ndarray]] = {'value': []}
+        profile_keys: list[str] = []
+        pair_cols: dict[str, list[np.ndarray]] = {'value': []}
+        pair_keys: list[tuple[str, str]] = []
+        ramp_cols: dict[str, list[np.ndarray]] = {k: [] for k in ('ramp_up', 'ramp_down')}
+        ramp_keys: list[str] = []
 
-        envelope_coords: dict[str, Any] = {'time': time}
-        if period is not None:
-            envelope_coords['period'] = period
-        nan_envelope = xr.DataArray(
-            np.full([len(v) for v in envelope_coords.values()], np.nan),
-            dims=list(envelope_coords),
-            coords=envelope_coords,
-        )
-
-        for i, (fid, f, _sign) in enumerate(flows):
-            rel_lbs.append(as_dataarray(f.relative_rate_min, envelope_coords))
-            rel_ubs.append(as_dataarray(f.relative_rate_max, envelope_coords))
+        for fid, f, _sign in flows:
+            env_keys.append(fid)
+            env_cols['relative_rate_min'].append(spread(f.relative_rate_min))
+            env_cols['relative_rate_max'].append(spread(f.relative_rate_max))
 
             if isinstance(f.size, Sizing):
                 sizing_items.append((fid, f.size))
             elif isinstance(f.size, Investment):
                 invest_items.append((fid, f.size))
             elif f.size is not None:
-                size_vals[i] = f.size
+                fixed_sizes.append((fid, float(f.size)))
 
-            if f.flow_hours_min is not None:
-                fh_min_vals[i] = f.flow_hours_min
-            if f.flow_hours_max is not None:
-                fh_max_vals[i] = f.flow_hours_max
-            if f.load_factor_min is not None:
-                lf_min_vals[i] = f.load_factor_min
-            if f.load_factor_max is not None:
-                lf_max_vals[i] = f.load_factor_max
+            if any(b is not None for b in (f.flow_hours_min, f.flow_hours_max, f.load_factor_min, f.load_factor_max)):
+                aggregate_rows.append((fid, f.flow_hours_min, f.flow_hours_max, f.load_factor_min, f.load_factor_max))
 
-            has_ramp_up = has_ramp_up or f.ramp_up_per_hour is not None
-            has_ramp_down = has_ramp_down or f.ramp_down_per_hour is not None
-            ramp_ups.append(
-                as_dataarray(f.ramp_up_per_hour, envelope_coords) if f.ramp_up_per_hour is not None else nan_envelope
-            )
-            ramp_downs.append(
-                as_dataarray(f.ramp_down_per_hour, envelope_coords)
-                if f.ramp_down_per_hour is not None
-                else nan_envelope
-            )
+            if f.ramp_up_per_hour is not None or f.ramp_down_per_hour is not None:
+                ramp_keys.append(fid)
+                for column, value in (('ramp_up', f.ramp_up_per_hour), ('ramp_down', f.ramp_down_per_hour)):
+                    ramp_cols[column].append(spread(value) if value is not None else np.full(n_time * n_period, np.nan))
 
             if f.fixed_relative_profile is not None:
-                profiles.append(as_dataarray(f.fixed_relative_profile, envelope_coords))
                 bound_type.append(BoundType.PROFILE)
-            elif f.size is None:
-                profiles.append(nan_envelope)
-                bound_type.append(BoundType.UNSIZED)
+                profile_keys.append(fid)
+                profile_cols['value'].append(spread(f.fixed_relative_profile))
             else:
-                profiles.append(nan_envelope)
-                bound_type.append(BoundType.BOUNDED)
+                bound_type.append(BoundType.UNSIZED if f.size is None else BoundType.BOUNDED)
 
-            # Effect coefficients for this flow — one row per effect charged
-            as_da_coords: dict[str, Any] = {'time': time}
-            if period is not None:
-                as_da_coords['period'] = period
             for effect_label, factor in f.effects_per_flow_hour.items():
-                pair_flows.append(fid)
-                pair_effects.append(effect_label)
-                effect_coeffs.append(as_dataarray(factor, as_da_coords))
+                pair_keys.append((fid, effect_label))
+                pair_cols['value'].append(spread(factor))
 
             if f.status is not None:
                 status_items.append((fid, f.status))
-
             if f.prior_rates is not None:
                 prior_rates_map[fid] = f.prior_rates
 
-        flow_idx = pd.Index(flow_ids, name='flow')
+        def frame(
+            keys: dict[str, list[Any]], cols: dict[str, list[np.ndarray]], schema: dict[str, Any]
+        ) -> pl.DataFrame:
+            """One typed table from its block keys and its value columns.
+
+            Every block spans the whole (time, period) grid, so the key columns
+            repeat once per block and the grid tiles under them.
+            """
+            blocks = len(next(iter(cols.values())))
+            data: dict[str, Any] = {name: np.repeat(values, n_time * n_period) for name, values in keys.items()}
+            data['time'] = np.tile(grid_time, blocks)
+            data['period'] = np.tile(grid_period, blocks)
+            for key, parts in cols.items():
+                data[key] = np.concatenate(parts) if parts else np.array([], dtype=float)
+            nan_free = [pl.col(c).fill_nan(None) for c, t in schema.items() if t == pl.Float64]
+            return pl.DataFrame(data, schema=schema).with_columns(nan_free)
+
+        grid_schema = {'flow': pl.String, 'time': pl.Int64, 'period': pl.Int64}
+        owner = {fid: cid for cid, _status, governed in (component_status_items or []) for fid in governed}
         return cls(
-            bound_type=xr.DataArray(bound_type, dims=['flow'], coords={'flow': flow_ids}),
-            rel_lb=fast_concat(rel_lbs, flow_idx),
-            rel_ub=fast_concat(rel_ubs, flow_idx),
-            fixed_profile=fast_concat(profiles, flow_idx),
-            size=xr.DataArray(size_vals, dims=['flow'], coords={'flow': flow_ids}),
-            effect_pair_flow=xr.DataArray(pair_flows, dims=['effect_pair']),
-            effect_pair_effect=xr.DataArray(pair_effects, dims=['effect_pair']),
-            effect_pair_coeff=(
-                fast_concat(effect_coeffs, pd.Index(range(len(effect_coeffs)), name='effect_pair'))
-                if effect_coeffs
-                else xr.DataArray(np.zeros((0, n_time)), dims=['effect_pair', 'time'], coords={'time': time})
+            flows=pl.DataFrame(
+                {'flow': flow_ids, 'bound_type': bound_type},
+                schema={'flow': pl.String, 'bound_type': pl.String},
             ),
-            flow_id=xr.DataArray(flow_ids, dims=['flow'], coords={'flow': flow_ids}),
-            flow_hours_min=_flow_bound_or_none(fh_min_vals, flow_ids),
-            flow_hours_max=_flow_bound_or_none(fh_max_vals, flow_ids),
-            load_factor_min=_flow_bound_or_none(lf_min_vals, flow_ids),
-            load_factor_max=_flow_bound_or_none(lf_max_vals, flow_ids),
-            ramp_up=fast_concat(ramp_ups, flow_idx) if has_ramp_up else None,
-            ramp_down=fast_concat(ramp_downs, flow_idx) if has_ramp_down else None,
+            sizes=pl.DataFrame(
+                {'flow': [i for i, _ in fixed_sizes], 'size': [s for _, s in fixed_sizes]},
+                schema={'flow': pl.String, 'size': pl.Float64},
+            ),
+            envelope=frame(
+                {'flow': env_keys},
+                env_cols,
+                {**grid_schema, 'relative_rate_min': pl.Float64, 'relative_rate_max': pl.Float64},
+            ),
+            fixed_profile=frame({'flow': profile_keys}, profile_cols, {**grid_schema, 'value': pl.Float64}),
+            effect_pairs=frame(
+                {'flow': [f for f, _ in pair_keys], 'effect': [e for _, e in pair_keys]},
+                pair_cols,
+                {'flow': pl.String, 'effect': pl.String, 'time': pl.Int64, 'period': pl.Int64, 'value': pl.Float64},
+            ),
+            ramps=frame(
+                {'flow': ramp_keys}, ramp_cols, {**grid_schema, 'ramp_up': pl.Float64, 'ramp_down': pl.Float64}
+            ),
+            aggregates=pl.DataFrame(
+                {
+                    'flow': [r[0] for r in aggregate_rows],
+                    'flow_hours_min': [r[1] for r in aggregate_rows],
+                    'flow_hours_max': [r[2] for r in aggregate_rows],
+                    'load_factor_min': [r[3] for r in aggregate_rows],
+                    'load_factor_max': [r[4] for r in aggregate_rows],
+                },
+                schema={
+                    'flow': pl.String,
+                    'flow_hours_min': pl.Float64,
+                    'flow_hours_max': pl.Float64,
+                    'load_factor_min': pl.Float64,
+                    'load_factor_max': pl.Float64,
+                },
+            ),
+            governed_by=pl.DataFrame(
+                {'flow': list(owner), 'component': list(owner.values())},
+                schema={'flow': pl.String, 'component': pl.String},
+            ),
             sizing=SizingData.build(sizing_items, effect_ids, dim=Dim.SIZING_FLOW, period=period),
             invest=InvestmentData.build(invest_items, effect_ids, dim=Dim.INVEST_FLOW, period=period),
             status=StatusData.build(
@@ -853,32 +868,7 @@ class FlowsData:
                 dim=Dim.CSTATUS_COMPONENT,
                 period=period,
             ),
-            governed_by=_governed_by(flow_ids, component_status_items or []),
         )
-
-
-def _governed_by(flow_ids: list[str], items: list[tuple[str, Any, list[str]]]) -> xr.DataArray | None:
-    """Which component's Status governs each flow, '' where none governs it.
-
-    The inverse of the map the caller supplies, and the direction every reader
-    wanted: a flow is governed by at most one component, so this is a column.
-    """
-    if not items:
-        return None
-    owner = {fid: cid for cid, _status, governed in items for fid in governed}
-    return xr.DataArray([owner.get(fid, '') for fid in flow_ids], dims=['flow'], coords={'flow': flow_ids})
-
-
-def _flow_bound_or_none(vals: np.ndarray, flow_ids: list[str]) -> xr.DataArray | None:
-    """Wrap per-flow bound values as a (flow,) DataArray, or None if all NaN.
-
-    Args:
-        vals: Bound value per flow; NaN = unbounded.
-        flow_ids: Flow coordinate labels.
-    """
-    if np.all(np.isnan(vals)):
-        return None
-    return xr.DataArray(vals, dims=['flow'], coords={'flow': flow_ids})
 
 
 def _carrier_dim_id(flow: Flow) -> str:
@@ -1267,10 +1257,11 @@ class EffectsData:
 
         Args:
             periods: Labels for the period axis. The frame indexes periods by
-                position; every array this matrix is contracted against still
-                carries the labels the element layer used, and xarray aligns
-                on coordinate values — so an unlabelled matrix silently
-                matches nothing. Pass them whenever the result meets an array.
+                position, which is what the binder wants and what every table
+                it is contracted against carries. A caller comparing against a
+                solution wants the labels the element layer used instead, and
+                xarray aligns on coordinate values rather than reporting a
+                mismatch — so passing the wrong one matches nothing, silently.
         """
         if self.contributions.is_empty():
             return None
@@ -1826,7 +1817,7 @@ class ModelData:
         hand-edited file fails here instead of as a ``KeyError`` deep in
         model building.
         """
-        flow_ids = set(map(str, self.flows.size.coords['flow'].values))
+        flow_ids = set(self.flows.ids)
 
         def check_flows(ids: list[str], what: str) -> None:
             if unknown := sorted(set(ids) - flow_ids):
@@ -1842,11 +1833,10 @@ class ModelData:
             check_flows(self.flows.invest.ids, 'flows.invest')
         if self.flows.status is not None:
             check_flows(self.flows.status.ids, 'flows.status')
-        if self.flows.governed_by is not None:
-            components = set(self.flows.cstatus.ids) if self.flows.cstatus is not None else set()
-            named = {str(v) for v in self.flows.governed_by.values if str(v)}
-            if unknown := sorted(named - components):
-                raise ValueError(f'flows.governed_by names components without a Status: {unknown}')
+        components = set(self.flows.cstatus.ids) if self.flows.cstatus is not None else set()
+        named = set(self.flows.governed_by['component'].to_list())
+        if unknown := sorted(named - components):
+            raise ValueError(f'flows.governed_by names components without a Status: {unknown}')
         if self.converters is not None:
             check_flows(self.converters.coefficients['flow'].to_list(), 'converters.coefficients')
         if self.piecewise is not None:
@@ -1866,10 +1856,10 @@ class ModelData:
                     raise ValueError(f'{what} references unknown storage id(s) {unknown}')
 
         effect_ids = set(self.effects.ids)
-        coeff_effects = {str(e) for e in self.flows.effect_pair_effect.values}
+        coeff_effects = set(self.flows.effect_pairs['effect'].unique().to_list())
         if not coeff_effects <= effect_ids:
             raise ValueError(
-                f'flows.effect_pair_effect names effects {sorted(coeff_effects - effect_ids)} that are not in '
+                f'flows.effect_pairs names effects {sorted(coeff_effects - effect_ids)} that are not in '
                 f'the effects table {sorted(effect_ids)}'
             )
 

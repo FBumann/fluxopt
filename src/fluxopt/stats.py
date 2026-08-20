@@ -150,7 +150,10 @@ class StatsAccessor:
         Returns:
             DataArray (flow,) in power units (e.g. MW).
         """
-        size = self._result.data.flows.size
+        flows = self._result.data.flows
+        ids = flows.ids
+        declared = dict(zip(flows.sizes['flow'], flows.sizes['size'], strict=True))
+        size = xr.DataArray([declared.get(f, np.nan) for f in ids], dims=['flow'], coords={'flow': ids}, name='size')
         invested = self._result.sizes
         # `invested` is an empty 0-d DataArray when no flow is invested; only
         # merge when it actually carries a `flow` dim.
