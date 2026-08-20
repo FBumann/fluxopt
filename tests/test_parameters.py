@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -166,14 +167,21 @@ class TestSupplyingALookup:
 
         result = system.optimize(
             math=math,
+            dimensions={'region': pl.DataFrame({'region': ['cheap']})},
             lookups={'region_of': pl.DataFrame({'flow': ['north(heat)'], 'region': ['cheap']})},
-            parameters={
-                'region': pl.DataFrame({'region': ['cheap']}),
-                'region_cap': pl.DataFrame({'region': ['cheap'], 'time': [0], 'period': [0], 'value': [1.0]}),
-            },
+            parameters={'region_cap': pl.DataFrame({'region': ['cheap'], 'time': [0], 'period': [0], 'value': [1.0]})},
         )
         # t0: 1 cheap + 3 expensive = 16; t1: 4 cheap = 4
         assert_allclose(result.effect_totals.sel(effect='cost').item(), 20.0, rtol=1e-6)
+
+    def test_the_three_channels_are_the_three_declaration_blocks(self) -> None:
+        """What `parameters()` returns under three names, `optimize` takes under three."""
+        import inspect
+
+        system, _ = self._grouped()
+        taken = set(inspect.signature(system.optimize).parameters)
+        returned = {f.name for f in dataclasses.fields(system.parameters())}
+        assert returned <= taken, 'every kind the artifact reports should have a channel to supply it'
 
     def test_an_undeclared_lookup_is_refused_by_name(self) -> None:
         system, math = self._grouped()
