@@ -56,8 +56,11 @@ parameters:
   # multi-period time the first step of *each* period is a boundary.
   is_first: {dims: [time], dtype: bool}
 
-  # --- flows: absolute bounds (rel_bound * size, folded data-side because
-  # bounds: accepts only a bare parameter name) ---------------------------
+  # --- flows: absolute bounds. `rel_bound * size`, folded data-side, because
+  # `bounds:` takes a bare parameter name — no product can be written there,
+  # which is why these two stay even though every other such fold was inlined.
+  # Dense, and unbounded says so with `inf`: an absent row in `bounds:` is a
+  # null, and lpspec refuses to guess whether that means free or nonexistent.
   rate_min: {dims: [flow, time, period]}
   rate_max: {dims: [flow, time, period]}
   # The largest rate a flow could ever carry: its fixed size, or the maximum
@@ -79,6 +82,9 @@ parameters:
   charge_gain: {dims: [storage, time]}     # eta_c * dt
   discharge_draw: {dims: [storage, time]}  # dt / eta_d
   retention: {dims: [storage, time]}       # (1 - loss) ** dt
+  # `relative_level_* * capacity`, folded data-side for the same reason
+  # `rate_min` is, and dense for the same reason: a storage whose capacity is
+  # a variable is bounded 0..inf here, and the relative pair does the work.
   level_min: {dims: [storage, time]}
   level_max: {dims: [storage, time]}
   is_cyclic: {dims: [storage], dtype: bool}
