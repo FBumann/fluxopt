@@ -1040,19 +1040,23 @@ class ConvertersData:
 
 @dataclass
 class PiecewiseData:
-    """Piecewise-linear conversion data for converters with ``PiecewiseConversion``.
+    """Piecewise-linear conversion curves, as the breakpoints they name.
 
-    Stored sparsely as one row per (converter, flow) pair; the ``method``
-    and ``availability`` arrays index by ``pw_converter``.
+    Two frames: `curves` is per converter — the method, whether a Status
+    gates it, and the availability series — and `links` is per (flow,
+    breakpoint), which is what a curve *is*.
     """
 
-    breakpoints: xr.DataArray  # (pw_pair, breakpoint, time)
-    pair_converter: xr.DataArray  # (pw_pair,) — converter id
-    pair_flow: xr.DataArray  # (pw_pair,) — qualified flow id
-    pair_bound: xr.DataArray  # (pw_pair,) — '==' / '<=' / '>='
-    method: xr.DataArray  # (pw_converter,) — 'auto' / 'sos2' / 'incremental' / 'lp'
-    availability: xr.DataArray  # (pw_converter, time)
-    has_status: xr.DataArray  # (pw_converter,) — bool
+    #: (converter, method, has_status, time, availability) — one row per
+    #: converter per timestep
+    curves: pl.DataFrame
+    #: (converter, flow, bound, bp, time, value) — the breakpoint each link
+    #: passes through
+    links: pl.DataFrame
+
+    def converter_ids(self) -> list[str]:
+        """Piecewise converter ids, in declaration order."""
+        return self.curves['converter'].unique(maintain_order=True).to_list()
 
     def __post_init__(self) -> None:
         """Re-check what `PiecewiseConversion` already refuses, for a reloaded file.
@@ -1061,36 +1065,11 @@ class PiecewiseData:
         element and `bound` is checked when the curve is constructed. See
         docs/design/validation-layers.md.
         """
-        valid_methods = set(get_args(PiecewiseMethod.__value__))
-        if bad := sorted(set(map(str, self.method.values)) - valid_methods):
-            raise ValueError(f'PiecewiseData.method must be one of {sorted(valid_methods)}; got {bad}')
-        if bad := sorted(set(map(str, self.pair_bound.values)) - {'==', '<=', '>='}):
-            raise ValueError(f"PiecewiseData.pair_bound must be '==', '<=', or '>='; got {bad}")
-
-    def to_dataset(self) -> xr.Dataset:
-        """Serialize to xr.Dataset."""
-        return _to_dataset(self)
-
-    @classmethod
-    def from_dataset(cls, ds: xr.Dataset) -> Self:
-        """Deserialize from xr.Dataset.
-
-        Args:
-            ds: Dataset with piecewise variables.
-        """
-        return cls(
-            breakpoints=ds['breakpoints'],
-            pair_converter=ds['pair_converter'],
-            pair_flow=ds['pair_flow'],
-            pair_bound=ds['pair_bound'],
-            method=ds['method'],
-            availability=ds['availability'],
-            has_status=ds['has_status'],
-        )
-
-    def converter_ids(self) -> list[str]:
-        """Return list of piecewise converter ids in original order."""
-        return list(self.method.coords[Dim.PW_CONVERTER].values)
+        valid = set(get_args(PiecewiseMethod.__value__))
+        if bad := sorted(set(self.curves['method'].to_list()) - valid):
+            raise ValueError(f'PiecewiseData.method must be one of {sorted(valid)}; got {bad}')
+        if bad := sorted(set(self.links['bound'].to_list()) - {'==', '<=', '>='}):
+            raise ValueError(f"PiecewiseData.bound must be '==', '<=', or '>='; got {bad}")
 
     @classmethod
     def build(cls, converters: list[Converter], time: TimeIndex) -> Self | None:
@@ -1099,75 +1078,89 @@ class PiecewiseData:
         Args:
             converters: Converter definitions; only those with
                 ``conversion is not None`` are processed.
-            time: Time index for breakpoint and availability arrays.
+            time: Time index for breakpoint and availability series.
         """
         converters = [c for c in converters if c.conversion is not None]
         if not converters:
             return None
 
-        conv_ids: list[str] = []
-        methods: list[str] = []
-        avail_slices: list[xr.DataArray] = []
-        has_statuses: list[bool] = []
-
-        pair_conv_ids: list[str] = []
-        pair_flow_ids: list[str] = []
-        pair_bounds: list[str] = []
-        bp_slices: list[xr.DataArray] = []
+        labels = np.asarray(time)
+        n_time = len(labels)
+        curve_cols: dict[str, list[np.ndarray]] = {
+            k: [] for k in ('converter', 'method', 'has_status', 'time', 'availability')
+        }
+        link_cols: dict[str, list[np.ndarray]] = {k: [] for k in ('converter', 'flow', 'bound', 'bp', 'time', 'value')}
 
         for conv in converters:
             assert conv.conversion is not None
             curve = conv.conversion
-            conv_ids.append(conv.id)
-            methods.append(curve.method)
-            avail_slices.append(as_dataarray(curve.availability, {'time': time}))
-            has_statuses.append(curve.status is not None)
+            curve_cols['converter'].append(np.full(n_time, conv.id))
+            curve_cols['method'].append(np.full(n_time, curve.method))
+            curve_cols['has_status'].append(np.full(n_time, curve.status is not None))
+            curve_cols['time'].append(labels)
+            curve_cols['availability'].append(
+                np.broadcast_to(as_dataarray(curve.availability, {'time': time}).values, (n_time,))
+            )
 
             short_to_qid = {bf.flow.short_id: bf.id for bf in conv._qualified_flows()}
-            for short, pts, bound in curve._iter_normalized():
-                qid = short_to_qid[short]
-                bp_arrays = [as_dataarray(bp, {'time': time}) for bp in pts]
-                bp_idx = pd.Index(range(len(bp_arrays)), name='breakpoint')
-                bp_da = fast_concat(bp_arrays, bp_idx)
-                pair_conv_ids.append(conv.id)
-                pair_flow_ids.append(qid)
-                pair_bounds.append(bound)
-                bp_slices.append(bp_da)
+            for short, points, bound in curve._iter_normalized():
+                for index, point in enumerate(points):
+                    link_cols['converter'].append(np.full(n_time, conv.id))
+                    link_cols['flow'].append(np.full(n_time, short_to_qid[short]))
+                    link_cols['bound'].append(np.full(n_time, bound))
+                    link_cols['bp'].append(np.full(n_time, index))
+                    link_cols['time'].append(labels)
+                    link_cols['value'].append(np.broadcast_to(as_dataarray(point, {'time': time}).values, (n_time,)))
 
-        pair_idx = pd.Index(range(len(bp_slices)), name=Dim.PW_PAIR)
-        breakpoints_da = fast_concat(bp_slices, pair_idx)
-
-        conv_idx = pd.Index(conv_ids, name=Dim.PW_CONVERTER)
-        availability = fast_concat(avail_slices, conv_idx)
+        def frame(cols: dict[str, list[np.ndarray]], schema: dict[str, Any]) -> pl.DataFrame:
+            data: dict[str, Any] = {}
+            for key, parts in cols.items():
+                joined = np.concatenate(parts) if parts else np.array([])
+                data[key] = pd.to_datetime(joined).to_pydatetime().tolist() if key == 'time' else joined
+            return pl.DataFrame(data, schema=schema)
 
         data = cls(
-            breakpoints=breakpoints_da,
-            pair_converter=xr.DataArray(pair_conv_ids, dims=[Dim.PW_PAIR]),
-            pair_flow=xr.DataArray(pair_flow_ids, dims=[Dim.PW_PAIR]),
-            pair_bound=xr.DataArray(pair_bounds, dims=[Dim.PW_PAIR]),
-            method=xr.DataArray(methods, dims=[Dim.PW_CONVERTER], coords={Dim.PW_CONVERTER: conv_ids}),
-            availability=availability,
-            has_status=xr.DataArray(has_statuses, dims=[Dim.PW_CONVERTER], coords={Dim.PW_CONVERTER: conv_ids}),
+            curves=frame(
+                curve_cols,
+                {
+                    'converter': pl.String,
+                    'method': pl.String,
+                    'has_status': pl.Boolean,
+                    'time': pl.Datetime('us'),
+                    'availability': pl.Float64,
+                },
+            ),
+            links=frame(
+                link_cols,
+                {
+                    'converter': pl.String,
+                    'flow': pl.String,
+                    'bound': pl.String,
+                    'bp': pl.Int64,
+                    'time': pl.Datetime('us'),
+                    'value': pl.Float64,
+                },
+            ),
         )
         data._warn_redundant_status()
         return data
 
     def _warn_redundant_status(self) -> None:
-        """Warn for converters where Status is set but the curve includes a
-        (0, ..., 0) breakpoint at any (breakpoint, timestep) position.
+        """Warn where a gated curve can sit at zero with the binary on.
 
-        When that's the case, the optimizer can sit at zero with ``active=1``,
-        so the on/off binary is decoupled from the actual operating state and
-        Status features will not behave as expected.
+        A ``(0, ..., 0)`` breakpoint lets the optimizer produce nothing while
+        `status=on`, which decouples the binary from the operating state.
         """
         atol = 1e-9
-        is_zero = abs(self.breakpoints) <= atol  # (pw_pair, breakpoint, time)
-        for conv_id in self.converter_ids():
-            if not bool(self.has_status.sel(pw_converter=conv_id).item()):
-                continue
-            mask = self.pair_converter.values == conv_id
-            all_flows_zero = is_zero.isel(pw_pair=mask).all(Dim.PW_PAIR)  # (breakpoint, time)
-            if bool(all_flows_zero.any().item()):
+        gated = set(self.curves.filter(pl.col('has_status'))['converter'].to_list())
+        for conv_id in gated:
+            rows = self.links.filter(pl.col('converter') == conv_id)
+            all_zero = (
+                rows.group_by(['bp', 'time'])
+                .agg(pl.col('value').abs().max().alias('largest'))
+                .filter(pl.col('largest') <= atol)
+            )
+            if len(all_zero):
                 warnings.warn(
                     f'PiecewiseConversion on converter {conv_id!r} has Status, '
                     'but the curve includes a (0, ..., 0) breakpoint. The '
@@ -1802,7 +1795,7 @@ class ModelData:
         if self.converters is not None:
             check_flows(self.converters.coefficients['flow'].to_list(), 'converters.coefficients')
         if self.piecewise is not None:
-            check_flows([str(v) for v in self.piecewise.pair_flow.values], 'piecewise.pair_flow')
+            check_flows(self.piecewise.links['flow'].to_list(), 'piecewise.links')
         if self.storages is not None:
             check_flows([str(v) for v in self.storages.charge_flow.values], 'storages.charge_flow')
             check_flows([str(v) for v in self.storages.discharge_flow.values], 'storages.discharge_flow')

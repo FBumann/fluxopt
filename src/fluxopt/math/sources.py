@@ -22,7 +22,7 @@ import pandas as pd
 import polars as pl
 import xarray as xr
 
-from fluxopt.contract import BoundType, Dim
+from fluxopt.contract import BoundType
 from fluxopt.leontief import apply_leontief, leontief
 from fluxopt.validation import reject_varying_contribution_into_lump
 
@@ -315,7 +315,7 @@ def _flow_hour_coefficients(
 def _reject_unsupported(data: ModelData) -> None:
     fds = data.flows
     if data.piecewise is not None:
-        bad = sorted({str(m) for m in data.piecewise.method.values} & {'lp'})
+        bad = sorted(set(data.piecewise.curves['method'].to_list()) & {'lp'})
         if bad:
             raise UnsupportedFeatureError(
                 "piecewise method 'lp' is linopy's tangent-line relaxation, which this lane has no "
@@ -910,71 +910,67 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         sources[f'load_factor_{kind}_coeff'] = tidy((arr * total_duration).where(live & ~static), drop_zero=False)
 
     # --- piecewise conversion ------------------------------------------
-    # `breakpoints` is already keyed per (converter, flow) pair, which is the
-    # shape the program wants: a link is a row on `flow`, so nothing has to be
-    # reshaped into link slots.
+    # The curve tables are already the shape the program wants: a link is a
+    # row on `flow`, so nothing has to be reshaped into link slots.
     linear_convs = data.converters.ids if data.converters is not None else []
     bp_width = 0
     pw_status_of: dict[str, str | None] = {}
     pw = data.piecewise
     if pw is not None:
-        pair_flow = [str(v) for v in pw.pair_flow.values]
-        pair_conv = [str(v) for v in pw.pair_converter.values]
-        pair_bound = [str(v) for v in pw.pair_bound.values]
         pw_convs = pw.converter_ids()
+        links, curves = pw.links, pw.curves
+        # A link is a (converter, flow, bound) — the breakpoints it passes
+        # through are its rows, so the identity is what remains after dropping
+        # the axes a curve varies along.
+        identity = links.select(['converter', 'flow', 'bound']).unique(maintain_order=True)
+        pair_flow = identity['flow'].to_list()
 
-        bpv = pw.breakpoints.rename({Dim.PW_PAIR: 'flow', 'breakpoint': 'bp'}).assign_coords(flow=pair_flow)
-        sources['pw_bp_value'] = tidy(bpv, drop_zero=True)
+        sources['pw_bp_value'] = _with_time_ordinals(links.filter(pl.col('value') != 0), dims).select(
+            ['flow', 'bp', 'time', 'value']
+        )
 
         # Which breakpoints a curve has. Curves of different width share one
-        # `bp` axis, so the narrow ones carry NaN past their last point and
-        # the mask is what stops a weight existing there.
-        first_of = {c: pair_conv.index(c) for c in pw_convs}
-        present = np.array([bpv.isel(flow=first_of[c]).notnull().any('time').values for c in pw_convs])
-        n_bp = present.shape[1]
-        bp_width = n_bp
-
-        def bp_mask(name: str, grid: np.ndarray) -> None:
-            rows = np.argwhere(grid)
-            sources[name] = (
-                pd.DataFrame(
-                    {'converter': [pw_convs[i] for i, _ in rows], 'bp': [int(b) for _, b in rows], 'value': True}
-                )
-                if len(rows)
-                else _empty(name, 'converter', 'bp')
-            )
-
-        bp_mask('pw_bp_present', present)
+        # `bp` axis, so the mask is what stops a weight existing past the end
+        # of a narrower one.
+        present = links.select(['converter', 'bp']).unique(maintain_order=True).sort(['converter', 'bp'])
+        bp_width = int(present['bp'].max() or 0) + 1 if len(present) else 0  # type: ignore[arg-type]
+        sources['pw_bp_present'] = present.with_columns(pl.lit(True).alias('value'))
         # A segment starts at every present breakpoint but the last.
-        seg = present.copy()
-        for i, row in enumerate(present):
-            live = np.nonzero(row)[0]
-            if len(live):
-                seg[i, live[-1]] = False
-        bp_mask('pw_seg_present', seg)
+        last = present.group_by('converter').agg(pl.col('bp').max().alias('last'))
+        sources['pw_seg_present'] = (
+            present.join(last, on='converter')
+            .filter(pl.col('bp') < pl.col('last'))
+            .select(['converter', 'bp', pl.lit(True).alias('value')])
+        )
 
-        gated = [c for c in pw_convs if bool(pw.has_status.sel(pw_converter=c).item())]
+        gated = curves.filter(pl.col('has_status'))['converter'].unique(maintain_order=True).to_list()
         sources['has_piecewise'] = _flags('has_piecewise', 'converter', pw_convs)
         sources['pw_gated'] = _flags('pw_gated', 'converter', gated)
         sources['is_piecewise'] = _flags('is_piecewise', 'flow', pair_flow)
         for name, sign in (('pw_equal', '=='), ('pw_upper', '<='), ('pw_lower', '>=')):
-            sources[name] = _flags(name, 'flow', [f for f, b in zip(pair_flow, pair_bound, strict=True) if b == sign])
+            sources[name] = _flags(name, 'flow', identity.filter(pl.col('bound') == sign)['flow'].to_list())
 
-        # Availability scales the envelope of the reference link — the first
-        # of a curve's pairs, which is what the linopy lane bounds too.
-        ref_flows = [pair_flow[first_of[c]] for c in pw_convs]
-        sources['pw_ref'] = pd.DataFrame({'flow': ref_flows, 'value': 1.0})
-        max_bp = xr.concat(
-            [bpv.isel(flow=first_of[c]).max('bp') for c in pw_convs],
-            dim=pd.Index(pw_convs, name='converter'),
+        # Availability scales the envelope of the reference link — a curve's
+        # first, which is what the eager lane bounds too.
+        reference = identity.group_by('converter', maintain_order=True).first()
+        sources['pw_ref'] = reference.select(['flow', pl.lit(1.0).alias('value')])
+        widest = (
+            links.join(reference.select(['converter', 'flow']), on=['converter', 'flow'])
+            .group_by(['converter', 'time'])
+            .agg(pl.col('value').max().alias('widest'))
         )
-        avail = pw.availability.rename({Dim.PW_CONVERTER: 'converter'})
-        sources['pw_avail_bound'] = tidy(avail * max_bp, drop_zero=False)
+        sources['pw_avail_bound'] = _with_time_ordinals(
+            curves.join(widest, on=['converter', 'time']).with_columns(
+                (pl.col('availability') * pl.col('widest')).alias('value')
+            ),
+            dims,
+        ).select(['converter', 'time', 'value'])
+
         # A gated curve's Status is keyed by the converter's own id, so the
-        # lookup maps it to itself — `dict.fromkeys` would map it to None,
-        # which reads as 'no Status' and leaves the curve ungated.
+        # lookup maps it to itself — mapping it to None reads as 'no Status'
+        # and leaves the curve ungated.
         pw_status_of = {c: c for c in gated}
-        of = dict(zip(pair_flow, pair_conv, strict=True))
+        of = dict(zip(identity['flow'], identity['converter'], strict=True))
         flow_index['converter_of'] = [of.get(f) or c for f, c in zip(flow_ids, flow_index['converter_of'], strict=True)]
         converter_ids = linear_convs + [c for c in pw_convs if c not in set(linear_convs)]
     else:
