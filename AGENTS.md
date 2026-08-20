@@ -59,5 +59,9 @@ must stay human and honest. Three rules:
 - Use [Conventional Commits](https://www.conventionalcommits.org/) for all
   commit messages and PR titles (`<type>: <short summary>`).
 - Write tests for new features and bug fixes under `tests/` as `test_*.py`.
+- Before adding a validation check, read
+  [`docs/design/validation-layers.md`](docs/design/validation-layers.md) — it
+  says which of the four layers owns which kind of rule, and how to tell when
+  one has been written in the wrong place.
 - Label issues and PRs with the existing labels — run `gh label list` to see
   them and their descriptions; pick from those rather than inventing new ones.

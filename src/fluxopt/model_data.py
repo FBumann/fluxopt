@@ -272,7 +272,10 @@ class InvestmentData:
     effects_fixed_recurring: xr.DataArray  # (invest_dim, effect, period?)
 
     def __post_init__(self) -> None:
-        """Validate size bounds, prior size, and lifetime (also on netCDF reload)."""
+        """Re-check the bounds `Investment` already refuses, for a reloaded file.
+
+        A reload guard — see docs/design/validation-layers.md.
+        """
         dim = self.min.dims[0]
         ids = self.min.coords[dim]
         if (mask := self.min < 0).any():
@@ -376,7 +379,10 @@ class StatusData:
     previous_downtime: xr.DataArray | None = None  # (dim,) — hours, NaN = no prior
 
     def __post_init__(self) -> None:
-        """Validate durations >= 0 and max >= min where both given."""
+        """Re-check the durations `Status` already refuses, for a reloaded file.
+
+        A reload guard — see docs/design/validation-layers.md.
+        """
         for name in ('uptime_min', 'uptime_max', 'downtime_min', 'downtime_max'):
             arr: xr.DataArray = getattr(self, name)
             mask = (~np.isnan(arr)) & (arr < 0)
@@ -825,7 +831,10 @@ class CarriersData:
     description: xr.DataArray  # (carrier,) — human-readable description
 
     def __post_init__(self) -> None:
-        """Validate signs are +1 / -1 and every carrier named exists."""
+        """Check the signs, and that every carrier named is declared.
+
+        Layer 3 — see docs/design/validation-layers.md.
+        """
         values = self.sign.values
         if not np.isin(values, (1.0, -1.0)).all():
             bad = sorted({float(v) for v in values[~np.isin(values, (1.0, -1.0))]})
@@ -907,7 +916,10 @@ class ConvertersData:
     n_equations: xr.DataArray
 
     def __post_init__(self) -> None:
-        """Validate equation counts and pair references (also on netCDF reload)."""
+        """Check the counts are positive and the pairs name converters we carry.
+
+        Layer 3 — see docs/design/validation-layers.md.
+        """
         counts = self.n_equations.values
         if counts.dtype.kind not in 'iu' or (counts < 1).any():
             raise ValueError(f'ConvertersData.n_equations must be positive integers, got {counts.tolist()}')
@@ -1020,7 +1032,12 @@ class PiecewiseData:
     has_status: xr.DataArray  # (pw_converter,) — bool
 
     def __post_init__(self) -> None:
-        """Validate method and bound values (also on netCDF reload)."""
+        """Re-check what `PiecewiseConversion` already refuses, for a reloaded file.
+
+        A reload guard, not the enforcement: `method` is a `Literal` on the
+        element and `bound` is checked when the curve is constructed. See
+        docs/design/validation-layers.md.
+        """
         valid_methods = set(get_args(PiecewiseMethod.__value__))
         if bad := sorted(set(map(str, self.method.values)) - valid_methods):
             raise ValueError(f'PiecewiseData.method must be one of {sorted(valid_methods)}; got {bad}')
@@ -1323,7 +1340,12 @@ class StoragesData:
     invest: InvestmentData | None = None  # dim Dim.INVEST_STORAGE
 
     def __post_init__(self) -> None:
-        """Validate capacity, efficiencies, and loss rates."""
+        """Check capacity, efficiencies and loss rates are in range.
+
+        These are element rules that `Storage` does not yet state, so this is
+        the enforcement rather than a reload guard — which is the shape
+        docs/design/validation-layers.md says to move up when convenient.
+        """
         s = self.capacity.coords['storage']
         cap = self.capacity
         bad_cap = ~np.isnan(cap) & (cap < 0)
@@ -1663,7 +1685,11 @@ class ModelData:
     piecewise: PiecewiseData | None = None  # None when no piecewise converters
 
     def __post_init__(self) -> None:
-        """Validate cross-table id consistency (also on netCDF reload).
+        """Check ids referenced *between* tables resolve.
+
+        Layer 3, and the clearest case for it: no single table can answer
+        this, and a reloaded file never passed the system layer. See
+        docs/design/validation-layers.md.
 
         Each table validates itself in its own ``__post_init__``; this checks
         that ids referenced *between* tables resolve, so a tampered or
