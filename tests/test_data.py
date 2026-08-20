@@ -89,8 +89,7 @@ class TestCarriersData:
         assert data.carriers.carriers.filter(pl.col('carrier') == 'elec')['color'][0] == 'blue'
         assert data.carriers.carriers.filter(pl.col('carrier') == 'elec')['description'][0] == 'Electricity'
 
-    def test_from_dataset_roundtrip(self):
-        from fluxopt.model_data import CarriersData
+    def test_from_dataset_roundtrip(self, tmp_path):
 
         data = ModelData.build(
             ts(2),
@@ -98,10 +97,13 @@ class TestCarriersData:
             effects=[Effect(id='cost')],
             ports=[Port(id='src', imports=[Flow(carrier='elec', size=100)])],
         )
-        ds = data.carriers.to_dataset()
-        loaded = CarriersData.from_dataset(ds)
-        assert loaded.carriers.equals(data.carriers.carriers)
-        assert loaded.membership.equals(data.carriers.membership)
+        # Frames round-trip through parquet, which carries their schema —
+        # a column with no rows still knows what it holds.
+        out = tmp_path / 'model'
+        data.save(out)
+        loaded = ModelData.load(out)
+        assert loaded.carriers.carriers.equals(data.carriers.carriers)
+        assert loaded.carriers.membership.equals(data.carriers.membership)
 
 
 class TestConvertersTable:

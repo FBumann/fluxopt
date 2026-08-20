@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import dataclasses
 import os
 import warnings
 from dataclasses import dataclass, fields, is_dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, NoReturn, Self, get_args
+from typing import TYPE_CHECKING, Any, NoReturn, Self, get_args
 
 import numpy as np
 import pandas as pd
@@ -134,51 +135,6 @@ def _raise_netcdf_read_error(path: Path, exc: OSError) -> NoReturn:
     raise exc
 
 
-def frame_to_dataset(frame: pl.DataFrame, dim: str = 'row') -> xr.Dataset:
-    """A polars frame as an xr.Dataset — one variable per column, over ``row``.
-
-    The bridge that lets the data model move to polars without moving the file
-    format with it. netCDF is a fine container for a table: each column is a
-    variable over a row index, which ``ncdump`` shows as-is and
-    :func:`dataset_to_frame` reverses exactly.
-
-    Args:
-        frame: The table to write.
-        dim: Name for the row index. Two frames of different lengths in one
-            group need different names, or the merge tries to align them.
-    """
-    return xr.Dataset(
-        {name: xr.DataArray(frame[name].to_numpy(), dims=[dim]) for name in frame.columns},
-        attrs={'columns': list(frame.columns)},
-    )
-
-
-def dataset_to_frame(ds: xr.Dataset) -> pl.DataFrame:
-    """The inverse of :func:`frame_to_dataset`, column order included."""
-    columns = list(ds.attrs.get('columns') or ds.data_vars)
-    return pl.DataFrame({name: ds[name].values for name in columns})
-
-
-def _frames_to_dataset(frames: dict[str, pl.DataFrame]) -> xr.Dataset:
-    """Several named frames as one Dataset, ready for a netCDF group.
-
-    Each frame gets its own row dim and its columns are prefixed by its name,
-    so frames of different lengths sit in one group without xarray trying to
-    align them.
-    """
-    return xr.merge(
-        [
-            frame_to_dataset(frame, dim=f'{key}_row').rename({n: f'{key}__{n}' for n in frame.columns})
-            for key, frame in frames.items()
-        ]
-    ).assign_attrs({key: list(frame.columns) for key, frame in frames.items()})
-
-
-def _frames_from_dataset(ds: xr.Dataset, keys: tuple[str, ...]) -> dict[str, pl.DataFrame]:
-    """The inverse of :func:`_frames_to_dataset`, by frame name."""
-    return {key: pl.DataFrame({n: ds[f'{key}__{n}'].values for n in ds.attrs[key]}) for key in keys}
-
-
 def _to_dataset(obj: DataclassInstance) -> xr.Dataset:
     """Convert a data dataclass to an xr.Dataset.
 
@@ -245,15 +201,6 @@ class SizingData:
         bad = self.bounds.filter((pl.col('size_min') < 0) | (pl.col('size_max') < pl.col('size_min')))
         if len(bad):
             raise ValueError(f'Sizing bounds are not orderable on {bad["entity"].to_list()}')
-
-    def to_dataset(self) -> xr.Dataset:
-        """Serialize to xr.Dataset — one group's worth, via the frame bridge."""
-        return _frames_to_dataset({'bounds': self.bounds, 'effects': self.effects})
-
-    @classmethod
-    def from_dataset(cls, ds: xr.Dataset) -> Self:
-        """Deserialize from xr.Dataset."""
-        return cls(**_frames_from_dataset(ds, ('bounds', 'effects')))
 
     @classmethod
     def build(
@@ -365,15 +312,6 @@ class InvestmentData:
             raise ValueError(f'Investment bounds are not orderable on {bad["entity"].to_list()}')
         if len(short := self.lifetime.filter(pl.col('periods') <= 0)):
             raise ValueError(f'Investment.lifetime must be positive on {short["entity"].to_list()}')
-
-    def to_dataset(self) -> xr.Dataset:
-        """Serialize to xr.Dataset — one group's worth, via the frame bridge."""
-        return _frames_to_dataset({'bounds': self.bounds, 'lifetime': self.lifetime, 'effects': self.effects})
-
-    @classmethod
-    def from_dataset(cls, ds: xr.Dataset) -> Self:
-        """Deserialize from xr.Dataset."""
-        return cls(**_frames_from_dataset(ds, ('bounds', 'lifetime', 'effects')))
 
     @classmethod
     def build(
@@ -935,15 +873,6 @@ class CarriersData:
                 f'{sorted(set(stray["carrier"].to_list()))}'
             )
 
-    def to_dataset(self) -> xr.Dataset:
-        """Serialize to xr.Dataset — one group's worth, via the frame bridge."""
-        return _frames_to_dataset({'membership': self.membership, 'carriers': self.carriers})
-
-    @classmethod
-    def from_dataset(cls, ds: xr.Dataset) -> Self:
-        """Deserialize from xr.Dataset."""
-        return cls(**_frames_from_dataset(ds, ('membership', 'carriers')))
-
     @classmethod
     def build(cls, carriers: list[Carrier], flows: list[_BoundFlow], carrier_coeff: dict[str, float]) -> Self:
         """Build CarriersData from explicit carrier declarations.
@@ -1019,15 +948,6 @@ class ConvertersData:
                 f'ConvertersData.coefficients references unknown converter(s) '
                 f'{sorted(set(stray["converter"].to_list()))}'
             )
-
-    def to_dataset(self) -> xr.Dataset:
-        """Serialize to xr.Dataset — one group's worth, via the frame bridge."""
-        return _frames_to_dataset({'coefficients': self.coefficients, 'equations': self.equations})
-
-    @classmethod
-    def from_dataset(cls, ds: xr.Dataset) -> Self:
-        """Deserialize from xr.Dataset."""
-        return cls(**_frames_from_dataset(ds, ('coefficients', 'equations')))
 
     @classmethod
     def build(cls, converters: list[Converter], time: TimeIndex) -> Self | None:
@@ -1738,6 +1658,24 @@ _CONTAINER_TYPES: dict[str, type] = {
 }
 
 
+#: Which sub-container each top-level one carries, and of what class. Read by
+#: :meth:`ModelData.load` to rebuild them from their own directories.
+_SUB_CONTAINERS: dict[str, dict[str, Any]] = {
+    'flows': {'sizing': SizingData, 'invest': InvestmentData, 'status': StatusData, 'cstatus': StatusData},
+    'storages': {'sizing': SizingData, 'invest': InvestmentData},
+}
+
+
+def _frames_of(obj: Any) -> dict[str, pl.DataFrame]:
+    """Every polars frame a container holds, by field name.
+
+    Empty for a container still holding arrays, which is how
+    :meth:`ModelData.save` tells the two apart without asking either to
+    declare which it is.
+    """
+    return {f.name: value for f in dataclasses.fields(obj) if isinstance(value := getattr(obj, f.name), pl.DataFrame)}
+
+
 def _table_containers(obj: DataclassInstance) -> dict[str, Any]:
     """Nested container fields of a table object that are present (not None)."""
     return {
@@ -1857,81 +1795,92 @@ class ModelData:
                 f'the effects table {sorted(effect_ids)}'
             )
 
-    def to_netcdf(self, path: str | Path, *, mode: Literal['w', 'a'] = 'a') -> None:
-        """Write model data as NetCDF groups under ``/model/``.
+    def save(self, path: str | Path) -> None:
+        """Write the model data as a directory of tables.
+
+        One parquet file per frame, one netCDF file per container still
+        holding arrays. Parquet because these *are* tables: it carries the
+        schema, so a column with no rows still knows it holds strings, and a
+        timestamp survives without anyone deciding what unit its integers
+        meant.
 
         Args:
-            path: Output file path.
-            mode: Write mode ('w' to overwrite, 'a' to append).
+            path: Directory to write into. Created if absent.
         """
-        p = Path(path)
-        dataset_fields: dict[
-            str,
-            FlowsData | CarriersData | ConvertersData | EffectsData | StoragesData | PiecewiseData | None,
-        ] = {
+        root = Path(path)
+        root.mkdir(parents=True, exist_ok=True)
+        for name, obj in self._containers().items():
+            if obj is None:
+                continue
+            group = root / name
+            group.mkdir(exist_ok=True)
+            frames = _frames_of(obj)
+            for frame_name, frame in frames.items():
+                frame.write_parquet(group / f'{frame_name}.parquet')
+            if not frames:
+                obj.to_dataset().to_netcdf(group / 'arrays.nc', engine='netcdf4')
+            for cname, sub in _table_containers(obj).items():
+                sub_group = group / cname
+                sub_group.mkdir(exist_ok=True)
+                sub_frames = _frames_of(sub)
+                for frame_name, frame in sub_frames.items():
+                    frame.write_parquet(sub_group / f'{frame_name}.parquet')
+                if not sub_frames:
+                    sub.to_dataset().to_netcdf(sub_group / 'arrays.nc', engine='netcdf4')
+
+    @classmethod
+    def load(cls, path: str | Path) -> ModelData:
+        """Read model data written by :meth:`save`.
+
+        Args:
+            path: The directory :meth:`save` wrote.
+
+        Raises:
+            OSError: If the directory holds no fluxopt model data.
+        """
+        root = Path(path)
+        if not (root / 'dims').is_dir():
+            raise OSError(f'No fluxopt model data found in {root} (missing dims/)')
+
+        def read(name: str, klass: Any, subs: dict[str, Any] | None = None) -> Any:
+            group = root / name
+            if not group.is_dir():
+                return None
+            frames = {f.stem: pl.read_parquet(f) for f in sorted(group.glob('*.parquet'))}
+            if frames:
+                return klass(**frames, **(subs or {}))
+            ds = xr.load_dataset(group / 'arrays.nc', engine='netcdf4')
+            return klass.from_dataset(ds, subs) if subs is not None else klass.from_dataset(ds)
+
+        def read_subs(name: str, klass: Any) -> dict[str, Any]:
+            out: dict[str, Any] = {}
+            for field, sub_class in _SUB_CONTAINERS.get(name, {}).items():
+                sub = read(f'{name}/{field}', sub_class)
+                if sub is not None:
+                    out[field] = sub
+            return out
+
+        return cls(
+            flows=read('flows', FlowsData, read_subs('flows', FlowsData)),
+            carriers=read('carriers', CarriersData),
+            converters=read('converters', ConvertersData),
+            effects=read('effects', EffectsData),
+            storages=read('storages', StoragesData, read_subs('storages', StoragesData)),
+            dims=read('dims', Dims),
+            piecewise=read('piecewise', PiecewiseData),
+        )
+
+    def _containers(self) -> dict[str, Any]:
+        """Every top-level container, by the name its directory takes."""
+        return {
             'flows': self.flows,
             'carriers': self.carriers,
             'converters': self.converters,
             'effects': self.effects,
             'storages': self.storages,
             'piecewise': self.piecewise,
+            'dims': self.dims,
         }
-        current_mode = mode
-        for name, obj in dataset_fields.items():
-            if obj is not None:
-                obj.to_dataset().to_netcdf(p, mode=current_mode, group=_NC_GROUPS[name], engine='netcdf4')
-                current_mode = 'a'
-                for cname, container in _table_containers(obj).items():
-                    container.to_dataset().to_netcdf(p, mode='a', group=f'{_NC_GROUPS[name]}/{cname}', engine='netcdf4')
-        self.dims.to_dataset().to_netcdf(p, mode=current_mode, group='model/meta', engine='netcdf4')
-
-    @classmethod
-    def from_netcdf(cls, path: str | Path) -> ModelData:
-        """Read model data from NetCDF groups.
-
-        Args:
-            path: Input file path.
-
-        Raises:
-            OSError: If no model data groups found in the file.
-            ValueError: On Windows when reading a non-ASCII path (netcdf4 limitation).
-        """
-        p = Path(path)
-        try:
-            present = _nc_group_paths(p)
-        except OSError as e:
-            _raise_netcdf_read_error(p, e)
-        if 'model/meta' not in present:
-            raise OSError(f'No fluxopt model data found in {p} (missing model/meta group)')
-        meta = xr.load_dataset(p, group='model/meta', engine='netcdf4')
-
-        datasets: dict[str, xr.Dataset] = {
-            name: xr.load_dataset(p, group=group, engine='netcdf4') if group in present else xr.Dataset()
-            for name, group in _NC_GROUPS.items()
-        }
-
-        flows = FlowsData.from_dataset(datasets['flows'], _load_containers(p, _NC_GROUPS['flows'], FlowsData, present))
-        carriers = CarriersData.from_dataset(datasets['carriers'])
-        converters = ConvertersData.from_dataset(datasets['converters']) if datasets['converters'].data_vars else None
-        effects = EffectsData.from_dataset(datasets['effects'])
-        storages = (
-            StoragesData.from_dataset(
-                datasets['storages'], _load_containers(p, _NC_GROUPS['storages'], StoragesData, present)
-            )
-            if datasets['storages'].data_vars
-            else None
-        )
-        piecewise = PiecewiseData.from_dataset(datasets['piecewise']) if datasets['piecewise'].data_vars else None
-
-        return cls(
-            flows=flows,
-            carriers=carriers,
-            converters=converters,
-            effects=effects,
-            storages=storages,
-            dims=Dims.from_dataset(meta),
-            piecewise=piecewise,
-        )
 
     @classmethod
     def build(

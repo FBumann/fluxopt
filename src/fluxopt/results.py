@@ -185,52 +185,55 @@ class Result:
 
         return StatsAccessor(self)
 
-    def to_netcdf(self, path: str | Path) -> None:
-        """Write solution and model data to NetCDF.
+    def save(self, path: str | Path) -> None:
+        """Write the result as a directory.
+
+        The solution and the named quantities are labelled N-dimensional
+        arrays, so they stay netCDF; the model data is tables and goes to
+        parquet under ``model/``.
 
         Args:
-            path: Output file path.
+            path: Directory to write into. Created if absent.
         """
-        p = Path(path)
-        self.solution.to_netcdf(p, mode='w', engine='netcdf4')
-        self.data.to_netcdf(p)
+        root = Path(path)
+        root.mkdir(parents=True, exist_ok=True)
+        self.solution.to_netcdf(root / 'solution.nc', mode='w', engine='netcdf4')
         if self.expressions.data_vars:
-            self.expressions.to_netcdf(p, mode='a', group='expressions', engine='netcdf4')
+            self.expressions.to_netcdf(root / 'expressions.nc', mode='w', engine='netcdf4')
+        self.data.save(root / 'model')
 
     @classmethod
-    def from_netcdf(cls, path: str | Path) -> Result:
-        """Read a Result from a NetCDF file.
+    def load(cls, path: str | Path) -> Result:
+        """Read a result written by :meth:`save`.
 
         Args:
-            path: Input file path.
+            path: The directory :meth:`save` wrote.
 
         Raises:
-            ValueError: On Windows when reading a non-ASCII path (netcdf4 limitation).
+            OSError: If the directory holds no solution.
         """
-        from fluxopt.model_data import ModelData, _raise_netcdf_read_error
+        import warnings
 
-        p = Path(path)
-        try:
-            solution = xr.load_dataset(p, engine='netcdf4')
-        except OSError as e:
-            _raise_netcdf_read_error(p, e)
-        data = ModelData.from_netcdf(p)
+        from fluxopt.model_data import ModelData
 
-        try:
-            expressions = xr.load_dataset(p, group='expressions', engine='netcdf4')
-        except OSError:
-            expressions = xr.Dataset()
-            import warnings
-
+        root = Path(path)
+        if not (root / 'solution.nc').is_file():
+            raise OSError(f'No fluxopt result found in {root} (missing solution.nc)')
+        solution = xr.load_dataset(root / 'solution.nc', engine='netcdf4')
+        expressions = (
+            xr.load_dataset(root / 'expressions.nc', engine='netcdf4')
+            if (root / 'expressions.nc').is_file()
+            else xr.Dataset()
+        )
+        if not expressions.data_vars:
             warnings.warn(
-                f"NetCDF file {p} has no 'expressions' group, so this Result carries none of "
-                'the quantities the model names — including the per-contributor effect '
-                'breakdown. They are evaluated against a solve and cannot be recovered from '
-                'the solution alone; re-solve, or re-save a Result that has them.',
+                f'{root} carries none of the quantities the model names — including the '
+                'per-contributor effect breakdown. They are evaluated against a solve and '
+                'cannot be recovered from the solution alone; re-solve, or re-save a Result '
+                'that has them.',
                 stacklevel=2,
             )
-
-        return cls(solution=solution, data=data, expressions=expressions)
+        return cls(solution=solution, data=ModelData.load(root / 'model'), expressions=expressions)
 
     @cached_property
     def plot(self) -> PlotAccessor:
