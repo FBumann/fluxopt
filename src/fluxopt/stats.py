@@ -200,7 +200,12 @@ class StatsAccessor:
         """
         if self._result.data.storages is None:
             return xr.DataArray()
-        cap = self._result.data.storages.capacity
+        storages = self._result.data.storages
+        ids = storages.ids
+        declared = dict(zip(storages.capacity['storage'], storages.capacity['capacity'], strict=True))
+        cap = xr.DataArray(
+            [declared.get(s, np.nan) for s in ids], dims=['storage'], coords={'storage': ids}, name='capacity'
+        )
         invested = self._result.storage_capacities
         if 'storage' in invested.dims:
             cap = cap.fillna(invested)

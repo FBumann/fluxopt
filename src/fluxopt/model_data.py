@@ -1423,64 +1423,53 @@ def _at_period(value: Any, p_index: int, n_periods: int, what: str) -> float | N
 
 @dataclass
 class StoragesData:
-    capacity: xr.DataArray  # (storage,)
-    eta_c: xr.DataArray  # (storage, time)
-    eta_d: xr.DataArray  # (storage, time)
-    loss: xr.DataArray  # (storage, time)
-    rel_level_lb: xr.DataArray  # (storage, time)
-    rel_level_ub: xr.DataArray  # (storage, time)
-    prior_level: xr.DataArray  # (storage,) — NaN if not set
-    cyclic: xr.DataArray  # (storage,)
-    charge_flow: xr.DataArray  # (storage,) — str
-    discharge_flow: xr.DataArray  # (storage,) — str
-    final_level_min: xr.DataArray | None = None  # (storage,) — NaN = unbounded [MWh]
-    final_level_max: xr.DataArray | None = None  # (storage,) — NaN = unbounded [MWh]
-    prevent_simultaneous: xr.DataArray | None = None  # (storage,) — bool
+    """Storage parameters, as the four tables a storage declares.
+
+    Absence is a missing row. A storage whose capacity is being optimized has
+    no row in `capacity`; one that constrains neither its starting nor its
+    final level has no row in `levels`. `profiles` is the exception and is
+    dense on purpose: a missing coefficient row reads as a zero, and a
+    retention of zero empties the store rather than leaving it alone.
+    """
+
+    #: (storage, charge_flow, discharge_flow, cyclic, prevent_simultaneous)
+    storages: pl.DataFrame
+    #: (storage, capacity) — only storages sized to a fixed value
+    capacity: pl.DataFrame
+    #: (storage, time, eta_charge, eta_discharge, loss, relative_level_min,
+    #: relative_level_max) — dense, one row per storage and timestep
+    profiles: pl.DataFrame
+    #: (storage, prior_level, final_level_min, final_level_max) — only
+    #: storages fixing a level at one end of the horizon
+    levels: pl.DataFrame
     sizing: SizingData | None = None  # dim Dim.SIZING_STORAGE
     invest: InvestmentData | None = None  # dim Dim.INVEST_STORAGE
+
+    @property
+    def ids(self) -> list[str]:
+        """The declared storages, in declaration order."""
+        return self.storages['storage'].to_list()
 
     def __post_init__(self) -> None:
         """Re-check the ranges `Storage` already refuses, on the resolved values.
 
         Two things reach here that the element could not see: a reloaded
-        netCDF, which never passed through `Storage` at all, and a
+        file, which never passed through `Storage` at all, and a
         `ProfileRef`, whose numbers arrive when profiles are resolved and so
         are not there to check when the storage is written. Everything else
         was refused at construction — see docs/design/validation-layers.md.
         """
-        s = self.capacity.coords['storage']
-        cap = self.capacity
-        bad_cap = ~np.isnan(cap) & (cap < 0)
-        if bad_cap.any():
-            raise ValueError(f'Negative capacity on storages: {list(s[bad_cap].values)}')
-        bad_eta_c = ((self.eta_c <= 0) | (self.eta_c > 1)).any('time')
-        if bad_eta_c.any():
-            raise ValueError(f'eta_charge must be in (0, 1] on storages: {list(s[bad_eta_c].values)}')
-        bad_eta_d = ((self.eta_d <= 0) | (self.eta_d > 1)).any('time')
-        if bad_eta_d.any():
-            raise ValueError(f'eta_discharge must be in (0, 1] on storages: {list(s[bad_eta_d].values)}')
-        bad_loss = ((self.loss < 0) | (self.loss > 1)).any('time')
-        if bad_loss.any():
-            raise ValueError(f'relative_loss_per_hour must be in [0, 1] on storages: {list(s[bad_loss].values)}')
-
-    def to_dataset(self) -> xr.Dataset:
-        """Serialize to xr.Dataset."""
-        return _to_dataset(self)
-
-    @classmethod
-    def from_dataset(cls, ds: xr.Dataset, containers: dict[str, Any] | None = None) -> Self:
-        """Deserialize from xr.Dataset plus reconstructed nested containers.
-
-        Args:
-            ds: Dataset with the table's plain-DataArray variables.
-            containers: Nested container objects (``sizing``/``status``/
-                ``invest``/``cstatus``) parsed from netCDF sub-groups.
-        """
-        containers = containers or {}
-        kwargs: dict[str, Any] = {
-            f.name: containers.get(f.name) if f.name in _CONTAINER_FIELD_NAMES else ds.get(f.name) for f in fields(cls)
-        }
-        return cls(**kwargs)
+        bad_cap = self.capacity.filter(pl.col('capacity') < 0)['storage'].to_list()
+        if bad_cap:
+            raise ValueError(f'Negative capacity on storages: {bad_cap}')
+        for outside, told in (
+            ((pl.col('eta_charge') <= 0) | (pl.col('eta_charge') > 1), 'eta_charge must be in (0, 1]'),
+            ((pl.col('eta_discharge') <= 0) | (pl.col('eta_discharge') > 1), 'eta_discharge must be in (0, 1]'),
+            ((pl.col('loss') < 0) | (pl.col('loss') > 1), 'relative_loss_per_hour must be in [0, 1]'),
+        ):
+            bad = self.profiles.filter(outside)['storage'].unique(maintain_order=True).to_list()
+            if bad:
+                raise ValueError(f'{told} on storages: {bad}')
 
     @classmethod
     def build(
@@ -1506,78 +1495,99 @@ class StoragesData:
             return None
 
         effect_ids = [e.id for e in effects] if effects else []
-        stor_ids = [s.id for s in storages]
-        n = len(storages)
+        labels = np.asarray(time)
+        n_time = len(labels)
 
-        capacity_vals = np.full(n, np.nan)
-        eta_cs: list[xr.DataArray] = []
-        eta_ds: list[xr.DataArray] = []
-        losses: list[xr.DataArray] = []
-        level_lbs: list[xr.DataArray] = []
-        level_ubs: list[xr.DataArray] = []
-        prior_level_vals = np.full(n, np.nan)
-        cyclic_vals = np.zeros(n, dtype=bool)
-        final_min_vals = np.full(n, np.nan)
-        final_max_vals = np.full(n, np.nan)
-        prevent_vals = np.zeros(n, dtype=bool)
-        charge_flow: list[str] = []
-        discharge_flow: list[str] = []
+        fixed: list[tuple[str, float]] = []
         sizing_items: list[tuple[str, Sizing]] = []
         invest_items: list[tuple[str, Investment]] = []
+        level_rows: list[tuple[str, float | None, float | None, float | None]] = []
+        profile_cols: dict[str, list[np.ndarray]] = {
+            k: []
+            for k in (
+                'storage',
+                'time',
+                'eta_charge',
+                'eta_discharge',
+                'loss',
+                'relative_level_min',
+                'relative_level_max',
+            )
+        }
 
-        for i, s in enumerate(storages):
+        def series(value: Any) -> np.ndarray:
+            return np.broadcast_to(as_dataarray(value, {'time': time}).values, (n_time,))
+
+        for s in storages:
             if isinstance(s.capacity, Sizing):
                 sizing_items.append((s.id, s.capacity))
             elif isinstance(s.capacity, Investment):
                 invest_items.append((s.id, s.capacity))
             elif s.capacity is not None:
-                capacity_vals[i] = s.capacity
+                fixed.append((s.id, float(s.capacity)))
 
-            eta_cs.append(as_dataarray(s.eta_charge, {'time': time}))
-            eta_ds.append(as_dataarray(s.eta_discharge, {'time': time}))
-            losses.append(as_dataarray(s.relative_loss_per_hour, {'time': time}))
+            profile_cols['storage'].append(np.full(n_time, s.id))
+            profile_cols['time'].append(labels)
+            profile_cols['eta_charge'].append(series(s.eta_charge))
+            profile_cols['eta_discharge'].append(series(s.eta_discharge))
+            profile_cols['loss'].append(series(s.relative_loss_per_hour))
+            profile_cols['relative_level_min'].append(series(s.relative_level_min))
+            profile_cols['relative_level_max'].append(series(s.relative_level_max))
 
-            level_lbs.append(as_dataarray(s.relative_level_min, {'time': time}))
-            level_ubs.append(as_dataarray(s.relative_level_max, {'time': time}))
+            if s.prior_level is not None or s.final_level_min is not None or s.final_level_max is not None:
+                level_rows.append((s.id, s.prior_level, s.final_level_min, s.final_level_max))
 
-            cyclic_vals[i] = s.cyclic
-            if s.prior_level is not None:
-                prior_level_vals[i] = s.prior_level
-            if s.final_level_min is not None:
-                final_min_vals[i] = s.final_level_min
-            if s.final_level_max is not None:
-                final_max_vals[i] = s.final_level_max
-            prevent_vals[i] = s.prevent_simultaneous
-
-            charge_flow.append(s._charging_id)
-            discharge_flow.append(s._discharging_id)
-
-        stor_idx = pd.Index(stor_ids, name='storage')
         return cls(
-            capacity=xr.DataArray(capacity_vals, dims=['storage'], coords={'storage': stor_ids}),
-            eta_c=xr.concat(eta_cs, dim=stor_idx),
-            eta_d=xr.concat(eta_ds, dim=stor_idx),
-            loss=xr.concat(losses, dim=stor_idx),
-            rel_level_lb=xr.concat(level_lbs, dim=stor_idx),
-            rel_level_ub=xr.concat(level_ubs, dim=stor_idx),
-            prior_level=xr.DataArray(prior_level_vals, dims=['storage'], coords={'storage': stor_ids}),
-            cyclic=xr.DataArray(cyclic_vals, dims=['storage'], coords={'storage': stor_ids}),
-            charge_flow=xr.DataArray(charge_flow, dims=['storage'], coords={'storage': stor_ids}),
-            discharge_flow=xr.DataArray(discharge_flow, dims=['storage'], coords={'storage': stor_ids}),
-            final_level_min=(
-                xr.DataArray(final_min_vals, dims=['storage'], coords={'storage': stor_ids})
-                if not np.all(np.isnan(final_min_vals))
-                else None
+            storages=pl.DataFrame(
+                {
+                    'storage': [s.id for s in storages],
+                    'charge_flow': [s._charging_id for s in storages],
+                    'discharge_flow': [s._discharging_id for s in storages],
+                    'cyclic': [bool(s.cyclic) for s in storages],
+                    'prevent_simultaneous': [bool(s.prevent_simultaneous) for s in storages],
+                },
+                schema={
+                    'storage': pl.String,
+                    'charge_flow': pl.String,
+                    'discharge_flow': pl.String,
+                    'cyclic': pl.Boolean,
+                    'prevent_simultaneous': pl.Boolean,
+                },
             ),
-            final_level_max=(
-                xr.DataArray(final_max_vals, dims=['storage'], coords={'storage': stor_ids})
-                if not np.all(np.isnan(final_max_vals))
-                else None
+            capacity=pl.DataFrame(
+                {'storage': [i for i, _ in fixed], 'capacity': [c for _, c in fixed]},
+                schema={'storage': pl.String, 'capacity': pl.Float64},
             ),
-            prevent_simultaneous=(
-                xr.DataArray(prevent_vals, dims=['storage'], coords={'storage': stor_ids})
-                if prevent_vals.any()
-                else None
+            profiles=pl.DataFrame(
+                {
+                    key: pd.to_datetime(np.concatenate(parts)).to_pydatetime().tolist()
+                    if key == 'time'
+                    else np.concatenate(parts)
+                    for key, parts in profile_cols.items()
+                },
+                schema={
+                    'storage': pl.String,
+                    'time': pl.Datetime('us'),
+                    'eta_charge': pl.Float64,
+                    'eta_discharge': pl.Float64,
+                    'loss': pl.Float64,
+                    'relative_level_min': pl.Float64,
+                    'relative_level_max': pl.Float64,
+                },
+            ),
+            levels=pl.DataFrame(
+                {
+                    'storage': [r[0] for r in level_rows],
+                    'prior_level': [r[1] for r in level_rows],
+                    'final_level_min': [r[2] for r in level_rows],
+                    'final_level_max': [r[3] for r in level_rows],
+                },
+                schema={
+                    'storage': pl.String,
+                    'prior_level': pl.Float64,
+                    'final_level_min': pl.Float64,
+                    'final_level_max': pl.Float64,
+                },
             ),
             sizing=SizingData.build(sizing_items, effect_ids, dim=Dim.SIZING_STORAGE, period=period),
             invest=InvestmentData.build(invest_items, effect_ids, dim=Dim.INVEST_STORAGE, period=period),
@@ -1842,9 +1852,9 @@ class ModelData:
         if self.piecewise is not None:
             check_flows(self.piecewise.links['flow'].to_list(), 'piecewise.links')
         if self.storages is not None:
-            check_flows([str(v) for v in self.storages.charge_flow.values], 'storages.charge_flow')
-            check_flows([str(v) for v in self.storages.discharge_flow.values], 'storages.discharge_flow')
-            storage_ids = set(map(str, self.storages.capacity.coords['storage'].values))
+            check_flows(self.storages.storages['charge_flow'].to_list(), 'storages.charge_flow')
+            check_flows(self.storages.storages['discharge_flow'].to_list(), 'storages.discharge_flow')
+            storage_ids = set(self.storages.ids)
             for container, what in (
                 (self.storages.sizing, 'storages.sizing'),
                 (self.storages.invest, 'storages.invest'),

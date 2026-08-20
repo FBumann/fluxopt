@@ -451,23 +451,47 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
     storage_ids: list[str] = []
     if data.storages is not None:
         sds = data.storages
-        storage_ids = [str(s) for s in sds.capacity.coords['storage'].values]
-        charge = [str(v) for v in sds.charge_flow.values]
-        discharge = [str(v) for v in sds.discharge_flow.values]
+        storage_ids = sds.ids
+        charge = sds.storages['charge_flow'].to_list()
+        discharge = sds.storages['discharge_flow'].to_list()
         chg_of = dict(zip(charge, storage_ids, strict=True))
         dis_of = dict(zip(discharge, storage_ids, strict=True))
         flow_index['charge_storage'] = [chg_of.get(f) for f in flow_ids]
         flow_index['discharge_storage'] = [dis_of.get(f) for f in flow_ids]
 
-        def on_flow(da: xr.DataArray, fids: list[str]) -> pd.DataFrame:
-            return tidy(da.assign_coords(storage=fids).rename({'storage': 'flow'}), drop_zero=True)
+        dt_by_time = pl.DataFrame({'time': ordinals, 'dt': dims.dt.values})
+        # One join carries every per-timestep storage parameter, since they
+        # all live on the same (storage, time) rows.
+        profiles = _with_time_ordinals(sds.profiles, dims).join(dt_by_time, on='time')
 
-        sources['charge_gain'] = on_flow(sds.eta_c * dims.dt, charge)
-        sources['discharge_draw'] = on_flow(dims.dt / sds.eta_d, discharge)
-        sources['retention'] = tidy((1 - sds.loss) ** dims.dt, drop_zero=False)
-        cap = sds.capacity
-        sources['level_min'] = tidy((sds.rel_level_lb * cap).fillna(0.0), drop_zero=False)
-        sources['level_max'] = tidy((sds.rel_level_ub * cap).fillna(np.inf), drop_zero=False)
+        def on_flow(frame: pl.DataFrame, column: str, of_storage: dict[str, str]) -> pl.DataFrame:
+            """A per-storage coefficient read on the flow that carries it."""
+            renamed = {s: f for f, s in of_storage.items()}
+            return (
+                frame.select([pl.col('storage').replace_strict(renamed).alias('flow'), 'time', pl.col(column)])
+                .rename({column: 'value'})
+                .filter(pl.col('value') != 0)
+            )
+
+        gains = profiles.with_columns(
+            (pl.col('eta_charge') * pl.col('dt')).alias('charge_gain'),
+            (pl.col('dt') / pl.col('eta_discharge')).alias('discharge_draw'),
+            ((1 - pl.col('loss')) ** pl.col('dt')).alias('retention'),
+        )
+        sources['charge_gain'] = on_flow(gains, 'charge_gain', chg_of)
+        sources['discharge_draw'] = on_flow(gains, 'discharge_draw', dis_of)
+        sources['retention'] = gains.select(['storage', 'time', pl.col('retention').alias('value')])
+
+        # An absent capacity row is a storage whose capacity is a variable, so
+        # its absolute level bounds are not knowable here: 0 and infinity are
+        # what the program reads while the relative pair does the bounding.
+        absolute = profiles.join(sds.capacity, on='storage', how='left')
+        sources['level_min'] = absolute.select(
+            ['storage', 'time', (pl.col('relative_level_min') * pl.col('capacity')).fill_null(0.0).alias('value')]
+        )
+        sources['level_max'] = absolute.select(
+            ['storage', 'time', (pl.col('relative_level_max') * pl.col('capacity')).fill_null(np.inf).alias('value')]
+        )
         csz = sds.sizing
         if csz is not None:
             cap_ids = csz.ids
@@ -476,35 +500,32 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
             sources['capacity_optional'] = _flags('capacity_optional', 'storage', copt)
             sources['capacity_min'] = pd.DataFrame({'storage': cap_ids, 'value': csz.bounds['size_min'].to_numpy()})
             sources['capacity_max'] = pd.DataFrame({'storage': cap_ids, 'value': csz.bounds['size_max'].to_numpy()})
-            sources['relative_level_min'] = tidy(sds.rel_level_lb.sel(storage=cap_ids), drop_zero=True)
-            sources['relative_level_max'] = tidy(sds.rel_level_ub.sel(storage=cap_ids), drop_zero=True)
+            sized = profiles.filter(pl.col('storage').is_in(pl.Series(cap_ids).implode()))
+            for key, column in (
+                ('relative_level_min', 'relative_level_min'),
+                ('relative_level_max', 'relative_level_max'),
+            ):
+                sources[key] = sized.select(['storage', 'time', pl.col(column).alias('value')]).filter(
+                    pl.col('value') != 0
+                )
             lump_frames += [
                 ('effects_per_capacity', 'storage', csz.effects, 'per_size'),
                 ('effects_fixed_capacity', 'storage', csz.effects, 'fixed'),
             ]
-        sources['is_cyclic'] = pd.DataFrame(
-            {'storage': storage_ids, 'value': sds.cyclic.values.astype(bool)},
+        for key, column in (('is_cyclic', 'cyclic'), ('prevent_simultaneous', 'prevent_simultaneous')):
+            sources[key] = _flags(key, 'storage', sds.storages.filter(pl.col(column))['storage'].to_list())
+        # `prior_level` is dense: it sits on the constant side of the first
+        # step's balance, where an absent row is a binding zero — which is
+        # also what an unset prior level means.
+        sources['prior_level'] = (
+            sds.storages.select('storage')
+            .join(sds.levels.select(['storage', pl.col('prior_level').alias('value')]), on='storage', how='left')
+            .with_columns(pl.col('value').fill_null(0.0))
         )
-        sources['prior_level'] = pd.DataFrame({'storage': storage_ids, 'value': sds.prior_level.fillna(0.0).values})
-        for key, arr in (('final_level_min', sds.final_level_min), ('final_level_max', sds.final_level_max)):
-            if arr is None:
-                sources[key] = _empty(key, 'storage')
-                continue
-            live = arr.notnull()
-            sources[key] = _tidy(arr.where(live), drop_zero=False)
-        prevent = (
-            sds.prevent_simultaneous.values.astype(bool)
-            if sds.prevent_simultaneous is not None
-            else np.zeros(len(storage_ids), dtype=bool)
-        )
-        prev_ids = [s for s, p in zip(storage_ids, prevent, strict=True) if p]
-        sources['prevent_simultaneous'] = _flags('prevent_simultaneous', 'storage', prev_ids)
-        sources['charge_size_bound'] = pd.DataFrame(
-            {'storage': storage_ids, 'value': [_size_upper(data, f) for f in charge]},
-        )
-        sources['discharge_size_bound'] = pd.DataFrame(
-            {'storage': storage_ids, 'value': [_size_upper(data, f) for f in discharge]},
-        )
+        for key in ('final_level_min', 'final_level_max'):
+            sources[key] = sds.levels.select(['storage', pl.col(key).alias('value')]).drop_nulls()
+        for key, flows in (('charge_size_bound', charge), ('discharge_size_bound', discharge)):
+            sources[key] = pd.DataFrame({'storage': storage_ids, 'value': [_size_upper(data, f) for f in flows]})
     else:
         flow_index['charge_storage'] = None
         flow_index['discharge_storage'] = None

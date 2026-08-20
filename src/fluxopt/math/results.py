@@ -83,7 +83,7 @@ def _entity_order(data: ModelData) -> dict[str, list[str]]:
         'effect': data.effects.ids,
     }
     if data.storages is not None:
-        order['storage'] = [str(s) for s in data.storages.capacity.coords['storage'].values]
+        order['storage'] = data.storages.ids
     return order
 
 

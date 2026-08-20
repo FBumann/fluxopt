@@ -171,7 +171,7 @@ def contributions_from(read: Any, data: ModelData, *, cross_effects: bool = True
         (contributor, effect) and ``total`` (contributor, effect).
     """
     flow_ids = [str(f) for f in data.flows.flow_id.values]
-    stor_ids = [str(s) for s in data.storages.capacity.coords['storage'].values] if data.storages is not None else []
+    stor_ids = data.storages.ids if data.storages is not None else []
     all_ids = flow_ids + stor_ids
 
     temporal = _gather(read, TEMPORAL, data, all_ids, None)
