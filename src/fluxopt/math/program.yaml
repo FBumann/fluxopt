@@ -56,8 +56,11 @@ parameters:
   # multi-period time the first step of *each* period is a boundary.
   is_first: {dims: [time], dtype: bool}
 
-  # --- flows: absolute bounds (rel_bound * size, folded data-side because
-  # bounds: accepts only a bare parameter name) ---------------------------
+  # --- flows: absolute bounds. `rel_bound * size`, folded data-side, because
+  # `bounds:` takes a bare parameter name — no product can be written there,
+  # which is why these two stay even though every other such fold was inlined.
+  # Dense, and unbounded says so with `inf`: an absent row in `bounds:` is a
+  # null, and lpspec refuses to guess whether that means free or nonexistent.
   rate_min: {dims: [flow, time, period]}
   rate_max: {dims: [flow, time, period]}
   # The largest rate a flow could ever carry: its fixed size, or the maximum
@@ -79,6 +82,9 @@ parameters:
   charge_gain: {dims: [storage, time]}     # eta_c * dt
   discharge_draw: {dims: [storage, time]}  # dt / eta_d
   retention: {dims: [storage, time]}       # (1 - loss) ** dt
+  # `relative_level_* * capacity`, folded data-side for the same reason
+  # `rate_min` is, and dense for the same reason: a storage whose capacity is
+  # a variable is bounded 0..inf here, and the relative pair does the work.
   level_min: {dims: [storage, time]}
   level_max: {dims: [storage, time]}
   is_cyclic: {dims: [storage], dtype: bool}
@@ -94,9 +100,6 @@ parameters:
   is_gated: {dims: [flow], dtype: bool}
   is_bounded: {dims: [flow], dtype: bool}
   is_profile: {dims: [flow], dtype: bool}
-  rate_min_when_on: {dims: [flow, time, period]}     # size * rel_lb, gated by `running`
-  rate_max_when_on: {dims: [flow, time, period]}     # size * rel_ub, gated by `running`
-  rate_fixed_when_on: {dims: [flow, time, period]}    # size * profile, gated by `running`
   has_uptime: {dims: [status_entity], dtype: bool}
   uptime_min: {dims: [status_entity]}
   # The duration variable's ceiling: the declared maximum, or the big-M where
@@ -129,16 +132,16 @@ parameters:
   # entity sets that cannot overlap.
   size_min: {dims: [flow]}
   size_max: {dims: [flow]}
+  # The envelope as fractions of the size, for every flow whose rate is
+  # scaled by one — a sized flow's `size` variable, or a gated flow's fixed
+  # `size_bound`. Stated once and multiplied where it is read, rather than
+  # pre-folded into a parameter per reader.
   relative_rate_min: {dims: [flow, time, period]}
   relative_rate_max: {dims: [flow, time, period]}
   fixed_relative_profile: {dims: [flow, time, period]}
   # Lump-domain effect coefficients, Leontief-folded like the temporal ones.
   effects_per_size: {dims: [flow, effect, period]}
   effects_fixed: {dims: [flow, effect, period]}
-
-  # --- status x sizing: big-M decoupling of the binary from the size -------
-  rate_max_at_size_max: {dims: [flow, time, period]}   # size_max * rel_ub
-  rate_min_at_size_max: {dims: [flow, time, period]}   # size_max * rel_lb
 
   # --- investment (build timing over periods) ------------------------------
   has_invest: {dims: [flow], dtype: bool}
@@ -180,10 +183,9 @@ parameters:
   effects_fixed_capacity: {dims: [storage, effect, period]}
 
   # --- flow aggregates: the horizon's total, bounded per period ------------
-  # `flow_hour_weight` is dt * time_weight, so the sum is energy rather than
-  # a count of steps. Load factors are the same bound stated relative to size,
-  # which is why a sized flow needs the coefficient rather than the product.
-  flow_hour_weight: {dims: [time]}
+  # `dt * time_weight` is what makes the sum energy rather than a count of
+  # steps. Load factors are the same bound stated relative to size, which is
+  # why a sized flow needs the coefficient rather than the product.
   flow_hours_min: {dims: [flow, period]}
   flow_hours_max: {dims: [flow, period]}
   load_factor_min_bound: {dims: [flow, period]}    # lambda * size * T, fixed size
@@ -435,17 +437,17 @@ constraints:
   status_rate_min:
     foreach: [flow, time, period]
     where: "is_gated AND NOT has_sizing AND is_bounded"
-    expression: rate >= rate_min_when_on * at(running, by=status_of)
+    expression: rate >= relative_rate_min * size_bound * at(running, by=status_of)
 
   status_rate_max:
     foreach: [flow, time, period]
     where: "is_gated AND NOT has_sizing AND is_bounded"
-    expression: rate <= rate_max_when_on * at(running, by=status_of)
+    expression: rate <= relative_rate_max * size_bound * at(running, by=status_of)
 
   status_rate_fixed:
     foreach: [flow, time, period]
     where: "is_gated AND NOT has_sizing AND is_profile"
-    expression: rate == rate_fixed_when_on * at(running, by=status_of)
+    expression: rate == fixed_relative_profile * size_bound * at(running, by=status_of)
 
   status_transition:
     foreach: [status_entity, time, period]
@@ -506,7 +508,7 @@ constraints:
   status_sizing_rate_bigm:
     foreach: [flow, time, period]
     where: "is_gated AND has_sizing"
-    expression: rate <= rate_max_at_size_max * at(running, by=status_of)
+    expression: rate <= relative_rate_max * size_max * at(running, by=status_of)
 
   status_sizing_rate_max:
     foreach: [flow, time, period]
@@ -517,8 +519,8 @@ constraints:
     foreach: [flow, time, period]
     where: "is_gated AND has_sizing"
     expression: >-
-      rate - rate_min_at_size_max * at(running, by=status_of) - relative_rate_min * size
-      >= 0 - rate_min_at_size_max
+      rate - relative_rate_min * size_max * at(running, by=status_of) - relative_rate_min * size
+      >= 0 - relative_rate_min * size_max
 
   # an unbuilt unit cannot be running
   status_sizing_gate_size:
@@ -785,34 +787,34 @@ constraints:
   flow_hours_lower:
     foreach: [flow, period]
     where: "flow_hours_min"
-    expression: sum(rate * flow_hour_weight, over=time) >= flow_hours_min
+    expression: sum(rate * dt * time_weight, over=time) >= flow_hours_min
 
   flow_hours_upper:
     foreach: [flow, period]
     where: "flow_hours_max"
-    expression: sum(rate * flow_hour_weight, over=time) <= flow_hours_max
+    expression: sum(rate * dt * time_weight, over=time) <= flow_hours_max
 
   load_factor_lower:
     foreach: [flow, period]
     where: "load_factor_min_bound"
-    expression: sum(rate * flow_hour_weight, over=time) >= load_factor_min_bound
+    expression: sum(rate * dt * time_weight, over=time) >= load_factor_min_bound
 
   load_factor_upper:
     foreach: [flow, period]
     where: "load_factor_max_bound"
-    expression: sum(rate * flow_hour_weight, over=time) <= load_factor_max_bound
+    expression: sum(rate * dt * time_weight, over=time) <= load_factor_max_bound
 
   # Sized flows state the same bound with the size on the left, because it is
   # a decision rather than a number.
   load_factor_lower_sized:
     foreach: [flow, period]
     where: "load_factor_min_coeff"
-    expression: sum(rate * flow_hour_weight, over=time) - load_factor_min_coeff * size >= 0
+    expression: sum(rate * dt * time_weight, over=time) - load_factor_min_coeff * size >= 0
 
   load_factor_upper_sized:
     foreach: [flow, period]
     where: "load_factor_max_coeff"
-    expression: sum(rate * flow_hour_weight, over=time) - load_factor_max_coeff * size <= 0
+    expression: sum(rate * dt * time_weight, over=time) - load_factor_max_coeff * size <= 0
 
   # --- piecewise: one convexity row per curve, one link row per curve flow.
   pw_convexity:
