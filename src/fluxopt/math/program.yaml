@@ -99,14 +99,17 @@ parameters:
   rate_fixed_when_on: {dims: [flow, time, period]}    # size * profile, gated by `running`
   has_uptime: {dims: [status_entity], dtype: bool}
   uptime_min: {dims: [status_entity]}
-  uptime_upper: {dims: [status_entity, time, period]}   # uptime_max where given, else mega
+  # The duration variable's ceiling: the declared maximum, or the big-M where
+  # none is declared. A property of the entity, so lpspec broadcasts it over
+  # the (time, period) grid the variable itself is declared on.
+  uptime_upper: {dims: [status_entity]}
   uptime_big_m: {dims: [status_entity]}     # big-M: horizon + any prior uptime
   downtime_big_m: {dims: [status_entity]}   # big-M: horizon + any prior downtime
   dt: {dims: [time]}                       # timestep duration [h]
   is_last: {dims: [time], dtype: bool}
   has_downtime: {dims: [status_entity], dtype: bool}
   downtime_min: {dims: [status_entity]}
-  downtime_upper: {dims: [status_entity, time, period]}
+  downtime_upper: {dims: [status_entity]}
   initial_status: {dims: [status_entity]}
   previous_uptime: {dims: [status_entity]}
   previous_downtime: {dims: [status_entity]}
