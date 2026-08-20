@@ -11,7 +11,6 @@ import pandas as pd
 import polars as pl
 import xarray as xr
 
-from fluxopt.contract import BoundType
 from fluxopt.types import PiecewiseMethod, as_dataarray, normalize_timesteps
 from fluxopt.validation import validate_system
 
@@ -519,8 +518,8 @@ class FlowsData:
     variable's own grid, where a missing row reads as a binding zero.
     """
 
-    #: (flow, bound_type) — every flow, in declaration order. The roster: the
-    #: other tables name only the flows that declare the thing they hold.
+    #: (flow,) — every flow, in declaration order. The roster: the other
+    #: tables name only the flows that declare the thing they hold.
     flows: pl.DataFrame
     #: (flow, size) — only flows sized to a fixed value
     sizes: pl.DataFrame
@@ -555,6 +554,32 @@ class FlowsData:
         """Flows whose size is known here — fixed, not optimized."""
         return set(self.sizes['flow'].to_list())
 
+    @property
+    def has_size(self) -> set[str]:
+        """Flows with a size at all — fixed here, or a variable to be solved for."""
+        sized = self.sized_ids
+        for container in (self.sizing, self.invest):
+            if container is not None:
+                sized |= set(container.ids)
+        return sized
+
+    @property
+    def profiled_ids(self) -> list[str]:
+        """Flows whose rate is pinned to a profile, in declaration order."""
+        profiled = set(self.fixed_profile['flow'].to_list())
+        return [f for f in self.ids if f in profiled]
+
+    @property
+    def bounded_ids(self) -> list[str]:
+        """Flows whose rate envelope is ``[rel_lb, rel_ub] * size``.
+
+        Which is: it has a size, and no profile pinning it. A flow that is
+        neither bounded nor profiled is unsized, and the program asks about
+        that by asking about neither — so the third case needs no name.
+        """
+        sized, profiled = self.has_size, set(self.fixed_profile['flow'].to_list())
+        return [f for f in self.ids if f in sized and f not in profiled]
+
     def __post_init__(self) -> None:
         """Validate relative bounds, status non-degeneracy, and sized-feature requirements."""
         negative = self.envelope.filter(pl.col('relative_rate_min') < -1e-12)['flow']
@@ -572,11 +597,7 @@ class FlowsData:
         coefficients; the element layer already rejects this at authoring
         time, this is the guard for direct data edits and reloads.
         """
-        sized = self.sized_ids
-        for container in (self.sizing, self.invest):
-            if container is not None:
-                sized |= set(container.ids)
-
+        sized = self.has_size
         for frame, columns in (
             (self.ramps, ('ramp_up', 'ramp_down')),
             (self.aggregates, ('load_factor_min', 'load_factor_max')),
@@ -634,7 +655,6 @@ class FlowsData:
                 (n_time, n_period),
             ).ravel()
 
-        bound_type: list[str] = []
         fixed_sizes: list[tuple[str, float]] = []
         sizing_items: list[tuple[str, Sizing]] = []
         invest_items: list[tuple[str, Investment]] = []
@@ -673,11 +693,8 @@ class FlowsData:
                     ramp_cols[column].append(spread(value) if value is not None else np.full(n_time * n_period, np.nan))
 
             if f.fixed_relative_profile is not None:
-                bound_type.append(BoundType.PROFILE)
                 profile_keys.append(fid)
                 profile_cols['value'].append(spread(f.fixed_relative_profile))
-            else:
-                bound_type.append(BoundType.UNSIZED if f.size is None else BoundType.BOUNDED)
 
             for effect_label, factor in f.effects_per_flow_hour.items():
                 pair_keys.append((fid, effect_label))
@@ -704,8 +721,8 @@ class FlowsData:
         owner = {fid: cid for cid, _status, governed in (component_status_items or []) for fid in governed}
         return cls(
             flows=pl.DataFrame(
-                {'flow': flow_ids, 'bound_type': bound_type},
-                schema={'flow': pl.String, 'bound_type': pl.String},
+                {'flow': flow_ids},
+                schema={'flow': pl.String},
             ),
             sizes=pl.DataFrame(
                 {'flow': [i for i, _ in fixed_sizes], 'size': [s for _, s in fixed_sizes]},

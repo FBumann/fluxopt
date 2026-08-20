@@ -10,23 +10,16 @@ Core dimensions
     ``effect``, ``source_effect``, ``time``, ``period`` and the converter
     equation axis ``eq_idx`` are stable vocabulary used as plain literals
     throughout — ubiquitous enough that constants would hurt readability.
-    The *regime* dimensions below index optional feature tables over a
-    subset of an entity dimension and are renamed back to the entity
-    dimension at constraint time.
 
-Sentinel conventions
-    - ``NaN`` in a parameter array means "not set": an unsized flow's
-      ``size``, unbounded aggregate limits (``flow_hours_*``,
-      ``load_factor_*``, effect ``total_*`` / ``periodic_*``), a free
-      storage ``prior_level`` / final level, an ``Investment`` lifetime
-      (forever), unknown prior status durations, and a carrier
-      ``flow_coeff`` entry for a flow not on that carrier.
-    - ``''`` (empty string) means "not set" for color fields and for
-      ``governed_by``, where it means no component's Status governs the flow.
-    - ``None`` at container level means the feature is absent entirely
-      (the converters/storages/piecewise tables, the sizing / invest /
-      status sub-containers, and all-NaN optional per-flow bounds).
-    - ``bound_type`` is the one explicit sentinel: :class:`BoundType`.
+Absence
+    Not-set is a missing row, throughout. An unsized flow has no row in
+    ``flows.sizes``, an unbounded aggregate none in ``flows.aggregates``, an
+    ``Investment`` that never expires none in ``invest.lifetime``. There are
+    no sentinel values to test for and nothing to spell "not set" as.
+
+    ``None`` survives at container level, where it means the feature is
+    absent from the whole system: the converters / storages / piecewise /
+    status tables, and the sizing and invest sub-containers.
 
 Solution variables
     linopy variable names follow ``<family>--<field>`` with family one of
@@ -35,19 +28,6 @@ Solution variables
 """
 
 from __future__ import annotations
-
-from enum import StrEnum
-
-
-class BoundType(StrEnum):
-    """How a flow's rate envelope is bounded — the model layer's dispatch key."""
-
-    UNSIZED = 'unsized'
-    """No size: rate is only bounded below by 0 (and above by nothing)."""
-    BOUNDED = 'bounded'
-    """Rate in ``[rel_lb, rel_ub] * size``."""
-    PROFILE = 'profile'
-    """Rate fixed to ``fixed_profile * size``."""
 
 
 class Var:

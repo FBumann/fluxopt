@@ -22,7 +22,6 @@ import pandas as pd
 import polars as pl
 import xarray as xr
 
-from fluxopt.contract import BoundType
 from fluxopt.leontief import apply_leontief, leontief
 from fluxopt.validation import reject_varying_contribution_into_lump
 
@@ -68,11 +67,6 @@ def _live(frame: pl.DataFrame, value: pl.Expr, *, drop_zero: bool = True) -> pl.
     """
     out = frame.select(['flow', 'time', 'period', value.alias('value')]).drop_nulls('value')
     return out.filter(pl.col('value') != 0) if drop_zero else out
-
-
-def _of_type(fds: Any, kind: str) -> list[str]:
-    """The flows whose bound type is *kind*."""
-    return fds.flows.filter(pl.col('bound_type') == kind)['flow'].to_list()
 
 
 def _size_upper(data: ModelData) -> dict[str, float]:
@@ -327,7 +321,7 @@ def _reject_unsupported(data: ModelData) -> None:
         # Component entities never collide with a flow-sizing id, so the
         # intersection picks out exactly the flows carrying their own Status.
         both = set(fds.sizing.ids) & set(data.status.ids)
-        profile = both & set(_of_type(fds, BoundType.PROFILE))
+        profile = both & set(fds.profiled_ids)
         if profile:
             # fluxopt rejects this combination too — no formulation exists.
             raise UnsupportedFeatureError(f'fixed profile with status+sizing has no formulation: {sorted(profile)}')
@@ -392,8 +386,7 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
     # The status axis holds both kinds; these are the flows whose own rate
     # bounds the binary takes over, so components have no business here.
     status_ids = [e for e in st.ids if e in set(flow_ids)] if st is not None else []
-    is_bounded = _of_type(fds, BoundType.BOUNDED)
-    is_profile = _of_type(fds, BoundType.PROFILE)
+    is_bounded, is_profile = fds.bounded_ids, fds.profiled_ids
 
     def among(ids: list[str]) -> pl.Expr:
         """Rows whose flow is one of *ids*."""
