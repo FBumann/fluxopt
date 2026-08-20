@@ -34,7 +34,7 @@ class TestFlowsTable:
         assert envelope['relative_rate_min'].to_list() == [0.2, 0.2, 0.2]
         assert envelope['relative_rate_max'].to_list() == [0.8, 0.8, 0.8]
         assert ds.sizes.filter(pl.col('flow') == 'src(b)')['size'].to_list() == [100.0]
-        assert ds.flows.filter(pl.col('flow') == 'src(b)')['bound_type'].to_list() == ['bounded']
+        assert ds.bounded_ids == ['src(b)']
 
     def test_fixed_profile(self):
         flow = Flow(carrier='b', size=100, fixed_relative_profile=[0.5, 0.8, 0.6])
@@ -46,7 +46,7 @@ class TestFlowsTable:
         )
         fixed = data.flows.fixed_profile.filter(pl.col('flow') == 'sink(b)')
         assert fixed['value'].to_list() == [0.5, 0.8, 0.6]
-        assert data.flows.flows['bound_type'].to_list() == ['profile']
+        assert data.flows.profiled_ids == ['sink(b)']
 
     def test_unsized_flow(self):
         flow = Flow(carrier='b')
@@ -56,7 +56,9 @@ class TestFlowsTable:
             effects=[Effect(id='cost')],
             ports=[Port(id='src', imports=[flow])],
         )
-        assert data.flows.flows['bound_type'].to_list() == ['unsized']
+        # Unsized is neither: no size to bound against, no profile to follow.
+        assert data.flows.bounded_ids == []
+        assert data.flows.profiled_ids == []
 
 
 class TestCarriersData:
