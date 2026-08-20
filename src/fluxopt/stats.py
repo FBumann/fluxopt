@@ -58,10 +58,17 @@ class StatsAccessor:
             balance = result.stats.carrier_balance
             balance.groupby('carrier').sum()
         """
+        import xarray as xr
+
         cd = self._result.data.carriers
         rates = self._result.flow_rates
-        signed = rates * cd.sign.sel(flow=rates.coords['flow'])
-        return signed.assign_coords(carrier=cd.carrier_of.sel(flow=rates.coords['flow']))
+        by_flow = dict(zip(cd.membership['flow'], cd.membership['carrier'], strict=True))
+        sign_of = dict(zip(cd.membership['flow'], cd.membership['sign'], strict=True))
+        flows = [str(f) for f in rates.coords['flow'].values]
+        signs = xr.DataArray([sign_of[f] for f in flows], dims=['flow'], coords={'flow': rates.coords['flow']})
+        return (rates * signs).assign_coords(
+            carrier=xr.DataArray([by_flow[f] for f in flows], dims=['flow'], coords={'flow': rates.coords['flow']})
+        )
 
     @cached_property
     def effect_contributions_direct(self) -> xr.Dataset:

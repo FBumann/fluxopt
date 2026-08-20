@@ -4,6 +4,7 @@ import os
 from datetime import datetime
 from typing import TYPE_CHECKING
 
+import polars as pl
 import pytest
 import xarray as xr
 
@@ -16,7 +17,8 @@ if TYPE_CHECKING:
 
 @pytest.fixture
 def tmp_nc(tmp_path: Path) -> Path:
-    return tmp_path / 'result.nc'
+    """Where a Result is written — a directory now, not a single file."""
+    return tmp_path / 'result'
 
 
 def _solve_simple(timesteps: list[datetime] | list[int]) -> Result:
@@ -58,8 +60,8 @@ class TestRoundtrip:
         ts = [datetime(2024, 1, 1, h) for h in range(3)]
         result = _solve_simple(ts)
 
-        result.to_netcdf(tmp_nc)
-        loaded = Result.from_netcdf(tmp_nc)
+        result.save(tmp_nc)
+        loaded = Result.load(tmp_nc)
 
         assert loaded.objective == pytest.approx(result.objective, abs=1e-6)
 
@@ -68,8 +70,8 @@ class TestRoundtrip:
         ts = [datetime(2024, 1, 1, h) for h in range(3)]
         result = _solve_with_storage(ts)
 
-        result.to_netcdf(tmp_nc)
-        loaded = Result.from_netcdf(tmp_nc)
+        result.save(tmp_nc)
+        loaded = Result.load(tmp_nc)
 
         assert loaded.objective == pytest.approx(result.objective, abs=1e-6)
 
@@ -79,8 +81,8 @@ class TestRoundtrip:
         result = _solve_with_storage(ts)
         assert result.data is not None
 
-        result.to_netcdf(tmp_nc)
-        loaded = Result.from_netcdf(tmp_nc)
+        result.save(tmp_nc)
+        loaded = Result.load(tmp_nc)
 
         assert loaded.data is not None
         # Flows dataset preserved
@@ -103,8 +105,8 @@ class TestRoundtrip:
         ts = [datetime(2024, 1, 1, h) for h in range(3)]
         result = _solve_with_storage(ts)
 
-        result.to_netcdf(tmp_nc)
-        loaded = Result.from_netcdf(tmp_nc)
+        result.save(tmp_nc)
+        loaded = Result.load(tmp_nc)
         assert loaded.data is not None
 
         # Re-solve from loaded data
@@ -182,13 +184,15 @@ class TestCarrierMetadataRoundtrip:
         )
         assert result.data is not None
 
-        result.to_netcdf(tmp_nc)
-        loaded = Result.from_netcdf(tmp_nc)
+        result.save(tmp_nc)
+        loaded = Result.load(tmp_nc)
 
         assert loaded.data is not None
-        assert str(loaded.data.carriers.unit.sel(carrier='elec').values) == 'kWh'
-        assert str(loaded.data.carriers.color.sel(carrier='elec').values) == '#ff0000'
-        assert str(loaded.data.carriers.description.sel(carrier='elec').values) == 'Electrical energy'
+        assert loaded.data.carriers.carriers.filter(pl.col('carrier') == 'elec')['unit'][0] == 'kWh'
+        assert loaded.data.carriers.carriers.filter(pl.col('carrier') == 'elec')['color'][0] == '#ff0000'
+        assert (
+            loaded.data.carriers.carriers.filter(pl.col('carrier') == 'elec')['description'][0] == 'Electrical energy'
+        )
 
 
 class TestRoundtripContributionFrom:
@@ -211,8 +215,8 @@ class TestRoundtripContributionFrom:
         assert result.data is not None
         assert result.data.effects.cf_pair_effect is not None
 
-        result.to_netcdf(tmp_nc)
-        loaded = Result.from_netcdf(tmp_nc)
+        result.save(tmp_nc)
+        loaded = Result.load(tmp_nc)
 
         assert loaded.data is not None
         assert loaded.data.effects.cf_pair_effect is not None
@@ -244,8 +248,8 @@ class TestExpressionsRoundtrip:
         result = _solve_simple([datetime(2024, 1, 1, h) for h in range(3)])
         assert result.expressions.data_vars
 
-        result.to_netcdf(tmp_nc)
-        loaded = Result.from_netcdf(tmp_nc)
+        result.save(tmp_nc)
+        loaded = Result.load(tmp_nc)
 
         assert set(loaded.expressions.data_vars) == set(result.expressions.data_vars)
         for name in result.expressions.data_vars:
@@ -254,47 +258,46 @@ class TestExpressionsRoundtrip:
     def test_the_breakdown_is_a_view_over_them(self, tmp_nc: Path) -> None:
         """Contributions are assembled from the stored expressions, so they survive too."""
         result = _solve_simple([datetime(2024, 1, 1, h) for h in range(3)])
-        result.to_netcdf(tmp_nc)
-        loaded = Result.from_netcdf(tmp_nc)
+        result.save(tmp_nc)
+        loaded = Result.load(tmp_nc)
 
         for view in ('temporal', 'lump', 'total'):
             xr.testing.assert_allclose(loaded.stats.effect_contributions[view], result.stats.effect_contributions[view])
 
-    def test_a_file_without_them_says_so_rather_than_re_deriving(self, tmp_nc: Path) -> None:
+    def test_a_result_without_them_says_so_rather_than_re_deriving(self, tmp_nc: Path) -> None:
         """Re-deriving on load would answer with today's logic against yesterday's numbers."""
         result = _solve_simple([datetime(2024, 1, 1, h) for h in range(3)])
-        result.solution.to_netcdf(tmp_nc, mode='w', engine='netcdf4')
-        result.data.to_netcdf(tmp_nc)
+        result.save(tmp_nc)
+        (tmp_nc / 'expressions.nc').unlink()
 
-        with pytest.warns(UserWarning, match="no 'expressions' group"):
-            loaded = Result.from_netcdf(tmp_nc)
+        with pytest.warns(UserWarning, match='carries none of the quantities'):
+            loaded = Result.load(tmp_nc)
         assert not loaded.expressions.data_vars
         with pytest.raises(ValueError, match='cannot re-derive'):
             _ = loaded.stats.effect_contributions
 
     def test_roundtrip_does_not_warn(self, tmp_nc: Path) -> None:
-        """Loading a file that carries them emits no missing-group warning."""
+        """Loading a result that carries them emits no warning."""
         import warnings
 
         result = _solve_simple([datetime(2024, 1, 1, h) for h in range(3)])
-        result.to_netcdf(tmp_nc)
+        result.save(tmp_nc)
 
         with warnings.catch_warnings():
             warnings.simplefilter('error', UserWarning)
-            loaded = Result.from_netcdf(tmp_nc)
+            loaded = Result.load(tmp_nc)
         assert loaded.expressions.data_vars
 
-    def test_netcdf_group_structure(self, tmp_nc: Path) -> None:
-        """The saved file carries an 'expressions' group, readable without Result."""
+    def test_directory_layout(self, tmp_nc: Path) -> None:
+        """Each part is its own file, readable without going through Result."""
         result = _solve_simple([datetime(2024, 1, 1, h) for h in range(3)])
-        result.to_netcdf(tmp_nc)
+        result.save(tmp_nc)
 
-        solution = xr.load_dataset(tmp_nc)
-        assert 'flow--rate' in solution
-
-        expressions = xr.load_dataset(tmp_nc, group='expressions')
-        assert 'contribution_flow_hour' in expressions
-        assert set(expressions['contribution_flow_hour'].dims) >= {'flow', 'effect', 'time'}
+        assert 'flow--rate' in xr.load_dataset(tmp_nc / 'solution.nc')
+        assert 'contribution_flow_hour' in xr.load_dataset(tmp_nc / 'expressions.nc')
+        # The model data is tables, so it is parquet anything can read
+        assert (tmp_nc / 'model' / 'carriers' / 'membership.parquet').is_file()
+        assert 'carrier' in pl.read_parquet(tmp_nc / 'model' / 'carriers' / 'membership.parquet').columns
 
 
 class TestBuildValidation:
@@ -312,7 +315,11 @@ class TestBuildValidation:
 
 
 class TestWaistGuards:
-    """Model-semantic invariants enforced at the data level, not only on elements."""
+    """Reload guards: a tampered file never passed the element or system layer.
+
+    Each edits the container's own file inside the saved directory — which is
+    what "hand-edited" looks like now that a Result is a directory of tables.
+    """
 
     def _status_system_path(self, tmp_nc: Path) -> Path:
         from fluxopt import ModelData, Status
@@ -325,7 +332,7 @@ class TestWaistGuards:
             effects=[Effect(id='cost')],
             ports=[Port(id='grid', imports=[boiler_fuel]), Port(id='demand', exports=[demand])],
         )
-        data.to_netcdf(tmp_nc, mode='w')
+        data.save(tmp_nc)
         return tmp_nc
 
     def test_zeroed_status_lower_bound_rejected_on_load(self, tmp_nc: Path) -> None:
@@ -335,11 +342,11 @@ class TestWaistGuards:
         from fluxopt import ModelData
 
         p = self._status_system_path(tmp_nc)
-        with netCDF4.Dataset(p, 'a') as nc:
-            nc['model/flows']['rel_lb'][:] = 0.0
+        with netCDF4.Dataset(p / 'flows' / 'arrays.nc', 'a') as nc:
+            nc['rel_lb'][:] = 0.0
 
         with pytest.raises(ValueError, match='on/off is indistinguishable'):
-            ModelData.from_netcdf(p)
+            ModelData.load(p)
 
     def test_nan_size_on_ramp_flow_rejected_on_load(self, tmp_nc: Path) -> None:
         """Removing the size under a ramp-limited flow fails at load, not as NaN math."""
@@ -356,12 +363,12 @@ class TestWaistGuards:
             effects=[Effect(id='cost')],
             ports=[Port(id='grid', imports=[source]), Port(id='demand', exports=[demand])],
         )
-        data.to_netcdf(tmp_nc, mode='w')
-        with netCDF4.Dataset(tmp_nc, 'a') as nc:
-            nc['model/flows']['size'][:] = np.nan
+        data.save(tmp_nc)
+        with netCDF4.Dataset(tmp_nc / 'flows' / 'arrays.nc', 'a') as nc:
+            nc['size'][:] = np.nan
 
         with pytest.raises(ValueError, match='ramp_up requires a sized flow'):
-            ModelData.from_netcdf(tmp_nc)
+            ModelData.load(tmp_nc)
 
     def test_dangling_storage_flow_reference_rejected_on_load(self, tmp_nc: Path) -> None:
         """A charge_flow naming a nonexistent flow fails at load, not as a KeyError at build."""
@@ -380,11 +387,11 @@ class TestWaistGuards:
             ports=[Port(id='grid', imports=[source]), Port(id='demand', exports=[demand])],
             storages=[Storage(id='bat', charging=charge, discharging=discharge, capacity=100.0)],
         )
-        data.to_netcdf(tmp_nc, mode='w')
-        with netCDF4.Dataset(tmp_nc, 'a') as nc:
-            nc['model/stor']['charge_flow'][0] = 'bat(gone)'
+        data.save(tmp_nc)
+        with netCDF4.Dataset(tmp_nc / 'storages' / 'arrays.nc', 'a') as nc:
+            nc['charge_flow'][0] = 'bat(gone)'
 
         with pytest.raises(
             ValueError, match=r"storages\.charge_flow references unknown flow id\(s\) \['bat\(gone\)'\]"
         ):
-            ModelData.from_netcdf(tmp_nc)
+            ModelData.load(tmp_nc)

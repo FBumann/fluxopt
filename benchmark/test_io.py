@@ -1,8 +1,8 @@
 """NetCDF IO benchmarks — ModelData serialization round-trip.
 
 Mirrors ``test_build.py``: the same feature matrix at one scale plus a
-multi_node scaling curve, but timing/measuring ``ModelData.to_netcdf`` (write)
-and ``ModelData.from_netcdf`` (read) instead of the build. Solve-free and
+multi_node scaling curve, but timing/measuring ``ModelData.save`` (write)
+and ``ModelData.load`` (read) instead of the build. Solve-free and
 deterministic, so it fits the same CodSpeed / benchmem suite.
 
 The solved-``Result`` round-trip is intentionally *not* here: building a Result
@@ -42,28 +42,28 @@ def scale(request: pytest.FixtureRequest) -> dict:
 def test_feature_write(benchmark: object, scenario: object, tmp_path: Path) -> None:
     """ModelData → NetCDF, per feature archetype."""
     data = make_model_data(scenario, **SCENARIO_SCALE)  # type: ignore[arg-type]
-    path = tmp_path / 'model.nc'
-    benchmark(data.to_netcdf, path, mode='w')  # type: ignore[operator]
+    path = tmp_path / 'model'
+    benchmark(data.save, path)  # type: ignore[operator]
 
 
 def test_feature_read(benchmark: object, scenario: object, tmp_path: Path) -> None:
     """NetCDF → ModelData, per feature archetype."""
     data = make_model_data(scenario, **SCENARIO_SCALE)  # type: ignore[arg-type]
-    path = tmp_path / 'model.nc'
-    data.to_netcdf(path, mode='w')
-    benchmark(ModelData.from_netcdf, path)  # type: ignore[operator]
+    path = tmp_path / 'model'
+    data.save(path)
+    benchmark(ModelData.load, path)  # type: ignore[operator]
 
 
 def test_scaling_write(benchmark: object, scale: dict, tmp_path: Path) -> None:
     """ModelData → NetCDF for multi_node across scales."""
     data = make_model_data(multi_node, **scale)
-    path = tmp_path / 'model.nc'
-    benchmark(data.to_netcdf, path, mode='w')  # type: ignore[operator]
+    path = tmp_path / 'model'
+    benchmark(data.save, path)  # type: ignore[operator]
 
 
 def test_scaling_read(benchmark: object, scale: dict, tmp_path: Path) -> None:
     """NetCDF → ModelData for multi_node across scales."""
     data = make_model_data(multi_node, **scale)
-    path = tmp_path / 'model.nc'
-    data.to_netcdf(path, mode='w')
-    benchmark(ModelData.from_netcdf, path)  # type: ignore[operator]
+    path = tmp_path / 'model'
+    data.save(path)
+    benchmark(ModelData.load, path)  # type: ignore[operator]

@@ -135,13 +135,11 @@ class Result:
         and ``outputs`` (flows that consume from it).
         """
         cd = self.data.carriers
-        flow_ids = [str(f) for f in cd.carrier_of.coords['flow'].values]
-        of = [str(c) for c in cd.carrier_of.values]
-        signs = cd.sign.values
+        flow_ids = cd.membership['flow'].to_list()
+        of = cd.membership['carrier'].to_list()
+        signs = cd.membership['sign'].to_numpy()
 
-        carriers: dict[str, dict[str, list[str]]] = {
-            str(cid): {'inputs': [], 'outputs': []} for cid in cd.unit.coords['carrier'].values
-        }
+        carriers: dict[str, dict[str, list[str]]] = {cid: {'inputs': [], 'outputs': []} for cid in cd.ids}
         for fid, carrier, sign in zip(flow_ids, of, signs, strict=True):
             carriers[carrier]['inputs' if sign > 0 else 'outputs'].append(fid)
 
@@ -150,10 +148,10 @@ class Result:
         converters: dict[str, dict[str, list[str]]] = {}
         if self.data.converters is not None:
             cd = self.data.converters
-            # Deduplicate pairs (pair dim may repeat per equation index)
-            pairs = dict.fromkeys(zip(cd.pair_converter.values, cd.pair_flow.values, strict=True))
-            for conv_id, fid in pairs:
-                conv_id, fid = str(conv_id), str(fid)
+            # One row per (converter, flow, equation, timestep), so the pairs
+            # are what is left after asking which distinct flows each names.
+            pairs = cd.coefficients.select(['converter', 'flow']).unique(maintain_order=True)
+            for conv_id, fid in zip(pairs['converter'], pairs['flow'], strict=True):
                 if conv_id not in converters:
                     converters[conv_id] = {'inputs': [], 'outputs': []}
                 target = 'inputs' if flow_sign[fid] < 0 else 'outputs'
@@ -187,52 +185,55 @@ class Result:
 
         return StatsAccessor(self)
 
-    def to_netcdf(self, path: str | Path) -> None:
-        """Write solution and model data to NetCDF.
+    def save(self, path: str | Path) -> None:
+        """Write the result as a directory.
+
+        The solution and the named quantities are labelled N-dimensional
+        arrays, so they stay netCDF; the model data is tables and goes to
+        parquet under ``model/``.
 
         Args:
-            path: Output file path.
+            path: Directory to write into. Created if absent.
         """
-        p = Path(path)
-        self.solution.to_netcdf(p, mode='w', engine='netcdf4')
-        self.data.to_netcdf(p)
+        root = Path(path)
+        root.mkdir(parents=True, exist_ok=True)
+        self.solution.to_netcdf(root / 'solution.nc', mode='w', engine='netcdf4')
         if self.expressions.data_vars:
-            self.expressions.to_netcdf(p, mode='a', group='expressions', engine='netcdf4')
+            self.expressions.to_netcdf(root / 'expressions.nc', mode='w', engine='netcdf4')
+        self.data.save(root / 'model')
 
     @classmethod
-    def from_netcdf(cls, path: str | Path) -> Result:
-        """Read a Result from a NetCDF file.
+    def load(cls, path: str | Path) -> Result:
+        """Read a result written by :meth:`save`.
 
         Args:
-            path: Input file path.
+            path: The directory :meth:`save` wrote.
 
         Raises:
-            ValueError: On Windows when reading a non-ASCII path (netcdf4 limitation).
+            OSError: If the directory holds no solution.
         """
-        from fluxopt.model_data import ModelData, _raise_netcdf_read_error
+        import warnings
 
-        p = Path(path)
-        try:
-            solution = xr.load_dataset(p, engine='netcdf4')
-        except OSError as e:
-            _raise_netcdf_read_error(p, e)
-        data = ModelData.from_netcdf(p)
+        from fluxopt.model_data import ModelData
 
-        try:
-            expressions = xr.load_dataset(p, group='expressions', engine='netcdf4')
-        except OSError:
-            expressions = xr.Dataset()
-            import warnings
-
+        root = Path(path)
+        if not (root / 'solution.nc').is_file():
+            raise OSError(f'No fluxopt result found in {root} (missing solution.nc)')
+        solution = xr.load_dataset(root / 'solution.nc', engine='netcdf4')
+        expressions = (
+            xr.load_dataset(root / 'expressions.nc', engine='netcdf4')
+            if (root / 'expressions.nc').is_file()
+            else xr.Dataset()
+        )
+        if not expressions.data_vars:
             warnings.warn(
-                f"NetCDF file {p} has no 'expressions' group, so this Result carries none of "
-                'the quantities the model names — including the per-contributor effect '
-                'breakdown. They are evaluated against a solve and cannot be recovered from '
-                'the solution alone; re-solve, or re-save a Result that has them.',
+                f'{root} carries none of the quantities the model names — including the '
+                'per-contributor effect breakdown. They are evaluated against a solve and '
+                'cannot be recovered from the solution alone; re-solve, or re-save a Result '
+                'that has them.',
                 stacklevel=2,
             )
-
-        return cls(solution=solution, data=data, expressions=expressions)
+        return cls(solution=solution, data=ModelData.load(root / 'model'), expressions=expressions)
 
     @cached_property
     def plot(self) -> PlotAccessor:

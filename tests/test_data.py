@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+import polars as pl
 import pytest
 import xarray as xr
 from conftest import ts
@@ -71,10 +72,11 @@ class TestCarriersData:
             effects=[Effect(id='cost')],
             ports=[Port(id='src', imports=[out_flow]), Port(id='sink', exports=[in_flow])],
         )
-        cd = data.carriers
-        assert float(cd.sign.sel(flow='src(b)')) == 1.0  # output to carrier
-        assert float(cd.sign.sel(flow='sink(b)')) == -1.0  # input from carrier
-        assert {str(c) for c in cd.carrier_of.values} == {'b'}
+        m = data.carriers.membership
+        by_flow = dict(zip(m['flow'], m['sign'], strict=True))
+        assert by_flow['src(b)'] == 1.0  # output to carrier
+        assert by_flow['sink(b)'] == -1.0  # input from carrier
+        assert set(m['carrier'].to_list()) == {'b'}
 
     def test_metadata(self):
         data = ModelData.build(
@@ -83,12 +85,11 @@ class TestCarriersData:
             effects=[Effect(id='cost')],
             ports=[Port(id='src', imports=[Flow(carrier='elec', size=100)])],
         )
-        assert str(data.carriers.unit.sel(carrier='elec').values) == 'kWh'
-        assert str(data.carriers.color.sel(carrier='elec').values) == 'blue'
-        assert str(data.carriers.description.sel(carrier='elec').values) == 'Electricity'
+        assert data.carriers.carriers.filter(pl.col('carrier') == 'elec')['unit'][0] == 'kWh'
+        assert data.carriers.carriers.filter(pl.col('carrier') == 'elec')['color'][0] == 'blue'
+        assert data.carriers.carriers.filter(pl.col('carrier') == 'elec')['description'][0] == 'Electricity'
 
-    def test_from_dataset_roundtrip(self):
-        from fluxopt.model_data import CarriersData
+    def test_from_dataset_roundtrip(self, tmp_path):
 
         data = ModelData.build(
             ts(2),
@@ -96,11 +97,13 @@ class TestCarriersData:
             effects=[Effect(id='cost')],
             ports=[Port(id='src', imports=[Flow(carrier='elec', size=100)])],
         )
-        ds = data.carriers.to_dataset()
-        loaded = CarriersData.from_dataset(ds)
-        assert str(loaded.unit.sel(carrier='elec').values) == 'kWh'
-        assert str(loaded.color.sel(carrier='elec').values) == 'red'
-        assert str(loaded.description.sel(carrier='elec').values) == 'Power'
+        # Frames round-trip through parquet, which carries their schema —
+        # a column with no rows still knows what it holds.
+        out = tmp_path / 'model'
+        data.save(out)
+        loaded = ModelData.load(out)
+        assert loaded.carriers.carriers.equals(data.carriers.carriers)
+        assert loaded.carriers.membership.equals(data.carriers.membership)
 
 
 class TestConvertersTable:
@@ -117,14 +120,12 @@ class TestConvertersTable:
         )
         ds = data.converters
         assert ds is not None
-        fuel_coeff = float(
-            ds.flow_coeff.sel(converter='boiler', eq_idx=0, flow='boiler(gas)', time=data.dims.time[0]).values
-        )
-        heat_coeff = float(
-            ds.flow_coeff.sel(converter='boiler', eq_idx=0, flow='boiler(heat)', time=data.dims.time[0]).values
-        )
-        assert fuel_coeff == 0.9
-        assert heat_coeff == -1.0
+        first = ds.coefficients.filter(pl.col('eq_idx') == 0).group_by('flow').first()
+        by_flow = dict(zip(first['flow'], first['value'], strict=True))
+        assert by_flow['boiler(gas)'] == 0.9
+        assert by_flow['boiler(heat)'] == -1.0
+        # Only the flows the equation names have rows at all
+        assert set(by_flow) == {'boiler(gas)', 'boiler(heat)'}
 
 
 class TestEffectsTable:
@@ -386,7 +387,7 @@ class TestMultiNodeCarrier:
                 ),
             ],
         )
-        carrier_ids = list(data.carriers.unit.coords['carrier'].values)
+        carrier_ids = data.carriers.ids
         assert 'heat:A' in carrier_ids
         assert 'heat:B' in carrier_ids
         assert len(carrier_ids) == 2

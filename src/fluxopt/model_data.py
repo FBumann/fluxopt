@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import dataclasses
 import os
 import warnings
 from dataclasses import dataclass, fields, is_dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, NoReturn, Self, get_args
+from typing import TYPE_CHECKING, Any, NoReturn, Self, get_args
 
 import numpy as np
 import pandas as pd
+import polars as pl
 import xarray as xr
 
 from fluxopt.contract import BoundType, Dim
@@ -170,38 +172,35 @@ def _container_from_dataset[T: DataclassInstance](cls: type[T], ds: xr.Dataset) 
 
 @dataclass
 class SizingData:
-    """Sizing (capacity optimization) arrays for one entity family."""
+    """Sizing (capacity optimization) parameters for one entity family.
 
-    min: xr.DataArray  # (dim,)
-    max: xr.DataArray  # (dim,)
-    mandatory: xr.DataArray  # (dim,)
-    effects_per_size: xr.DataArray  # (dim, effect, period?) — dense, zero where absent
-    effects_fixed: xr.DataArray  # (dim, effect, period?) — dense, zero where absent
+    Two frames rather than five arrays. `bounds` is one row per entity — the
+    scalars a `Sizing` declares — and `effects` is one row per effect an
+    entity actually charges, which is the shape #306 and #311 established for
+    coefficients: the pairs that exist, not the product they sit in.
+    """
+
+    #: (entity, size_min, size_max, mandatory) — one row per sized entity
+    bounds: pl.DataFrame
+    #: (entity, effect[, period], per_size, fixed) — declared pairs only
+    effects: pl.DataFrame
+
+    @property
+    def ids(self) -> list[str]:
+        """The entities this table sizes, in declaration order."""
+        return self.bounds['entity'].to_list()
 
     def __post_init__(self) -> None:
         """Re-check the bounds `Sizing` already refuses, for a reloaded file.
 
         The element layer is where this rule is enforced — there it fires on
-        the value the user wrote, naming the field. Here it fires on an array
-        and has to reconstruct which entity failed, which is only worth doing
-        because a hand-edited netCDF never passed through `Sizing` at all.
+        the value the user wrote, naming the field. A hand-edited netCDF never
+        passed through `Sizing` at all, which is the only reason to say it
+        twice. See docs/design/validation-layers.md.
         """
-        mask = self.min < 0
-        if mask.any():
-            raise ValueError(f'Sizing.size_min < 0 on {list(self.min.coords[self.min.dims[0]][mask].values)}')
-        mask = self.max < self.min
-        if mask.any():
-            dim = self.min.dims[0]
-            raise ValueError(f'Sizing.size_max < size_min on {list(self.min.coords[dim][mask].values)}')
-
-    def to_dataset(self) -> xr.Dataset:
-        """Serialize to xr.Dataset."""
-        return _to_dataset(self)
-
-    @classmethod
-    def from_dataset(cls, ds: xr.Dataset) -> Self:
-        """Deserialize from xr.Dataset."""
-        return _container_from_dataset(cls, ds)
+        bad = self.bounds.filter((pl.col('size_min') < 0) | (pl.col('size_max') < pl.col('size_min')))
+        if len(bad):
+            raise ValueError(f'Sizing bounds are not orderable on {bad["entity"].to_list()}')
 
     @classmethod
     def build(
@@ -211,90 +210,108 @@ class SizingData:
         dim: str,
         period: pd.Index | None = None,
     ) -> Self | None:
-        """Validate Sizing objects and collect into DataArrays, or None if empty.
+        """Collect Sizing objects into frames, or None if there are none.
 
         Args:
             items: Pairs of (element_id, Sizing).
-            effect_ids: Known effect ids for validation.
-            dim: Dimension name for the resulting arrays.
+            effect_ids: Declared effects; unused now that the pairs name their
+                own, kept so every container builds the same way.
+            dim: Historic dimension name; the frame keys on ``entity``.
             period: Period index for period-varying effects.
         """
+        del effect_ids, dim
         if not items:
             return None
 
-        tmpl = _effect_template({'effect': effect_ids}, period)
+        periods = list(range(len(period))) if period is not None else [0]
+        n_periods = len(periods)
 
-        ids: list[str] = []
-        mins: list[float] = []
-        maxs: list[float] = []
-        mandatories: list[bool] = []
-        eps_slices: list[xr.DataArray] = []
-        ef_slices: list[xr.DataArray] = []
-
+        entities: list[str] = []
+        effects: list[str] = []
+        per_size: list[float] = []
+        fixed: list[float] = []
         for item_id, s in items:
-            ids.append(item_id)
-            mins.append(s.size_min)
-            maxs.append(s.size_max)
-            mandatories.append(s.mandatory)
+            for ek in sorted(set(s.effects_per_size) | set(s.effects_fixed)):
+                entities.extend([item_id] * n_periods)
+                effects.extend([ek] * n_periods)
+                per_size.extend(_per_period(s.effects_per_size.get(ek, 0.0), n_periods))
+                fixed.extend(_per_period(s.effects_fixed.get(ek, 0.0), n_periods))
 
-            eps = tmpl.zeros()
-            ef = tmpl.zeros()
-            for ek, ev in s.effects_per_size.items():
-                eps.loc[ek] = as_dataarray(ev, tmpl.as_da_coords)
-            for ek, ev in s.effects_fixed.items():
-                ef.loc[ek] = as_dataarray(ev, tmpl.as_da_coords)
-            eps_slices.append(eps)
-            ef_slices.append(ef)
-
-        coords = {dim: ids}
-        sizing_idx = pd.Index(ids, name=dim)
         return cls(
-            min=xr.DataArray(np.array(mins), dims=[dim], coords=coords),
-            max=xr.DataArray(np.array(maxs), dims=[dim], coords=coords),
-            mandatory=xr.DataArray(np.array(mandatories), dims=[dim], coords=coords),
-            effects_per_size=fast_concat(eps_slices, sizing_idx),
-            effects_fixed=fast_concat(ef_slices, sizing_idx),
+            bounds=pl.DataFrame(
+                {
+                    'entity': [i for i, _ in items],
+                    'size_min': [float(z.size_min) for _, z in items],
+                    'size_max': [float(z.size_max) for _, z in items],
+                    'mandatory': [bool(z.mandatory) for _, z in items],
+                }
+            ),
+            effects=pl.DataFrame(
+                {
+                    'entity': entities,
+                    'effect': effects,
+                    'period': periods * (len(entities) // n_periods),
+                    'per_size': per_size,
+                    'fixed': fixed,
+                },
+                schema={
+                    'entity': pl.String,
+                    'effect': pl.String,
+                    'period': pl.Int64,
+                    'per_size': pl.Float64,
+                    'fixed': pl.Float64,
+                },
+            ),
         )
+
+
+def _per_period(value: Any, n_periods: int) -> list[float]:
+    """A lump coefficient's value in each period.
+
+    A scalar applies to every period; a per-period sequence gives one value
+    each. Built as a list rather than a row per period because the frame is
+    assembled column-wise — a dict per row costs more than the data.
+    """
+    arr = np.atleast_1d(np.asarray(value, dtype=float))
+    return [float(arr[0])] * n_periods if arr.size == 1 else [float(v) for v in arr[:n_periods]]
 
 
 @dataclass
 class InvestmentData:
-    """Investment (build-timing optimization) arrays for one entity family."""
+    """Investment (build-timing optimization) parameters for one entity family.
 
-    min: xr.DataArray  # (invest_dim,)
-    max: xr.DataArray  # (invest_dim,)
-    mandatory: xr.DataArray  # (invest_dim,)
-    lifetime: xr.DataArray  # (invest_dim,) — NaN = forever
-    prior_size: xr.DataArray  # (invest_dim,)
-    effects_per_size_at_build: xr.DataArray  # (invest_dim, effect, period?) — once
-    effects_fixed_at_build: xr.DataArray  # (invest_dim, effect, period?) — once
-    effects_per_size_recurring: xr.DataArray  # (invest_dim, effect, period?)
-    effects_fixed_recurring: xr.DataArray  # (invest_dim, effect, period?)
+    Absence is a missing row, not a sentinel. An entity with no `lifetime`
+    has no row in `lifetime` and is alive forever; a coefficient nobody
+    declared has no row in `effects` and charges nothing. That is the
+    convention frames make available and the one lpspec's language already
+    uses, so the two now agree.
+    """
+
+    #: (entity, size_min, size_max, mandatory, prior_size) — one row each
+    bounds: pl.DataFrame
+    #: (entity, periods) — only those that expire. No row means forever.
+    lifetime: pl.DataFrame
+    #: (entity, effect, period, per_size_at_build, fixed_at_build,
+    #: per_size_recurring, fixed_recurring) — declared pairs only
+    effects: pl.DataFrame
+
+    @property
+    def ids(self) -> list[str]:
+        """The entities this table invests in, in declaration order."""
+        return self.bounds['entity'].to_list()
 
     def __post_init__(self) -> None:
         """Re-check the bounds `Investment` already refuses, for a reloaded file.
 
         A reload guard — see docs/design/validation-layers.md.
         """
-        dim = self.min.dims[0]
-        ids = self.min.coords[dim]
-        if (mask := self.min < 0).any():
-            raise ValueError(f'Investment.size_min < 0 on {list(ids[mask].values)}')
-        if (mask := self.max < self.min).any():
-            raise ValueError(f'Investment.size_max < size_min on {list(ids[mask].values)}')
-        if (mask := self.prior_size < 0).any():
-            raise ValueError(f'Investment.prior_size < 0 on {list(ids[mask].values)}')
-        if (mask := self.lifetime <= 0).any():
-            raise ValueError(f'Investment.lifetime must be positive on {list(ids[mask].values)}')
-
-    def to_dataset(self) -> xr.Dataset:
-        """Serialize to xr.Dataset."""
-        return _to_dataset(self)
-
-    @classmethod
-    def from_dataset(cls, ds: xr.Dataset) -> Self:
-        """Deserialize from xr.Dataset."""
-        return _container_from_dataset(cls, ds)
+        bad = self.bounds.filter(
+            (pl.col('size_min') < 0) | (pl.col('size_max') < pl.col('size_min')) | (pl.col('prior_size') < 0)
+        )
+        if len(bad):
+            raise ValueError(f'Investment bounds are not orderable on {bad["entity"].to_list()}')
+        if len(short := self.lifetime.filter(pl.col('periods') <= 0)):
+            raise ValueError(f'Investment.lifetime must be positive on {short["entity"].to_list()}')
 
     @classmethod
     def build(
@@ -304,63 +321,72 @@ class InvestmentData:
         dim: str,
         period: pd.Index | None = None,
     ) -> Self | None:
-        """Validate Investment objects and collect into DataArrays, or None if empty.
+        """Collect Investment objects into frames, or None if there are none.
 
         Args:
             items: Pairs of (element_id, Investment).
-            effect_ids: Known effect ids for validation.
-            dim: Dimension name for the resulting arrays.
+            effect_ids: Declared effects; the pairs name their own.
+            dim: Historic dimension name; the frames key on ``entity``.
             period: Period index for period-varying effects.
         """
+        del effect_ids, dim
         if not items:
             return None
 
-        tmpl = _effect_template({'effect': effect_ids}, period)
+        periods = list(range(len(period))) if period is not None else [0]
+        n_periods = len(periods)
+        kinds = (
+            ('per_size_at_build', 'effects_per_size_at_build'),
+            ('fixed_at_build', 'effects_fixed_at_build'),
+            ('per_size_recurring', 'effects_per_size_recurring'),
+            ('fixed_recurring', 'effects_fixed_recurring'),
+        )
 
-        ids: list[str] = []
-        mins: list[float] = []
-        maxs: list[float] = []
-        mandatories: list[bool] = []
-        lifetimes: list[float] = []
-        prior_sizes: list[float] = []
-        all_slices: dict[str, list[xr.DataArray]] = {
-            'eps': [],
-            'ef': [],
-            'eps_p': [],
-            'ef_p': [],
-        }
-
+        entities: list[str] = []
+        effects: list[str] = []
+        values: dict[str, list[float]] = {column: [] for column, _ in kinds}
         for item_id, inv in items:
-            ids.append(item_id)
-            mins.append(inv.size_min)
-            maxs.append(inv.size_max)
-            mandatories.append(inv.mandatory)
-            lifetimes.append(float(inv.lifetime) if inv.lifetime is not None else np.nan)
-            prior_sizes.append(inv.prior_size)
+            declared: set[str] = set()
+            for _, field in kinds:
+                declared |= set(getattr(inv, field))
+            for ek in sorted(declared):
+                entities.extend([item_id] * n_periods)
+                effects.extend([ek] * n_periods)
+                for column, field in kinds:
+                    values[column].extend(_per_period(getattr(inv, field).get(ek, 0.0), n_periods))
 
-            for src_dict, dest_key in [
-                (inv.effects_per_size_at_build, 'eps'),
-                (inv.effects_fixed_at_build, 'ef'),
-                (inv.effects_per_size_recurring, 'eps_p'),
-                (inv.effects_fixed_recurring, 'ef_p'),
-            ]:
-                arr = tmpl.zeros()
-                for ek, ev in src_dict.items():
-                    arr.loc[ek] = as_dataarray(ev, tmpl.as_da_coords)
-                all_slices[dest_key].append(arr)
-
-        coords = {dim: ids}
-        invest_idx = pd.Index(ids, name=dim)
+        with_lifetime = [(i, inv) for i, inv in items if inv.lifetime is not None]
         return cls(
-            min=xr.DataArray(np.array(mins), dims=[dim], coords=coords),
-            max=xr.DataArray(np.array(maxs), dims=[dim], coords=coords),
-            mandatory=xr.DataArray(np.array(mandatories), dims=[dim], coords=coords),
-            lifetime=xr.DataArray(np.array(lifetimes), dims=[dim], coords=coords),
-            prior_size=xr.DataArray(np.array(prior_sizes), dims=[dim], coords=coords),
-            effects_per_size_at_build=fast_concat(all_slices['eps'], invest_idx),
-            effects_fixed_at_build=fast_concat(all_slices['ef'], invest_idx),
-            effects_per_size_recurring=fast_concat(all_slices['eps_p'], invest_idx),
-            effects_fixed_recurring=fast_concat(all_slices['ef_p'], invest_idx),
+            bounds=pl.DataFrame(
+                {
+                    'entity': [i for i, _ in items],
+                    'size_min': [float(v.size_min) for _, v in items],
+                    'size_max': [float(v.size_max) for _, v in items],
+                    'mandatory': [bool(v.mandatory) for _, v in items],
+                    'prior_size': [float(v.prior_size) for _, v in items],
+                }
+            ),
+            lifetime=pl.DataFrame(
+                {
+                    'entity': [i for i, _ in with_lifetime],
+                    'periods': [int(v.lifetime) for _, v in with_lifetime],  # type: ignore[arg-type]
+                },
+                schema={'entity': pl.String, 'periods': pl.Int64},
+            ),
+            effects=pl.DataFrame(
+                {
+                    'entity': entities,
+                    'effect': effects,
+                    'period': periods * (len(entities) // n_periods),
+                    **values,
+                },
+                schema={
+                    'entity': pl.String,
+                    'effect': pl.String,
+                    'period': pl.Int64,
+                    **{column: pl.Float64 for column, _ in kinds},
+                },
+            ),
         )
 
 
@@ -572,9 +598,9 @@ class FlowsData:
         flow_ids = self.size.coords['flow'].values
         extra: set[str] = set()
         if self.sizing is not None:
-            extra |= set(map(str, self.sizing.min.coords[self.sizing.min.dims[0]].values))
+            extra |= set(self.sizing.ids)
         if self.invest is not None:
-            extra |= set(map(str, self.invest.min.coords[self.invest.min.dims[0]].values))
+            extra |= set(self.invest.ids)
         sized = self.size.notnull().values | np.isin(flow_ids, list(extra))
 
         for da, label in (
@@ -816,51 +842,36 @@ def _carrier_dim_id(flow: Flow) -> str:
 
 @dataclass
 class CarriersData:
-    """Which carrier each flow balances on, and which way it points.
+    """Which carrier each flow balances on, and what a carrier is called.
 
-    A flow is on exactly one carrier, so this is two columns rather than the
-    ``(carrier, flow)`` matrix it used to be: that matrix held one entry per
-    column and every reader collapsed it straight back, at a cost quadratic in
-    a size that is only ever linear.
+    Two frames because they are two things: `membership` is per flow,
+    `carriers` is per carrier. A flow is on exactly one carrier, so
+    membership is a column rather than the `(carrier, flow)` matrix it used
+    to be.
     """
 
-    carrier_of: xr.DataArray  # (flow,) — the carrier this flow balances on
-    sign: xr.DataArray  # (flow,) — +1 produces into it, -1 consumes from it
-    unit: xr.DataArray  # (carrier,) — energy unit label
-    color: xr.DataArray  # (carrier,) — plot color ('' if unset)
-    description: xr.DataArray  # (carrier,) — human-readable description
+    #: (flow, carrier, sign) — +1 produces into it, -1 consumes from it
+    membership: pl.DataFrame
+    #: (carrier, unit, color, description) — one row per declared carrier
+    carriers: pl.DataFrame
+
+    @property
+    def ids(self) -> list[str]:
+        """The declared carriers, in declaration order."""
+        return self.carriers['carrier'].to_list()
 
     def __post_init__(self) -> None:
         """Check the signs, and that every carrier named is declared.
 
         Layer 3 — see docs/design/validation-layers.md.
         """
-        values = self.sign.values
-        if not np.isin(values, (1.0, -1.0)).all():
-            bad = sorted({float(v) for v in values[~np.isin(values, (1.0, -1.0))]})
-            raise ValueError(f'CarriersData.sign must be +1 or -1; got {bad}')
-        known = {str(c) for c in self.unit.coords['carrier'].values}
-        if unknown := sorted({str(c) for c in self.carrier_of.values} - known):
-            raise ValueError(f'CarriersData.carrier_of names carriers that are not declared: {unknown}')
-
-    def to_dataset(self) -> xr.Dataset:
-        """Serialize to xr.Dataset."""
-        return _to_dataset(self)
-
-    @classmethod
-    def from_dataset(cls, ds: xr.Dataset) -> Self:
-        """Deserialize from xr.Dataset.
-
-        Args:
-            ds: Dataset with ``carrier_of``, ``sign``, ``unit``, ``color``, ``description``.
-        """
-        return cls(
-            carrier_of=ds['carrier_of'],
-            sign=ds['sign'],
-            unit=ds['unit'],
-            color=ds['color'],
-            description=ds['description'],
-        )
+        if len(bad := self.membership.filter(~pl.col('sign').is_in(pl.Series([1.0, -1.0]).implode()))):
+            raise ValueError(f'CarriersData.sign must be +1 or -1; got {bad["sign"].to_list()}')
+        if len(stray := self.membership.filter(~pl.col('carrier').is_in(self.carriers['carrier'].implode()))):
+            raise ValueError(
+                f'CarriersData.membership names carriers that are not declared: '
+                f'{sorted(set(stray["carrier"].to_list()))}'
+            )
 
     @classmethod
     def build(cls, carriers: list[Carrier], flows: list[_BoundFlow], carrier_coeff: dict[str, float]) -> Self:
@@ -873,100 +884,74 @@ class CarriersData:
         """
         from fluxopt.elements import node_id
 
-        flow_ids = [bf.id for bf in flows]
-        # Build carrier dim ids from explicit declarations
-        carrier_ids: list[str] = []
-        for c in carriers:
-            if c.nodes:
-                carrier_ids.extend(node_id(c.id, node) for node in c.nodes)
-            else:
-                carrier_ids.append(c.id)
-
-        of = [_carrier_dim_id(f) for _fid, f, _sign in flows]
-        signs = np.array([carrier_coeff[bf.id] for bf in flows])
-
-        # Expand carrier metadata to match carrier dim (one entry per node)
-        units: list[str] = []
-        colors: list[str] = []
-        descriptions: list[str] = []
-        for c in carriers:
-            n = max(len(c.nodes), 1)
-            units.extend([c.unit] * n)
-            colors.extend([c.color or ''] * n)
-            descriptions.extend([c.description] * n)
+        rows = [
+            (node_id(c.id, node) if node else c.id, c.unit, c.color or '', c.description)
+            for c in carriers
+            for node in c.nodes or [None]
+        ]
 
         return cls(
-            carrier_of=xr.DataArray(of, dims=['flow'], coords={'flow': flow_ids}),
-            sign=xr.DataArray(signs, dims=['flow'], coords={'flow': flow_ids}),
-            unit=xr.DataArray(units, dims=['carrier'], coords={'carrier': carrier_ids}),
-            color=xr.DataArray(colors, dims=['carrier'], coords={'carrier': carrier_ids}),
-            description=xr.DataArray(descriptions, dims=['carrier'], coords={'carrier': carrier_ids}),
+            membership=pl.DataFrame(
+                {
+                    'flow': [bf.id for bf in flows],
+                    'carrier': [_carrier_dim_id(f) for _fid, f, _sign in flows],
+                    'sign': [float(carrier_coeff[bf.id]) for bf in flows],
+                },
+                schema={'flow': pl.String, 'carrier': pl.String, 'sign': pl.Float64},
+            ),
+            carriers=pl.DataFrame(
+                {
+                    'carrier': [r[0] for r in rows],
+                    'unit': [r[1] for r in rows],
+                    'color': [r[2] for r in rows],
+                    'description': [r[3] for r in rows],
+                },
+                schema={'carrier': pl.String, 'unit': pl.String, 'color': pl.String, 'description': pl.String},
+            ),
         )
 
 
 @dataclass
 class ConvertersData:
-    pair_coeff: xr.DataArray  # (pair, eq_idx, time) — non-zero coefficients only
-    pair_converter: xr.DataArray  # (pair,) — converter id per pair
-    pair_flow: xr.DataArray  # (pair,) — flow id per pair
-    #: (converter,) — how many conversion equations each converter states.
-    #: Equations are numbered 0..n-1 per converter, so which (converter, eq_idx)
-    #: pairs are live follows from the count; this used to be that same fact as
-    #: a dense boolean matrix.
-    n_equations: xr.DataArray
+    """Linear conversion equations, as the coefficients they actually have.
+
+    A converter states some equations; each names some of its flows with a
+    coefficient. That is a table, and only the non-zero entries are in it —
+    a flow a given equation does not mention has no row rather than a zero.
+    """
+
+    #: (converter, flow, eq_idx, time, value) — non-zero coefficients only
+    coefficients: pl.DataFrame
+    #: (converter, n_equations) — equations are numbered 0..n-1 per converter
+    equations: pl.DataFrame
+
+    @property
+    def ids(self) -> list[str]:
+        """The converters stating linear equations, in declaration order."""
+        return self.equations['converter'].to_list()
+
+    @property
+    def width(self) -> int:
+        """The most equations any one converter states."""
+        return int(self.equations['n_equations'].max() or 0)  # type: ignore[arg-type]
 
     def __post_init__(self) -> None:
-        """Check the counts are positive and the pairs name converters we carry.
+        """Check the counts are positive and the rows name converters we carry.
 
         Layer 3 — see docs/design/validation-layers.md.
         """
-        counts = self.n_equations.values
-        if counts.dtype.kind not in 'iu' or (counts < 1).any():
-            raise ValueError(f'ConvertersData.n_equations must be positive integers, got {counts.tolist()}')
-        known = set(self.n_equations.coords['converter'].values)
-        if unknown := sorted(set(self.pair_converter.values) - known):
-            raise ValueError(f'ConvertersData.pair_converter references unknown converter(s) {unknown}')
-
-    @property
-    def flow_coeff(self) -> xr.DataArray:
-        """Dense (converter, eq_idx, flow, time) view for inspection."""
-        conv_ids = list(dict.fromkeys(self.pair_converter.values))
-        flow_ids = list(dict.fromkeys(self.pair_flow.values))
-        eq_idx = list(self.pair_coeff.coords['eq_idx'].values)
-        time = self.pair_coeff.coords['time']
-
-        dense = xr.DataArray(
-            np.full((len(conv_ids), len(eq_idx), len(flow_ids), len(time)), np.nan),
-            dims=['converter', 'eq_idx', 'flow', 'time'],
-            coords={'converter': conv_ids, 'eq_idx': eq_idx, 'flow': flow_ids, 'time': time},
-        )
-        for i in range(len(self.pair_converter)):
-            conv_id = str(self.pair_converter.values[i])
-            flow_id = str(self.pair_flow.values[i])
-            dense.loc[conv_id, :, flow_id, :] = self.pair_coeff.isel(pair=i)
-        return dense
-
-    def to_dataset(self) -> xr.Dataset:
-        """Serialize to xr.Dataset."""
-        return _to_dataset(self)
-
-    @classmethod
-    def from_dataset(cls, ds: xr.Dataset) -> Self:
-        """Deserialize from xr.Dataset.
-
-        Args:
-            ds: Dataset with pair-based converter coefficient variables.
-        """
-        return cls(
-            pair_coeff=ds['pair_coeff'],
-            pair_converter=ds['pair_converter'],
-            pair_flow=ds['pair_flow'],
-            n_equations=ds['n_equations'],
-        )
+        if len(short := self.equations.filter(pl.col('n_equations') < 1)):
+            raise ValueError(f'ConvertersData.n_equations must be positive; got {short["n_equations"].to_list()}')
+        stray = self.coefficients.filter(~pl.col('converter').is_in(self.equations['converter'].implode()))
+        if len(stray):
+            raise ValueError(
+                f'ConvertersData.coefficients references unknown converter(s) '
+                f'{sorted(set(stray["converter"].to_list()))}'
+            )
 
     @classmethod
     def build(cls, converters: list[Converter], time: TimeIndex) -> Self | None:
-        """Build ConvertersData with sparse pair-based conversion coefficients.
+        """Build ConvertersData from the equations each converter states.
 
         Only linear converters are included; piecewise converters
         (``conversion is not None``) live in :class:`PiecewiseData`.
@@ -979,38 +964,42 @@ class ConvertersData:
         if not converters:
             return None
 
-        conv_ids = [c.id for c in converters]
-        max_eq = max(len(c.conversion_factors) for c in converters)
-        n_time = len(time)
-        eq_idx_list = list(range(max_eq))
-
-        pairs_conv: list[str] = []
-        pairs_flow: list[str] = []
-        coeff_arrays: list[np.ndarray] = []
-
+        labels = list(time)
+        n_time = len(labels)
+        conv_col: list[str] = []
+        flow_col: list[str] = []
+        eq_col: list[int] = []
+        time_col: list[Any] = []
+        value_col: list[float] = []
         for conv in converters:
             for fid, flow, _sign in conv._qualified_flows():
                 short = flow.short_id
-                eq_coeffs = np.zeros((max_eq, n_time))
                 for eq_i, equation in enumerate(conv.conversion_factors):
-                    if short in equation:
-                        eq_coeffs[eq_i] = as_dataarray(equation[short], {'time': time}).values
-                pairs_conv.append(conv.id)
-                pairs_flow.append(fid)
-                coeff_arrays.append(eq_coeffs)
+                    if short not in equation:
+                        continue
+                    values = np.broadcast_to(as_dataarray(equation[short], {'time': time}).values, (n_time,))
+                    conv_col.extend([conv.id] * n_time)
+                    flow_col.extend([fid] * n_time)
+                    eq_col.extend([eq_i] * n_time)
+                    time_col.extend(labels)
+                    value_col.extend(float(v) for v in values)
 
         return cls(
-            pair_coeff=xr.DataArray(
-                np.array(coeff_arrays),
-                dims=['pair', 'eq_idx', 'time'],
-                coords={'eq_idx': eq_idx_list, 'time': time},
+            coefficients=pl.DataFrame(
+                {
+                    'converter': conv_col,
+                    'flow': flow_col,
+                    'eq_idx': eq_col,
+                    'time': time_col,
+                    'value': value_col,
+                }
             ),
-            pair_converter=xr.DataArray(pairs_conv, dims=['pair']),
-            pair_flow=xr.DataArray(pairs_flow, dims=['pair']),
-            n_equations=xr.DataArray(
-                np.array([len(c.conversion_factors) for c in converters]),
-                dims=['converter'],
-                coords={'converter': conv_ids},
+            equations=pl.DataFrame(
+                {
+                    'converter': [c.id for c in converters],
+                    'n_equations': [len(c.conversion_factors) for c in converters],
+                },
+                schema={'converter': pl.String, 'n_equations': pl.Int64},
             ),
         )
 
@@ -1669,6 +1658,24 @@ _CONTAINER_TYPES: dict[str, type] = {
 }
 
 
+#: Which sub-container each top-level one carries, and of what class. Read by
+#: :meth:`ModelData.load` to rebuild them from their own directories.
+_SUB_CONTAINERS: dict[str, dict[str, Any]] = {
+    'flows': {'sizing': SizingData, 'invest': InvestmentData, 'status': StatusData, 'cstatus': StatusData},
+    'storages': {'sizing': SizingData, 'invest': InvestmentData},
+}
+
+
+def _frames_of(obj: Any) -> dict[str, pl.DataFrame]:
+    """Every polars frame a container holds, by field name.
+
+    Empty for a container still holding arrays, which is how
+    :meth:`ModelData.save` tells the two apart without asking either to
+    declare which it is.
+    """
+    return {f.name: value for f in dataclasses.fields(obj) if isinstance(value := getattr(obj, f.name), pl.DataFrame)}
+
+
 def _table_containers(obj: DataclassInstance) -> dict[str, Any]:
     """Nested container fields of a table object that are present (not None)."""
     return {
@@ -1746,11 +1753,11 @@ class ModelData:
         def coord_ids(da: xr.DataArray) -> list[str]:
             return [str(v) for v in da.coords[da.dims[0]].values]
 
-        check_flows([str(v) for v in self.carriers.carrier_of.coords['flow'].values], 'carriers.carrier_of')
+        check_flows(self.carriers.membership['flow'].to_list(), 'carriers.membership')
         if self.flows.sizing is not None:
-            check_flows(coord_ids(self.flows.sizing.min), 'flows.sizing')
+            check_flows(self.flows.sizing.ids, 'flows.sizing')
         if self.flows.invest is not None:
-            check_flows(coord_ids(self.flows.invest.min), 'flows.invest')
+            check_flows(self.flows.invest.ids, 'flows.invest')
         if self.flows.status is not None:
             check_flows(coord_ids(self.flows.status.uptime_min), 'flows.status')
         if self.flows.governed_by is not None:
@@ -1763,7 +1770,7 @@ class ModelData:
             if unknown := sorted(named - components):
                 raise ValueError(f'flows.governed_by names components without a Status: {unknown}')
         if self.converters is not None:
-            check_flows([str(v) for v in self.converters.pair_flow.values], 'converters.pair_flow')
+            check_flows(self.converters.coefficients['flow'].to_list(), 'converters.coefficients')
         if self.piecewise is not None:
             check_flows([str(v) for v in self.piecewise.pair_flow.values], 'piecewise.pair_flow')
         if self.storages is not None:
@@ -1774,7 +1781,10 @@ class ModelData:
                 (self.storages.sizing, 'storages.sizing'),
                 (self.storages.invest, 'storages.invest'),
             ):
-                if container is not None and (unknown := sorted(set(coord_ids(container.min)) - storage_ids)):
+                if container is None:
+                    continue
+                ids = container.ids
+                if unknown := sorted(set(ids) - storage_ids):
                     raise ValueError(f'{what} references unknown storage id(s) {unknown}')
 
         effect_ids = set(map(str, self.effects.total_min.coords['effect'].values))
@@ -1785,81 +1795,92 @@ class ModelData:
                 f'the effects table {sorted(effect_ids)}'
             )
 
-    def to_netcdf(self, path: str | Path, *, mode: Literal['w', 'a'] = 'a') -> None:
-        """Write model data as NetCDF groups under ``/model/``.
+    def save(self, path: str | Path) -> None:
+        """Write the model data as a directory of tables.
+
+        One parquet file per frame, one netCDF file per container still
+        holding arrays. Parquet because these *are* tables: it carries the
+        schema, so a column with no rows still knows it holds strings, and a
+        timestamp survives without anyone deciding what unit its integers
+        meant.
 
         Args:
-            path: Output file path.
-            mode: Write mode ('w' to overwrite, 'a' to append).
+            path: Directory to write into. Created if absent.
         """
-        p = Path(path)
-        dataset_fields: dict[
-            str,
-            FlowsData | CarriersData | ConvertersData | EffectsData | StoragesData | PiecewiseData | None,
-        ] = {
+        root = Path(path)
+        root.mkdir(parents=True, exist_ok=True)
+        for name, obj in self._containers().items():
+            if obj is None:
+                continue
+            group = root / name
+            group.mkdir(exist_ok=True)
+            frames = _frames_of(obj)
+            for frame_name, frame in frames.items():
+                frame.write_parquet(group / f'{frame_name}.parquet')
+            if not frames:
+                obj.to_dataset().to_netcdf(group / 'arrays.nc', engine='netcdf4')
+            for cname, sub in _table_containers(obj).items():
+                sub_group = group / cname
+                sub_group.mkdir(exist_ok=True)
+                sub_frames = _frames_of(sub)
+                for frame_name, frame in sub_frames.items():
+                    frame.write_parquet(sub_group / f'{frame_name}.parquet')
+                if not sub_frames:
+                    sub.to_dataset().to_netcdf(sub_group / 'arrays.nc', engine='netcdf4')
+
+    @classmethod
+    def load(cls, path: str | Path) -> ModelData:
+        """Read model data written by :meth:`save`.
+
+        Args:
+            path: The directory :meth:`save` wrote.
+
+        Raises:
+            OSError: If the directory holds no fluxopt model data.
+        """
+        root = Path(path)
+        if not (root / 'dims').is_dir():
+            raise OSError(f'No fluxopt model data found in {root} (missing dims/)')
+
+        def read(name: str, klass: Any, subs: dict[str, Any] | None = None) -> Any:
+            group = root / name
+            if not group.is_dir():
+                return None
+            frames = {f.stem: pl.read_parquet(f) for f in sorted(group.glob('*.parquet'))}
+            if frames:
+                return klass(**frames, **(subs or {}))
+            ds = xr.load_dataset(group / 'arrays.nc', engine='netcdf4')
+            return klass.from_dataset(ds, subs) if subs is not None else klass.from_dataset(ds)
+
+        def read_subs(name: str, klass: Any) -> dict[str, Any]:
+            out: dict[str, Any] = {}
+            for field, sub_class in _SUB_CONTAINERS.get(name, {}).items():
+                sub = read(f'{name}/{field}', sub_class)
+                if sub is not None:
+                    out[field] = sub
+            return out
+
+        return cls(
+            flows=read('flows', FlowsData, read_subs('flows', FlowsData)),
+            carriers=read('carriers', CarriersData),
+            converters=read('converters', ConvertersData),
+            effects=read('effects', EffectsData),
+            storages=read('storages', StoragesData, read_subs('storages', StoragesData)),
+            dims=read('dims', Dims),
+            piecewise=read('piecewise', PiecewiseData),
+        )
+
+    def _containers(self) -> dict[str, Any]:
+        """Every top-level container, by the name its directory takes."""
+        return {
             'flows': self.flows,
             'carriers': self.carriers,
             'converters': self.converters,
             'effects': self.effects,
             'storages': self.storages,
             'piecewise': self.piecewise,
+            'dims': self.dims,
         }
-        current_mode = mode
-        for name, obj in dataset_fields.items():
-            if obj is not None:
-                obj.to_dataset().to_netcdf(p, mode=current_mode, group=_NC_GROUPS[name], engine='netcdf4')
-                current_mode = 'a'
-                for cname, container in _table_containers(obj).items():
-                    container.to_dataset().to_netcdf(p, mode='a', group=f'{_NC_GROUPS[name]}/{cname}', engine='netcdf4')
-        self.dims.to_dataset().to_netcdf(p, mode=current_mode, group='model/meta', engine='netcdf4')
-
-    @classmethod
-    def from_netcdf(cls, path: str | Path) -> ModelData:
-        """Read model data from NetCDF groups.
-
-        Args:
-            path: Input file path.
-
-        Raises:
-            OSError: If no model data groups found in the file.
-            ValueError: On Windows when reading a non-ASCII path (netcdf4 limitation).
-        """
-        p = Path(path)
-        try:
-            present = _nc_group_paths(p)
-        except OSError as e:
-            _raise_netcdf_read_error(p, e)
-        if 'model/meta' not in present:
-            raise OSError(f'No fluxopt model data found in {p} (missing model/meta group)')
-        meta = xr.load_dataset(p, group='model/meta', engine='netcdf4')
-
-        datasets: dict[str, xr.Dataset] = {
-            name: xr.load_dataset(p, group=group, engine='netcdf4') if group in present else xr.Dataset()
-            for name, group in _NC_GROUPS.items()
-        }
-
-        flows = FlowsData.from_dataset(datasets['flows'], _load_containers(p, _NC_GROUPS['flows'], FlowsData, present))
-        carriers = CarriersData.from_dataset(datasets['carriers'])
-        converters = ConvertersData.from_dataset(datasets['converters']) if datasets['converters'].data_vars else None
-        effects = EffectsData.from_dataset(datasets['effects'])
-        storages = (
-            StoragesData.from_dataset(
-                datasets['storages'], _load_containers(p, _NC_GROUPS['storages'], StoragesData, present)
-            )
-            if datasets['storages'].data_vars
-            else None
-        )
-        piecewise = PiecewiseData.from_dataset(datasets['piecewise']) if datasets['piecewise'].data_vars else None
-
-        return cls(
-            flows=flows,
-            carriers=carriers,
-            converters=converters,
-            effects=effects,
-            storages=storages,
-            dims=Dims.from_dataset(meta),
-            piecewise=piecewise,
-        )
 
     @classmethod
     def build(

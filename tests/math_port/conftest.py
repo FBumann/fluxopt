@@ -54,14 +54,14 @@ def optimize(request, tmp_path):
                 period_weights=kwargs.get('period_weights'),
             )
             path = tmp_path / 'data.nc'
-            data.to_netcdf(path, mode='w')
-            loaded = ModelData.from_netcdf(path)
+            data.save(path)
+            loaded = ModelData.load(path)
             return solve(loaded, objective)
         # optimize->save->reload->validate
         result = fluxopt_optimize(**kwargs, objective=objective)
         path = tmp_path / 'result.nc'
-        result.to_netcdf(path)
-        loaded = Result.from_netcdf(path)
+        result.save(path)
+        loaded = Result.load(path)
         _ = loaded.stats.effect_contributions  # validate contributions survive IO roundtrip
         return loaded
 

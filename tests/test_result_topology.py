@@ -92,12 +92,12 @@ class TestDuals:
         result = _solve_with_converter()
         assert isinstance(result.duals, xr.Dataset)
 
-    def test_duals_from_netcdf_is_empty(self, tmp_path: object) -> None:
+    def test_duals_are_empty_after_a_roundtrip(self, tmp_path: object) -> None:
         """Duals loaded from NetCDF default to empty Dataset."""
         from pathlib import Path
 
-        nc = Path(str(tmp_path)) / 'result.nc'
+        nc = Path(str(tmp_path)) / 'result'
         result = _solve_with_converter()
-        result.to_netcdf(nc)
-        loaded = Result.from_netcdf(nc)
+        result.save(nc)
+        loaded = Result.load(nc)
         assert isinstance(loaded.duals, xr.Dataset)

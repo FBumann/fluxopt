@@ -105,5 +105,5 @@ class TestEditingTheMath:
         assert result.expression('grid_energy').values == pytest.approx([100.0] * 3, abs=1e-6)
 
         path = tmp_path / 'result.nc'
-        result.to_netcdf(path)
-        assert Result.from_netcdf(path).expression('grid_energy').values == pytest.approx([100.0] * 3, abs=1e-6)
+        result.save(path)
+        assert Result.load(path).expression('grid_energy').values == pytest.approx([100.0] * 3, abs=1e-6)
