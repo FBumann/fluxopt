@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import numpy as np
 import polars as pl
 import pytest
 import xarray as xr
@@ -10,7 +9,6 @@ from pydantic import ValidationError
 from fluxopt import (
     Carrier,
     Converter,
-    Dims,
     Effect,
     Flow,
     FlowSystem,
@@ -391,23 +389,6 @@ class TestMultiNodeCarrier:
         assert 'heat:A' in carrier_ids
         assert 'heat:B' in carrier_ids
         assert len(carrier_ids) == 2
-
-
-class TestDimsValidation:
-    def test_mismatched_dim_raises(self):
-        """Dims rejects arrays that are not 1D with dims=('time',)."""
-        time = xr.DataArray([0, 1], dims=['time'], coords={'time': [0, 1]})
-        bad_dt = xr.DataArray([1.0, 1.0], dims=['other'])
-        with pytest.raises(ValueError, match='must be 1D'):
-            Dims(time=time, dt=bad_dt, weights=time)
-
-    def test_mismatched_coords_raises(self):
-        """Dims rejects arrays with different time coordinates."""
-        time = xr.DataArray([0, 1], dims=['time'], coords={'time': [0, 1]})
-        dt = xr.DataArray([1.0, 1.0], dims=['time'], coords={'time': [0, 1]})
-        bad_weights = xr.DataArray(np.ones(3), dims=['time'], coords={'time': [0, 1, 2]})
-        with pytest.raises(ValueError, match='does not match'):
-            Dims(time=time, dt=dt, weights=bad_weights)
 
 
 class TestContributionsAreDeclared:

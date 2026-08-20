@@ -119,7 +119,7 @@ def _undo_cross_effects(
     rather than another inversion — so the two views cannot disagree about
     anything but floating point.
     """
-    periods = list(data.dims.period.values) if data.dims.period is not None else None
+    periods = data.dims.periods['label'].to_list() if data.dims.has_periods else None
     cf = data.effects.cf_matrix(periods)
     if cf is None:
         return temporal, lump

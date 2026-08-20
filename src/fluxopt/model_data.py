@@ -1624,23 +1624,82 @@ def _compute_period_weights(
 
 @dataclass
 class Dims:
-    """Shared model coordinates and temporal metadata.
+    """The model's temporal axes: what a timestep is, and what a period is.
 
-    Owns the time and period dimensions, timestep durations, and weights.
+    Two tables, indexed by position like every other container. The labels
+    the user gave ride along as a column, because they are what a result is
+    reported against and nothing else keys on them.
+
+    Absence is a missing table: a system with no investment periods has an
+    empty `periods`, which is what `has_periods` reads.
     """
 
-    time: xr.DataArray  # (time,) — coordinate labels
-    dt: xr.DataArray  # (time,) — timestep durations [h]
-    weights: xr.DataArray  # (time,) — timestep weights
-    period: xr.DataArray | None = None  # (period,) — coordinate labels
-    period_weights: xr.DataArray | None = None  # (period,) — duration weights
+    #: (time, label, dt, weight) — one row per timestep, in order
+    timesteps: pl.DataFrame
+    #: (period, label, weight) — one row per investment period, in order.
+    #: Empty when the system declares no period axis.
+    periods: pl.DataFrame
 
-    def __post_init__(self) -> None:
-        for name, arr in [('dt', self.dt), ('weights', self.weights)]:
-            if arr.dims != ('time',):
-                raise ValueError(f"Dims.{name} must be 1D with dims=('time',), got {arr.dims}")
-            if not arr.coords['time'].equals(self.time):
-                raise ValueError(f'Dims.{name} time coordinate does not match Dims.time')
+    @property
+    def has_periods(self) -> bool:
+        """Whether the system declares an investment period axis."""
+        return not self.periods.is_empty()
+
+    @property
+    def n_time(self) -> int:
+        """How many timesteps the horizon has."""
+        return len(self.timesteps)
+
+    @property
+    def n_periods(self) -> int:
+        """How many periods the program indexes — one, when none are declared."""
+        return len(self.periods) or 1
+
+    @property
+    def period_labels(self) -> list[Any]:
+        """The period labels, or ``[0]`` when the system declares no periods."""
+        return self.periods['label'].to_list() if self.has_periods else [0]
+
+    # The xarray views. A result is an xarray, so the readers that weigh one
+    # against a duration want these as coordinates rather than as columns;
+    # everything upstream of a solve reads the frames.
+    @property
+    def time(self) -> xr.DataArray:
+        """Timestep labels as a coordinate."""
+        labels = self.timesteps['label'].to_numpy()
+        return xr.DataArray(labels, dims=['time'], coords={'time': labels}, name='time')
+
+    @property
+    def dt(self) -> xr.DataArray:
+        """Timestep durations [h] as a time-indexed array."""
+        return self._on_time('dt')
+
+    @property
+    def weights(self) -> xr.DataArray:
+        """Timestep weights as a time-indexed array."""
+        return self._on_time('weight')
+
+    @property
+    def period(self) -> xr.DataArray | None:
+        """Period labels as a coordinate, or None when there is no period axis."""
+        return self._on_period('label')
+
+    @property
+    def period_weights(self) -> xr.DataArray | None:
+        """Period duration weights, or None when there is no period axis."""
+        return self._on_period('weight')
+
+    def _on_time(self, column: str) -> xr.DataArray:
+        """One timestep column as an array indexed by the time labels."""
+        labels = self.timesteps['label'].to_numpy()
+        return xr.DataArray(self.timesteps[column].to_numpy(), dims=['time'], coords={'time': labels}, name=column)
+
+    def _on_period(self, column: str) -> xr.DataArray | None:
+        """One period column as an array indexed by the period labels, if any."""
+        if not self.has_periods:
+            return None
+        labels = self.periods['label'].to_numpy()
+        return xr.DataArray(self.periods[column].to_numpy(), dims=['period'], coords={'period': labels}, name=column)
 
     def coords(self, *, time: bool = False, period: bool = False) -> dict[str, xr.DataArray]:
         """Return shared coordinates for variable/DataArray creation.
@@ -1659,35 +1718,9 @@ class Dims:
         result: dict[str, xr.DataArray] = {}
         if time:
             result['time'] = self.time
-        if period and self.period is not None:
-            result['period'] = self.period
+        if period and (periods := self.period) is not None:
+            result['period'] = periods
         return result
-
-    def to_dataset(self) -> xr.Dataset:
-        """Serialize to xr.Dataset."""
-        data_vars: dict[str, xr.DataArray] = {'dt': self.dt, 'weights': self.weights}
-        if self.period is not None:
-            data_vars['period'] = self.period
-        if self.period_weights is not None:
-            data_vars['period_weights'] = self.period_weights
-        return xr.Dataset(data_vars)
-
-    @classmethod
-    def from_dataset(cls, ds: xr.Dataset) -> Self:
-        """Deserialize from xr.Dataset.
-
-        Args:
-            ds: Dataset with dt, weights, and optional period fields.
-        """
-        dt = ds['dt']
-        time_idx = dt.coords['time']
-        return cls(
-            time=time_idx,
-            dt=dt,
-            weights=ds['weights'],
-            period=ds.get('period', None),
-            period_weights=ds.get('period_weights', None),
-        )
 
     @classmethod
     def build(
@@ -1705,22 +1738,31 @@ class Dims:
             periods: Integer period labels for multi-period optimization.
             period_weights: Explicit weights per period. Inferred from gaps if None.
         """
-        time_coord = xr.DataArray(time, dims=['time'], coords={'time': time})
-        weights = xr.DataArray(np.ones(len(time)), dims=['time'], coords={'time': time}, name='weight')
-
-        period_da: xr.DataArray | None = None
-        period_weights_da: xr.DataArray | None = None
-        if periods is not None:
-            period_idx, period_weights_da = _compute_period_weights(periods, period_weights)
-            period_da = xr.DataArray(period_idx.values, dims=['period'], coords={'period': period_idx})
-
-        return cls(
-            time=time_coord,
-            dt=dt,
-            weights=weights,
-            period=period_da,
-            period_weights=period_weights_da,
+        labels = np.asarray(time)
+        timesteps = pl.DataFrame(
+            {
+                'time': np.arange(len(labels)),
+                'label': labels,
+                'dt': np.asarray(dt.values, dtype=float),
+                'weight': np.ones(len(labels)),
+            }
         )
+        if periods is None:
+            period_table = pl.DataFrame(
+                {'period': [], 'label': [], 'weight': []},
+                schema={'period': pl.Int64, 'label': pl.Int64, 'weight': pl.Float64},
+            )
+        else:
+            period_idx, weights = _compute_period_weights(periods, period_weights)
+            period_table = pl.DataFrame(
+                {
+                    'period': np.arange(len(period_idx)),
+                    'label': period_idx.values,
+                    'weight': np.asarray(weights.values, dtype=float),
+                },
+                schema={'period': pl.Int64, 'label': pl.Int64, 'weight': pl.Float64},
+            )
+        return cls(timesteps=timesteps, periods=period_table)
 
 
 _CONTAINER_TYPES: dict[str, type] = {
@@ -1995,8 +2037,9 @@ class ModelData:
         # Scalar dt for prior duration computation. Pre-horizon steps have no
         # dt of their own, so the first timestep's duration stands in; on a
         # non-uniform grid that is an assumption the user should know about.
-        dt_scalar = float(dims.dt.values[0])
-        if any(bf.flow.prior_rates is not None for bf in flows) and not np.allclose(dims.dt.values, dt_scalar):
+        durations = dims.timesteps['dt'].to_numpy()
+        dt_scalar = float(durations[0])
+        if any(bf.flow.prior_rates is not None for bf in flows) and not np.allclose(durations, dt_scalar):
             warnings.warn(
                 f'prior_rates with non-uniform dt: pre-horizon status durations assume the first '
                 f'timestep duration ({dt_scalar} h) for every prior step. If your prior steps had '
@@ -2004,7 +2047,7 @@ class ModelData:
                 UserWarning,
                 stacklevel=2,
             )
-        period_idx = pd.Index(dims.period.values) if dims.period is not None else None
+        period_idx = pd.Index(dims.periods['label'].to_list()) if dims.has_periods else None
 
         comp_status_items: list[tuple[str, Status, list[str]]] = [
             (s.id, s.status, [s._charging_id, s._discharging_id]) for s in stor_list if s.status is not None
