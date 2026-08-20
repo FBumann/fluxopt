@@ -434,6 +434,11 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
     )
     for key in ('rate_min', 'rate_max'):
         sources[key] = bounds.select(['flow', 'time', 'period', pl.col(key).alias('value')])
+    # The big-M for every binary that has to release a rate — a ramp across a
+    # start-up, a storage's charge/discharge exclusion. Stated once on `flow`;
+    # the storage side reads it through `charge_storage` rather than keeping a
+    # copy on its own axis.
+    sources['size_bound'] = pd.DataFrame({'flow': flow_ids, 'value': [size_upper_of[f] for f in flow_ids]})
 
     # --- carrier balance --------------------------------------------------
     membership = data.carriers.membership
@@ -468,34 +473,21 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
     if data.storages is not None:
         sds = data.storages
         storage_ids = sds.ids
-        charge = sds.storages['charge_flow'].to_list()
-        discharge = sds.storages['discharge_flow'].to_list()
-        chg_of = dict(zip(charge, storage_ids, strict=True))
-        dis_of = dict(zip(discharge, storage_ids, strict=True))
-        flow_index['charge_storage'] = [chg_of.get(f) for f in flow_ids]
-        flow_index['discharge_storage'] = [dis_of.get(f) for f in flow_ids]
+        for lookup, column in (('charge_storage', 'charge_flow'), ('discharge_storage', 'discharge_flow')):
+            of_flow = dict(zip(sds.storages[column], storage_ids, strict=True))
+            flow_index[lookup] = [of_flow.get(f) for f in flow_ids]
 
         # One join carries every per-timestep storage parameter, since they
         # all live on the same (storage, time) rows.
         profiles = _with_time_ordinals(sds.profiles, dims).join(dt_by_time, on='time')
-
-        def on_flow(frame: pl.DataFrame, column: str, of_storage: dict[str, str]) -> pl.DataFrame:
-            """A per-storage coefficient read on the flow that carries it."""
-            renamed = {s: f for f, s in of_storage.items()}
-            return (
-                frame.select([pl.col('storage').replace_strict(renamed).alias('flow'), 'time', pl.col(column)])
-                .rename({column: 'value'})
-                .filter(pl.col('value') != 0)
-            )
 
         gains = profiles.with_columns(
             (pl.col('eta_charge') * pl.col('dt')).alias('charge_gain'),
             (pl.col('dt') / pl.col('eta_discharge')).alias('discharge_draw'),
             ((1 - pl.col('loss')) ** pl.col('dt')).alias('retention'),
         )
-        sources['charge_gain'] = on_flow(gains, 'charge_gain', chg_of)
-        sources['discharge_draw'] = on_flow(gains, 'discharge_draw', dis_of)
-        sources['retention'] = gains.select(['storage', 'time', pl.col('retention').alias('value')])
+        for key in ('charge_gain', 'discharge_draw', 'retention'):
+            sources[key] = gains.select(['storage', 'time', pl.col(key).alias('value')])
 
         # An absent capacity row is a storage whose capacity is a variable, so
         # its absolute level bounds are not knowable here: 0 and infinity are
@@ -539,8 +531,6 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         )
         for key in ('final_level_min', 'final_level_max'):
             sources[key] = sds.levels.select(['storage', pl.col(key).alias('value')]).drop_nulls()
-        for key, flows in (('charge_size_bound', charge), ('discharge_size_bound', discharge)):
-            sources[key] = pd.DataFrame({'storage': storage_ids, 'value': [size_upper_of[f] for f in flows]})
     else:
         flow_index['charge_storage'] = None
         flow_index['discharge_storage'] = None
@@ -550,13 +540,11 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
             ('final_level_min', ['storage']),
             ('final_level_max', ['storage']),
             ('prevent_simultaneous', ['storage']),
-            ('charge_size_bound', ['storage']),
-            ('discharge_size_bound', ['storage']),
         ):
             sources[name] = pd.DataFrame({c: [] for c in [*dcols, 'value']})
         for name, dcols in (
-            ('charge_gain', ['flow', 'time']),
-            ('discharge_draw', ['flow', 'time']),
+            ('charge_gain', ['storage', 'time']),
+            ('discharge_draw', ['storage', 'time']),
             ('retention', ['storage', 'time']),
             ('level_min', ['storage', 'time']),
             ('level_max', ['storage', 'time']),
@@ -771,10 +759,6 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         sized = pl.col('flow').is_in(pl.Series(sizing_ids, dtype=pl.String).implode())
         sources[f'ramp_{kind}_coeff'] = _live(declared.filter(sized), allowance)
         sources[f'ramp_{kind}_limit'] = _live(declared.filter(~sized), allowance * pl.col('size'))
-    sources['ramp_bigM'] = pd.DataFrame(
-        {'flow': flow_ids, 'value': [size_upper_of[f] for f in flow_ids]},
-    )
-
     # --- investment -------------------------------------------------------
     if inv is not None:
         period_labels_inv: list[Any] = dims.periods['label'].to_list()
