@@ -63,7 +63,7 @@ def objective_weights(data: ModelData, objective: str | dict[str, float]) -> dic
     from fluxopt.elements import PENALTY_EFFECT_ID
 
     weights = {objective: 1.0} if isinstance(objective, str) else {k: float(v) for k, v in objective.items()}
-    effect_ids = {str(e) for e in data.effects.total_min.coords['effect'].values}
+    effect_ids = set(data.effects.ids)
     if PENALTY_EFFECT_ID not in weights and PENALTY_EFFECT_ID in effect_ids:
         weights[PENALTY_EFFECT_ID] = 1.0
     return weights
@@ -80,7 +80,7 @@ def _entity_order(data: ModelData) -> dict[str, list[str]]:
     """
     order = {
         'flow': [str(f) for f in data.flows.size.coords['flow'].values],
-        'effect': [str(e) for e in data.effects.total_min.coords['effect'].values],
+        'effect': data.effects.ids,
     }
     if data.storages is not None:
         order['storage'] = [str(s) for s in data.storages.capacity.coords['storage'].values]

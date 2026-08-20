@@ -52,11 +52,7 @@ PERIOD_PARAMS = frozenset(
         'ramp_up_coeff',
         'ramp_down_coeff',
         'effects_per_flow_hour',
-        'objective_weight',
         'prior_level',
-        'periodic_min',
-        'periodic_max',
-        'period_weight',
         'pw_avail_bound',
         'flow_hours_min',
         'flow_hours_max',
@@ -820,11 +816,11 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
 
     # --- effects: the sparse one -----------------------------------------
     eds = data.effects
-    effect_ids = [str(e) for e in eds.total_min.coords['effect'].values]
+    effect_ids = eds.ids
     # dt stays: a per-flow-hour rate times a duration is the step's energy.
     # The aggregation weight does not — the program applies it in the sum,
     # so a named contribution reads as the physical per-step quantity.
-    cf = eds.cf_matrix()
+    cf = eds.cf_matrix(dims.period.values.tolist() if dims.period is not None else None)
     leo = leontief(cf) if cf is not None else None
     sources['effects_per_flow_hour'] = _flow_hour_coefficients(fds, dims, leo, tidy)
     for name, arr in ec_extra:
@@ -857,32 +853,43 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         sources.setdefault(name, _empty(name, 'flow', 'effect', 'period', 'build_period'))
     for name in ('effects_per_size_recurring', 'effects_fixed_recurring'):
         sources.setdefault(name, _empty(name, 'flow', 'effect', 'period'))
-    # Objective weight x period weight, folded into one parameter.
-    obj_w = xr.DataArray(
-        [float(objective.get(e, 0.0)) for e in effect_ids],
-        dims=['effect'],
-        coords={'effect': effect_ids},
+    # Objective weight x period weight, folded into one parameter. Both are
+    # per (effect, period), so the fold is a join and the defaults are what a
+    # missing row means: no override, then no global weight, then 1.
+    global_weights = (
+        pl.DataFrame({'period': list(range(len(dims.period_weights))), 'global_weight': dims.period_weights.values})
+        if dims.period_weights is not None
+        else pl.DataFrame({'period': [], 'global_weight': []}, schema={'period': pl.Int64, 'global_weight': pl.Float64})
     )
-    pw = eds.period_weights
-    if pw is not None and dims.period_weights is not None:
-        pw = pw.fillna(dims.period_weights)
-    elif dims.period_weights is not None:
-        pw = dims.period_weights
-    sources['objective_weight'] = _tidy(obj_w if pw is None else obj_w * pw, drop_zero=True)
+    period_axis = list(range(len(dims.period.values) if dims.period is not None else 1))
+    grid = (
+        pl.DataFrame({'effect': effect_ids}, schema={'effect': pl.String})
+        .join(pl.DataFrame({'period': period_axis}, schema={'period': pl.Int64}), how='cross')
+        .join(eds.period_weights, on=['effect', 'period'], how='left')
+        .join(global_weights, on='period', how='left')
+        .with_columns(pl.col('weight').fill_null(pl.col('global_weight')).fill_null(1.0).alias('weight'))
+    )
+    objective_by_effect = pl.DataFrame(
+        {'effect': effect_ids, 'objective': [float(objective.get(e, 0.0)) for e in effect_ids]},
+        schema={'effect': pl.String, 'objective': pl.Float64},
+    )
+    sources['objective_weight'] = (
+        grid.join(objective_by_effect, on='effect')
+        .with_columns((pl.col('objective') * pl.col('weight')).alias('value'))
+        .filter(pl.col('value') != 0)
+        .select(['effect', 'period', 'value'])
+    )
+    # Weights for the across-period sum: per-effect override, else global, else 1.
+    sources['period_weight'] = grid.select(['effect', 'period', pl.col('weight').alias('value')])
 
     # --- effect limits ----------------------------------------------------
-    for key, arr in (
-        ('periodic_min', eds.periodic_min),
-        ('periodic_max', eds.periodic_max),
-        ('total_min', eds.total_min),
-        ('total_max', eds.total_max),
+    for key, frame, axes in (
+        ('periodic_min', eds.periodic, ['effect', 'period']),
+        ('periodic_max', eds.periodic, ['effect', 'period']),
+        ('total_min', eds.totals, ['effect']),
+        ('total_max', eds.totals, ['effect']),
     ):
-        live = arr.notnull()
-        sources[key] = _tidy(arr.where(live), drop_zero=False)
-    # Weights for the across-period sum: per-effect override, else global, else 1.
-    ones = xr.ones_like(obj_w)
-    tw = ones if pw is None else ones * pw
-    sources['period_weight'] = _tidy(tw, drop_zero=True)
+        sources[key] = frame.filter(pl.col(key).is_not_null()).select([*axes, pl.col(key).alias('value')])
 
     # --- temporal boundary mask ------------------------------------------
     sources['is_first'] = pd.DataFrame({'time': ordinals, 'value': [i == 0 for i in ordinals]})

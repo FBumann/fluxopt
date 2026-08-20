@@ -234,8 +234,10 @@ class SizingData:
             for ek in sorted(set(s.effects_per_size) | set(s.effects_fixed)):
                 entities.extend([item_id] * n_periods)
                 effects.extend([ek] * n_periods)
-                per_size.extend(_per_period(s.effects_per_size.get(ek, 0.0), n_periods))
-                fixed.extend(_per_period(s.effects_fixed.get(ek, 0.0), n_periods))
+                per_size.extend(
+                    _per_period(s.effects_per_size.get(ek, 0.0), n_periods, f'{item_id!r} effects_per_size[{ek!r}]')
+                )
+                fixed.extend(_per_period(s.effects_fixed.get(ek, 0.0), n_periods, f'{item_id!r} effects_fixed[{ek!r}]'))
 
         return cls(
             bounds=pl.DataFrame(
@@ -265,15 +267,34 @@ class SizingData:
         )
 
 
-def _per_period(value: Any, n_periods: int) -> list[float]:
-    """A lump coefficient's value in each period.
+def _over_periods(value: Any, n_periods: int, what: str) -> np.ndarray:
+    """A per-period value as an array, refusing a length the period axis cannot hold.
 
-    A scalar applies to every period; a per-period sequence gives one value
-    each. Built as a list rather than a row per period because the frame is
-    assembled column-wise — a dict per row costs more than the data.
+    A scalar broadcasts to every period, and a sequence has to name each one.
+    Any other length was written against a different number of periods than
+    the system has; truncating it — which is what indexing quietly does —
+    would drop values the user gave and solve a different problem.
+
+    The element layer cannot decide this: how many periods exist is a property
+    of the system, not of the element carrying the sequence.
     """
     arr = np.atleast_1d(np.asarray(value, dtype=float))
-    return [float(arr[0])] * n_periods if arr.size == 1 else [float(v) for v in arr[:n_periods]]
+    if arr.size not in (1, n_periods):
+        raise ValueError(
+            f'{what} has {arr.size} values but the system has {n_periods} period(s). '
+            'Give one value per period, or a single value for all of them.'
+        )
+    return arr
+
+
+def _per_period(value: Any, n_periods: int, what: str) -> list[float]:
+    """A lump coefficient's value in each period.
+
+    Built as a list rather than a row per period because the frame is
+    assembled column-wise — a dict per row costs more than the data.
+    """
+    arr = _over_periods(value, n_periods, what)
+    return [float(arr[0])] * n_periods if arr.size == 1 else [float(v) for v in arr]
 
 
 @dataclass
@@ -353,7 +374,9 @@ class InvestmentData:
                 entities.extend([item_id] * n_periods)
                 effects.extend([ek] * n_periods)
                 for column, field in kinds:
-                    values[column].extend(_per_period(getattr(inv, field).get(ek, 0.0), n_periods))
+                    values[column].extend(
+                        _per_period(getattr(inv, field).get(ek, 0.0), n_periods, f'{item_id!r} {field}[{ek!r}]')
+                    )
 
         with_lifetime = [(i, inv) for i, inv in items if inv.lifetime is not None]
         return cls(
@@ -1209,88 +1232,89 @@ def _detect_contribution_cycle(adjacency: dict[str, list[str]]) -> list[str] | N
 
 @dataclass
 class EffectsData:
-    total_min: xr.DataArray  # (effect,) — weighted total bound
-    total_max: xr.DataArray  # (effect,) — weighted total bound
-    periodic_min: xr.DataArray  # (effect[, period]) — per-period bound
-    periodic_max: xr.DataArray  # (effect[, period]) — per-period bound
-    #: One row per declared ``contribution_from`` factor, each carrying its
-    #: own ``(time[, period])`` series. The dense ``(effect, source_effect,
-    #: time, period)`` matrix this replaces was 67 MB at 2% live on the stress
-    #: reference system — and most of that was not sparsity but repetition,
-    #: a scalar factor broadcast across every timestep and period.
-    cf_pair_effect: xr.DataArray | None = None  # (cf_pair,) — the effect charged
-    cf_pair_source: xr.DataArray | None = None  # (cf_pair,) — the effect it comes from
-    cf_pair_factor: xr.DataArray | None = None  # (cf_pair, time[, period])
-    period_weights: xr.DataArray | None = None  # (effect, period)
+    """What each effect is bounded by, and how effects charge one another.
 
-    def cf_matrix(self) -> xr.DataArray | None:
+    Bounds are optional, so an effect that names none has no row rather than
+    a row of NaN. Cross-effect factors are the ones declared: the square
+    matrix they imply is 67 MB at 2% live on the stress reference system, and
+    most of that is not sparsity but a scalar repeated across every timestep.
+    """
+
+    #: (effect,) — every declared effect, in declaration order
+    effects: pl.DataFrame
+    #: (effect, total_min, total_max) — only effects bounding a weighted total
+    totals: pl.DataFrame
+    #: (effect, period, periodic_min, periodic_max) — only effects bounding a
+    #: period, and only the periods they bound
+    periodic: pl.DataFrame
+    #: (effect, source_effect, time, period, factor) — declared factors only
+    contributions: pl.DataFrame
+    #: (effect, period, weight) — only effects overriding the global weights
+    period_weights: pl.DataFrame
+
+    @property
+    def ids(self) -> list[str]:
+        """The declared effects, in declaration order."""
+        return self.effects['effect'].to_list()
+
+    def cf_matrix(self, periods: list[Any] | None = None) -> xr.DataArray | None:
         """The cross-effect factors as a square matrix, or None if there are none.
 
         Built here rather than stored, because inverting it is the only thing
-        that wants it square — and a stored one costs a full
+        that wants it square, and a stored one costs a full
         ``(effect, source_effect, time, period)`` grid to hold a handful of
         declared factors. Transient by design: nothing keeps the result.
+
+        Args:
+            periods: Labels for the period axis. The frame indexes periods by
+                position; every array this matrix is contracted against still
+                carries the labels the element layer used, and xarray aligns
+                on coordinate values — so an unlabelled matrix silently
+                matches nothing. Pass them whenever the result meets an array.
         """
-        if self.cf_pair_effect is None:
+        if self.contributions.is_empty():
             return None
-        assert self.cf_pair_source is not None
-        assert self.cf_pair_factor is not None
-        effects = list(self.total_min.coords['effect'].values)
-        factor = self.cf_pair_factor
-        rest = {d: factor.coords[d] for d in factor.dims if d != 'cf_pair'}
+        ids = self.ids
+        rest: dict[str, Any] = {}
+        for axis in ('time', 'period'):
+            values = self.contributions[axis].unique(maintain_order=True).sort().to_list()
+            if len(values) > 1 or axis == 'time':
+                rest[axis] = values
+        labelled = dict(rest)
+        if periods is not None and 'period' in labelled:
+            labelled['period'] = [periods[i] for i in rest['period']]
         matrix = xr.DataArray(
-            np.zeros((len(effects), len(effects), *[len(v) for v in rest.values()])),
-            dims=['effect', 'source_effect', *rest],
-            coords={'effect': effects, 'source_effect': effects, **rest},
+            np.zeros((len(ids), len(ids), *[len(v) for v in rest.values()])),
+            dims=['effect', 'source_effect', *labelled],
+            coords={'effect': ids, 'source_effect': ids, **labelled},
         )
-        for i, (e, src) in enumerate(zip(self.cf_pair_effect.values, self.cf_pair_source.values, strict=True)):
-            matrix.loc[{'effect': str(e), 'source_effect': str(src)}] = factor.isel(cf_pair=i)
+        index = {axis: {v: i for i, v in enumerate(values)} for axis, values in rest.items()}
+        for row in self.contributions.iter_rows(named=True):
+            key: Any = (ids.index(row['effect']), ids.index(row['source_effect']))
+            key += tuple(index[axis][row[axis]] for axis in rest)
+            matrix.values[key] = row['factor']
         return matrix
 
     def __post_init__(self) -> None:
-        """Reject self-references and cycles in the cross-effect matrix (also on netCDF reload)."""
-        if self.cf_pair_effect is None:
-            return
-        assert self.cf_pair_source is not None
-        assert self.cf_pair_factor is not None
-        live = (self.cf_pair_factor != 0).any([d for d in self.cf_pair_factor.dims if d != 'cf_pair'])
-        edges = [
-            (str(e), str(src))
-            for e, src, keep in zip(self.cf_pair_effect.values, self.cf_pair_source.values, live.values, strict=True)
-            if keep
-        ]
-        for eid, src in edges:
-            if eid == src:
-                raise ValueError(f'Effect {eid!r} cannot reference itself in contribution_from')
+        """Reject self-references and cycles in the cross-effect graph.
+
+        Layer 3 — see docs/design/validation-layers.md.
+        """
+        live = self.contributions.filter(pl.col('factor') != 0)
+        edges = live.select(['effect', 'source_effect']).unique(maintain_order=True)
+        for effect, source in zip(edges['effect'], edges['source_effect'], strict=True):
+            if effect == source:
+                raise ValueError(f'Effect {effect!r} cannot reference itself in contribution_from')
         # Every effect is a node, edges or not: the cycle walk looks up each
         # neighbour's state, so a node reachable but unlisted is a KeyError.
-        adjacency: dict[str, list[str]] = {str(e): [] for e in self.total_min.coords['effect'].values}
-        for eid, src in edges:
-            adjacency[eid].append(src)
-        cycle = _detect_contribution_cycle(adjacency)
-        if cycle is not None:
+        adjacency: dict[str, list[str]] = {e: [] for e in self.ids}
+        for effect, source in zip(edges['effect'], edges['source_effect'], strict=True):
+            adjacency[effect].append(source)
+        if (cycle := _detect_contribution_cycle(adjacency)) is not None:
             raise ValueError(f'Circular contribution_from dependency: {" -> ".join(cycle)}')
 
-    def to_dataset(self) -> xr.Dataset:
-        """Serialize to xr.Dataset."""
-        return _to_dataset(self)
-
     @classmethod
-    def from_dataset(cls, ds: xr.Dataset) -> Self:
-        """Deserialize from xr.Dataset.
-
-        Args:
-            ds: Dataset with effect variables.
-        """
-        return cls(**{f.name: ds[f.name] for f in fields(cls) if f.name in ds.data_vars})
-
-    @classmethod
-    def build(
-        cls,
-        effects: list[Effect],
-        time: TimeIndex,
-        period: pd.Index | None = None,
-    ) -> Self:
+    def build(cls, effects: list[Effect], time: TimeIndex, period: pd.Index | None = None) -> Self:
         """Build EffectsData from element objects.
 
         Args:
@@ -1298,82 +1322,103 @@ class EffectsData:
             time: Time index.
             period: Period index (multi-period only).
         """
-        effect_ids = [e.id for e in effects]
-        n = len(effects)
-        total_min = np.full(n, np.nan)
-        total_max = np.full(n, np.nan)
-        periodic_mins: list[xr.DataArray] = []
-        periodic_maxs: list[xr.DataArray] = []
-
-        # Periodic bounds are scalar in single-period models, (period,) in multi-period
-        period_coords: dict[str, Any] = {'period': period} if period is not None else {}
-        nan_periodic = (
-            xr.DataArray(np.full(len(period), np.nan), dims=['period'], coords={'period': period})
-            if period is not None
-            else xr.DataArray(np.nan)
-        )
-
-        has_contributions = False
-        for i, e in enumerate(effects):
-            if e.total_min is not None:
-                total_min[i] = e.total_min
-            if e.total_max is not None:
-                total_max[i] = e.total_max
-            periodic_mins.append(
-                as_dataarray(e.periodic_min, period_coords) if e.periodic_min is not None else nan_periodic
-            )
-            periodic_maxs.append(
-                as_dataarray(e.periodic_max, period_coords) if e.periodic_max is not None else nan_periodic
-            )
-            if e.contribution_from:
-                has_contributions = True
-
-        # Build cross-effect contribution arrays; self-references and cycles
-        # are rejected by __post_init__ on the dense matrix.
-        cf_effects: list[str] = []
-        cf_sources: list[str] = []
-        cf_factors: list[xr.DataArray] = []
-        if has_contributions:
-            tmpl_t = _effect_template({'effect': effect_ids, 'time': time}, period)
-            for e in effects:
-                for src_id, factor in e.contribution_from.items():
-                    cf_effects.append(e.id)
-                    cf_sources.append(src_id)
-                    cf_factors.append(as_dataarray(factor, tmpl_t.as_da_coords))
-
-        effect_idx = pd.Index(effect_ids, name='effect')
-
-        # Per-effect period weights
-        pw: xr.DataArray | None = None
+        periods = list(range(len(period))) if period is not None else [0]
+        labels = np.asarray(time)
+        n_time = len(labels)
+        coords: dict[str, Any] = {'time': time}
         if period is not None:
-            has_pw = any(e.period_weights is not None for e in effects)
-            n_periods = len(period)
-            if has_pw:
-                mat = np.full((n, n_periods), np.nan)
-                for i, e in enumerate(effects):
-                    if e.period_weights is not None:
-                        if len(e.period_weights) != n_periods:
-                            msg = f'Effect {e.id!r}: period_weights has {len(e.period_weights)} entries, expected {n_periods}'
-                            raise ValueError(msg)
-                        vals = np.asarray(e.period_weights, dtype=float)
-                        if not np.all(np.isfinite(vals)) or not np.all(vals > 0):
-                            msg = f'Effect {e.id!r}: period_weights must be positive and finite, got {vals}'
-                            raise ValueError(msg)
-                        mat[i] = vals
-                pw = xr.DataArray(mat, dims=['effect', 'period'], coords={'effect': effect_ids, 'period': period})
+            coords['period'] = period
+
+        bounded = [e for e in effects if e.total_min is not None or e.total_max is not None]
+        periodic_rows = [
+            (
+                e.id,
+                p,
+                _at_period(e.periodic_min, p, len(periods), f'{e.id!r} periodic_min'),
+                _at_period(e.periodic_max, p, len(periods), f'{e.id!r} periodic_max'),
+            )
+            for e in effects
+            if e.periodic_min is not None or e.periodic_max is not None
+            for p in periods
+        ]
+        weight_rows = [
+            (e.id, p, _at_period(e.period_weights, p, len(periods), f'{e.id!r} period_weights'))
+            for e in effects
+            if e.period_weights is not None
+            for p in periods
+        ]
+
+        cols: dict[str, list[np.ndarray]] = {k: [] for k in ('effect', 'source_effect', 'time', 'period', 'factor')}
+        for e in effects:
+            for source, factor in e.contribution_from.items():
+                for p_index in periods:
+                    cols['effect'].append(np.full(n_time, e.id))
+                    cols['source_effect'].append(np.full(n_time, source))
+                    cols['time'].append(labels)
+                    cols['period'].append(np.full(n_time, p_index))
+                    cols['factor'].append(_series(factor, coords, p_index, n_time))
+
+        def joined(key: str, dtype: Any) -> np.ndarray:
+            parts = cols[key]
+            return np.concatenate(parts) if parts else np.array([], dtype=dtype)
 
         return cls(
-            total_min=xr.DataArray(total_min, dims=['effect'], coords={'effect': effect_ids}),
-            total_max=xr.DataArray(total_max, dims=['effect'], coords={'effect': effect_ids}),
-            periodic_min=fast_concat(periodic_mins, effect_idx),
-            periodic_max=fast_concat(periodic_maxs, effect_idx),
-            cf_pair_effect=xr.DataArray(cf_effects, dims=['cf_pair']) if cf_factors else None,
-            cf_pair_source=xr.DataArray(cf_sources, dims=['cf_pair']) if cf_factors else None,
-            cf_pair_factor=(
-                fast_concat(cf_factors, pd.Index(range(len(cf_factors)), name='cf_pair')) if cf_factors else None
+            effects=pl.DataFrame({'effect': [e.id for e in effects]}, schema={'effect': pl.String}),
+            totals=pl.DataFrame(
+                {
+                    'effect': [e.id for e in bounded],
+                    'total_min': [e.total_min for e in bounded],
+                    'total_max': [e.total_max for e in bounded],
+                },
+                schema={'effect': pl.String, 'total_min': pl.Float64, 'total_max': pl.Float64},
             ),
-            period_weights=pw,
+            periodic=pl.DataFrame(
+                {
+                    'effect': [r[0] for r in periodic_rows],
+                    'period': [r[1] for r in periodic_rows],
+                    'periodic_min': [r[2] for r in periodic_rows],
+                    'periodic_max': [r[3] for r in periodic_rows],
+                },
+                schema={
+                    'effect': pl.String,
+                    'period': pl.Int64,
+                    'periodic_min': pl.Float64,
+                    'periodic_max': pl.Float64,
+                },
+            ),
+            contributions=pl.DataFrame(
+                {
+                    'effect': joined('effect', str),
+                    'source_effect': joined('source_effect', str),
+                    'time': pd.to_datetime(joined('time', 'datetime64[ns]')).to_pydatetime().tolist(),
+                    'period': joined('period', int),
+                    'factor': joined('factor', float),
+                },
+                schema={
+                    'effect': pl.String,
+                    'source_effect': pl.String,
+                    'time': pl.Datetime('us'),
+                    'period': pl.Int64,
+                    'factor': pl.Float64,
+                },
+            ),
+            period_weights=pl.DataFrame(
+                {
+                    'effect': [r[0] for r in weight_rows],
+                    'period': [r[1] for r in weight_rows],
+                    'weight': [r[2] for r in weight_rows],
+                },
+                schema={'effect': pl.String, 'period': pl.Int64, 'weight': pl.Float64},
+            ),
         )
+
+
+def _at_period(value: Any, p_index: int, n_periods: int, what: str) -> float | None:
+    """A possibly per-period bound's value in one period, or None if unset."""
+    if value is None:
+        return None
+    arr = _over_periods(value, n_periods, what)
+    return float(arr[0] if arr.size == 1 else arr[p_index])
 
 
 @dataclass
@@ -1810,7 +1855,7 @@ class ModelData:
                 if unknown := sorted(set(ids) - storage_ids):
                     raise ValueError(f'{what} references unknown storage id(s) {unknown}')
 
-        effect_ids = set(map(str, self.effects.total_min.coords['effect'].values))
+        effect_ids = set(self.effects.ids)
         coeff_effects = {str(e) for e in self.flows.effect_pair_effect.values}
         if not coeff_effects <= effect_ids:
             raise ValueError(
