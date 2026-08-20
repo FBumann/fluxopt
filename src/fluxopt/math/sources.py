@@ -99,7 +99,6 @@ _BOOL_PARAMS = frozenset(
         'pw_upper',
         'pw_lower',
         'pw_bp_present',
-        'pw_seg_present',
         'is_bounded',
         'is_profile',
         'has_uptime',
@@ -915,13 +914,6 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         present = links.select(['converter', 'bp']).unique(maintain_order=True).sort(['converter', 'bp'])
         bp_width = int(present['bp'].max() or 0) + 1 if len(present) else 0  # type: ignore[arg-type]
         sources['pw_bp_present'] = present.with_columns(pl.lit(True).alias('value'))
-        # A segment starts at every present breakpoint but the last.
-        last = present.group_by('converter').agg(pl.col('bp').max().alias('last'))
-        sources['pw_seg_present'] = (
-            present.join(last, on='converter')
-            .filter(pl.col('bp') < pl.col('last'))
-            .select(['converter', 'bp', pl.lit(True).alias('value')])
-        )
 
         gated = curves.filter(pl.col('has_status'))['converter'].unique(maintain_order=True).to_list()
         sources['has_piecewise'] = _flags('has_piecewise', 'converter', pw_convs)
@@ -963,7 +955,6 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
             ('pw_lower', ('flow',)),
             ('pw_ref', ('flow',)),
             ('pw_bp_present', ('converter', 'bp')),
-            ('pw_seg_present', ('converter', 'bp')),
             ('pw_bp_value', ('flow', 'bp', 'time')),
             ('pw_avail_bound', ('converter', 'time')),
         ):
