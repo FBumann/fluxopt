@@ -968,7 +968,7 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
     # `charge_storage` all-null — which infers as a null column and fails the
     # join against the storage labels. The schema says what each column is
     # regardless of what this particular system happens to fill in.
-    sources['flow'] = pl.DataFrame(
+    flow_axis = pl.DataFrame(
         {c: flow_index[c].tolist() for c in flow_index.columns},
         schema=dict.fromkeys(flow_index.columns, pl.String),
     )
@@ -1039,6 +1039,7 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         'time': axis('time', ordinals),
         'period': axis('period', p_ordinals),
         'build_period': axis('build_period', p_ordinals),
+        'flow': flow_axis,
         'carrier': labels(data.carriers.ids),
         # Both kinds: a converter states linear equations, a piecewise curve,
         # or one of each. The axis is the union, or a curve's own converter
