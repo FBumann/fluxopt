@@ -22,6 +22,7 @@ question. :class:`UnsupportedFeatureError` says so rather than quietly
 answering it.
 """
 
+from fluxopt.math.parameters import Parameters
 from fluxopt.math.results import to_result
 from fluxopt.math.solve import solve
 from fluxopt.math.sources import PERIOD_PARAMS, PROGRAM, UnsupportedFeatureError, build_sources
@@ -29,6 +30,7 @@ from fluxopt.math.sources import PERIOD_PARAMS, PROGRAM, UnsupportedFeatureError
 __all__ = [
     'PERIOD_PARAMS',
     'PROGRAM',
+    'Parameters',
     'UnsupportedFeatureError',
     'build_sources',
     'solve',

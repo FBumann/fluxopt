@@ -428,7 +428,7 @@ def test_sparse_coefficients_are_not_materialised() -> None:
     data = ModelData.build(**_system(48))
     sources, coords = build_sources(data, OBJECTIVE)
 
-    dense = len(sources['flow']) * len(coords['effect']) * len(coords['time']) * len(coords['period'])
+    dense = len(coords['flow']) * len(coords['effect']) * len(coords['time']) * len(coords['period'])
     assert len(sources['effects_per_flow_hour']) < dense / 2
 
 
