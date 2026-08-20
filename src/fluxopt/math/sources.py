@@ -37,21 +37,8 @@ PROGRAM = Path(__file__).with_name('program.yaml')
 #: carries its own period column and is not in this list.
 PERIOD_PARAMS = frozenset(
     {
-        'rate_min',
-        'rate_max',
-        'rate_min_when_on',
-        'rate_max_when_on',
-        'rate_fixed_when_on',
-        'relative_rate_min',
-        'relative_rate_max',
-        'fixed_relative_profile',
         'uptime_upper',
         'downtime_upper',
-        'ramp_up_limit',
-        'ramp_down_limit',
-        'ramp_up_coeff',
-        'ramp_down_coeff',
-        'effects_per_flow_hour',
         'prior_level',
         'pw_avail_bound',
         'flow_hours_min',
@@ -60,8 +47,6 @@ PERIOD_PARAMS = frozenset(
         'load_factor_max_bound',
         'load_factor_min_coeff',
         'load_factor_max_coeff',
-        'rate_max_at_size_max',
-        'rate_min_at_size_max',
         'size_upper',
         'lifetime_window',
         'prior_capacity_active',
@@ -73,17 +58,35 @@ PERIOD_PARAMS = frozenset(
 BUILD_PERIOD_PARAMS = frozenset({'lifetime_window'})
 
 
-def _size_upper(data: ModelData, fid: str) -> float:
-    """Static upper bound on a flow's size — fixed value or sizing max."""
+def _live(frame: pl.DataFrame, value: pl.Expr, *, drop_zero: bool = True) -> pl.DataFrame:
+    """A `(flow, time, period, value)` table from one expression over *frame*.
+
+    Nulls always go: a row the expression could not compute is a coefficient
+    nobody declared. Zeros go too unless the parameter also stands on a
+    constant side, where a dropped zero would read as a bound rather than as
+    an absent coefficient.
+    """
+    out = frame.select(['flow', 'time', 'period', value.alias('value')]).drop_nulls('value')
+    return out.filter(pl.col('value') != 0) if drop_zero else out
+
+
+def _of_type(fds: Any, kind: str) -> list[str]:
+    """The flows whose bound type is *kind*."""
+    return fds.flows.filter(pl.col('bound_type') == kind)['flow'].to_list()
+
+
+def _size_upper(data: ModelData) -> dict[str, float]:
+    """Static upper bound on each flow's size — fixed value or sizing max.
+
+    Zero for a flow with neither, which is what a flow that cannot carry
+    anything is worth as a big-M.
+    """
     fds = data.flows
-    val = float(fds.size.sel(flow=fid).values)
-    if not np.isnan(val):
-        return val
+    upper = dict.fromkeys(fds.ids, 0.0)
     if fds.sizing is not None:
-        row = fds.sizing.bounds.filter(pl.col('entity') == fid)
-        if len(row):
-            return float(row['size_max'][0])
-    return 0.0
+        upper.update(zip(fds.sizing.bounds['entity'], fds.sizing.bounds['size_max'], strict=True))
+    upper.update(zip(fds.sizes['flow'], fds.sizes['size'], strict=True))
+    return upper
 
 
 #: Index columns the program declares with an integer dtype; every other index
@@ -324,7 +327,7 @@ def _reject_unsupported(data: ModelData) -> None:
         sz = set(fds.sizing.ids)
         stt = set(fds.status.ids)
         both = sz & stt
-        profile = {f for f in both if str(fds.bound_type.sel(flow=f).values) == BoundType.PROFILE}
+        profile = both & set(_of_type(fds, BoundType.PROFILE))
         if profile:
             # fluxopt rejects this combination too — no formulation exists.
             raise UnsupportedFeatureError(f'fixed profile with status+sizing has no formulation: {sorted(profile)}')
@@ -352,18 +355,19 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
     time_labels = list(dims.time.values)
     time_ord = {v: i for i, v in enumerate(time_labels)}
     ordinals = list(range(len(time_labels)))
+    dt_by_time = pl.DataFrame({'time': ordinals, 'dt': dims.dt.values})
+    size_upper_of = _size_upper(data)
 
     def tidy(da: xr.DataArray, *, drop_zero: bool) -> pd.DataFrame:
         """`_tidy` with this model's time-ordinal mapping bound in."""
         return _tidy(da, drop_zero=drop_zero, time_ord=time_ord)
 
-    flow_ids = [str(f) for f in fds.size.coords['flow'].values]
+    flow_ids = fds.ids
     sources: dict[str, Any] = {}
     # Bound up front: the feature blocks below fill these only when the
     # corresponding container is present, but later blocks read them.
     sizing_ids: list[str] = []
     status_ids: list[str] = []
-    has_sizing = xr.zeros_like(fds.size, dtype=bool)
     # Lump-domain accumulators, filled by the flow- and storage-sizing blocks.
     # (parameter name, entity dim, coefficients) — the entity dim is carried so
     # an absent term still emits a correctly keyed empty table.
@@ -374,50 +378,61 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
     at_build_frames: list[tuple[str, pl.DataFrame, str]] = []
 
     # --- flow rate bounds: dense, they sit at the variable's own grid -----
-    size, bt = fds.size, fds.bound_type
-    zero = xr.zeros_like(fds.rel_lb)
-    lb = xr.where(bt == BoundType.BOUNDED, size * fds.rel_lb, zero)
-    ub = xr.where(bt == BoundType.BOUNDED, size * fds.rel_ub, xr.full_like(zero, np.inf))
-    is_profile = (bt == BoundType.PROFILE) & fds.fixed_profile.notnull()
-    lb = xr.where(is_profile, size * fds.fixed_profile, lb)
-    ub = xr.where(is_profile, size * fds.fixed_profile, ub)
-    sz = fds.sizing
-    if sz is not None:
-        sizing_ids = sz.ids
-        has_sizing = xr.DataArray(
-            [f in set(sizing_ids) for f in flow_ids], dims=['flow'], coords={'flow': fds.size.coords['flow']}
-        )
-        lb = xr.where(has_sizing, 0.0, lb)
-        ub = xr.where(has_sizing, np.inf, ub)
+    # The envelope carries the relative pair, the profile and the fixed size
+    # join onto it, and the bound is then one chain of overrides read top to
+    # bottom — the same order the array version applied them in.
+    envelope = fds.envelope
+    profile = fds.fixed_profile.rename({'value': 'fixed'})
+    grid = envelope.join(fds.sizes, on='flow', how='left').join(profile, on=['flow', 'time', 'period'], how='left')
 
-    inv = fds.invest
-    invest_ids: list[str] = []
-    has_invest = xr.zeros_like(fds.size, dtype=bool)
-    if inv is not None:
-        invest_ids = inv.ids
-        has_invest = xr.DataArray(
-            [f in set(invest_ids) for f in flow_ids], dims=['flow'], coords={'flow': fds.size.coords['flow']}
-        )
-        lb = xr.where(has_invest, 0.0, lb)
-        ub = xr.where(has_invest, np.inf, ub)
+    sz, inv, st = fds.sizing, fds.invest, fds.status
+    sizing_ids = sz.ids if sz is not None else []
+    invest_ids = inv.ids if inv is not None else []
+    status_ids = st.ids if st is not None else []
+    is_bounded = _of_type(fds, BoundType.BOUNDED)
+    is_profile = _of_type(fds, BoundType.PROFILE)
 
-    st = fds.status
-    if st is not None:
-        status_ids = st.ids
-        has_status = xr.DataArray(
-            [f in set(status_ids) for f in flow_ids], dims=['flow'], coords={'flow': fds.size.coords['flow']}
-        )
-        # `on` carries the envelope for status flows; the variable itself is free above 0
-        lb = xr.where(has_status, 0.0, lb)
-        ub = xr.where(
-            has_status,
-            xr.where(bt == BoundType.PROFILE, size * fds.fixed_profile, size * fds.rel_ub),
-            ub,
-        )
-        if sz is not None:
-            ub = xr.where(has_status & has_sizing, np.inf, ub)
-    sources['rate_min'] = tidy(lb, drop_zero=False)
-    sources['rate_max'] = tidy(ub, drop_zero=False)
+    def among(ids: list[str]) -> pl.Expr:
+        """Rows whose flow is one of *ids*."""
+        return pl.col('flow').is_in(pl.Series(ids, dtype=pl.String).implode())
+
+    scaled_max = pl.col('size') * pl.when(among(is_profile)).then(pl.col('fixed')).otherwise(
+        pl.col('relative_rate_max')
+    )
+    bounds = grid.with_columns(
+        pl.when(among(is_bounded)).then(pl.col('size') * pl.col('relative_rate_min')).otherwise(0.0).alias('rate_min'),
+        pl.when(among(is_bounded))
+        .then(pl.col('size') * pl.col('relative_rate_max'))
+        .otherwise(np.inf)
+        .alias('rate_max'),
+    )
+    # A fixed profile pins the rate: both bounds land on the same value.
+    pinned = among(is_profile) & pl.col('fixed').is_not_null()
+    bounds = bounds.with_columns(
+        pl.when(pinned).then(pl.col('size') * pl.col('fixed')).otherwise(pl.col('rate_min')).alias('rate_min'),
+        pl.when(pinned).then(pl.col('size') * pl.col('fixed')).otherwise(pl.col('rate_max')).alias('rate_max'),
+    )
+    # An optimized size is a variable, so the rate is free here and the
+    # envelope is applied against the size variable instead.
+    free = among([*sizing_ids, *invest_ids])
+    bounds = bounds.with_columns(
+        pl.when(free).then(0.0).otherwise(pl.col('rate_min')).alias('rate_min'),
+        pl.when(free).then(np.inf).otherwise(pl.col('rate_max')).alias('rate_max'),
+    )
+    # `on` carries the envelope for status flows; the variable itself is free
+    # above 0, except when it is sized too and the size variable takes over.
+    gated = among(status_ids)
+    bounds = bounds.with_columns(
+        pl.when(gated).then(0.0).otherwise(pl.col('rate_min')).alias('rate_min'),
+        pl.when(gated & among(sizing_ids))
+        .then(np.inf)
+        .when(gated)
+        .then(scaled_max)
+        .otherwise(pl.col('rate_max'))
+        .alias('rate_max'),
+    )
+    for key in ('rate_min', 'rate_max'):
+        sources[key] = bounds.select(['flow', 'time', 'period', pl.col(key).alias('value')])
 
     # --- carrier balance --------------------------------------------------
     membership = data.carriers.membership
@@ -459,7 +474,6 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         flow_index['charge_storage'] = [chg_of.get(f) for f in flow_ids]
         flow_index['discharge_storage'] = [dis_of.get(f) for f in flow_ids]
 
-        dt_by_time = pl.DataFrame({'time': ordinals, 'dt': dims.dt.values})
         # One join carries every per-timestep storage parameter, since they
         # all live on the same (storage, time) rows.
         profiles = _with_time_ordinals(sds.profiles, dims).join(dt_by_time, on='time')
@@ -525,7 +539,7 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         for key in ('final_level_min', 'final_level_max'):
             sources[key] = sds.levels.select(['storage', pl.col(key).alias('value')]).drop_nulls()
         for key, flows in (('charge_size_bound', charge), ('discharge_size_bound', discharge)):
-            sources[key] = pd.DataFrame({'storage': storage_ids, 'value': [_size_upper(data, f) for f in flows]})
+            sources[key] = pd.DataFrame({'storage': storage_ids, 'value': [size_upper_of[f] for f in flows]})
     else:
         flow_index['charge_storage'] = None
         flow_index['discharge_storage'] = None
@@ -574,22 +588,21 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         # them a second time per flow would be redundant, and wrong for the
         # links the curve only bounds.
         pw_comps = set(data.piecewise.converter_ids()) if data.piecewise is not None else set()
-        if fds.governed_by is not None:
-            status_of.update(
-                {
-                    fid: str(owner)
-                    for fid, owner in zip(flow_ids, fds.governed_by.values, strict=True)
-                    if str(owner) and str(owner) not in pw_comps
-                }
-            )
+        status_of.update(
+            {
+                fid: owner
+                for fid, owner in zip(fds.governed_by['flow'], fds.governed_by['component'], strict=True)
+                if owner not in pw_comps
+            }
+        )
 
     flow_index['status_of'] = [status_of.get(f) for f in flow_ids]
     entity_ids = [e for _, ids in blocks for e in ids]
     gated_ids = [f for f in flow_ids if f in status_of]
 
     sources['is_gated'] = _flags('is_gated', 'flow', gated_ids)
-    sources['is_bounded'] = pd.DataFrame({'flow': flow_ids, 'value': (bt == BoundType.BOUNDED).values})
-    sources['is_profile'] = pd.DataFrame({'flow': flow_ids, 'value': (bt == BoundType.PROFILE).values})
+    sources['is_bounded'] = _flags('is_bounded', 'flow', is_bounded)
+    sources['is_profile'] = _flags('is_profile', 'flow', is_profile)
 
     if blocks:
         # Every block's frames stacked on the shared entity axis. A vertical
@@ -610,10 +623,13 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
 
         # Envelopes are per gated flow: a governed flow is sized like any
         # other, and `size * rel` is what the binary scales.
-        gsel = {'flow': gated_ids}
-        sources['rate_min_when_on'] = tidy((size * fds.rel_lb).sel(gsel), drop_zero=True)
-        sources['rate_max_when_on'] = tidy((size * fds.rel_ub).sel(gsel), drop_zero=True)
-        sources['rate_fixed_when_on'] = tidy((size * fds.fixed_profile).sel(gsel), drop_zero=True)
+        on_gated = grid.filter(pl.col('flow').is_in(pl.Series(gated_ids, dtype=pl.String).implode()))
+        for key, column in (
+            ('rate_min_when_on', 'relative_rate_min'),
+            ('rate_max_when_on', 'relative_rate_max'),
+            ('rate_fixed_when_on', 'fixed'),
+        ):
+            sources[key] = _live(on_gated, pl.col('size') * pl.col(column))
 
         horizon = float(dims.dt.sum())
         bounded_up = durations.filter(pl.col('uptime_min').is_not_null() | pl.col('uptime_max').is_not_null())[
@@ -671,7 +687,6 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
 
         # `dt` turns a per-running-hour rate into the step's cost; a startup
         # happens once at the step, so it is not scaled.
-        dt_by_time = pl.DataFrame({'time': ordinals, 'dt': dims.dt.values})
         scaled = (
             _with_time_ordinals(status_effects, dims)
             .join(dt_by_time, on='time')
@@ -699,7 +714,7 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         for n in ('uptime_upper', 'downtime_upper'):
             sources[n] = _empty(n, 'status_entity', 'time')
         for n in ('rate_min_when_on', 'rate_max_when_on', 'rate_fixed_when_on'):
-            sources[n] = _empty(n, 'flow', 'time')
+            sources[n] = _empty(n, 'flow', 'time', 'period')
 
     sources['dt'] = pd.DataFrame({'time': ordinals, 'value': dims.dt.values})
     sources['is_last'] = pd.DataFrame({'time': ordinals, 'value': [i == len(ordinals) - 1 for i in ordinals]})
@@ -712,14 +727,17 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         sources['size_optional'] = _flags('size_optional', 'flow', opt_ids)
         sources['size_min'] = pd.DataFrame({'flow': sizing_ids, 'value': bounds['size_min'].to_numpy()})
         sources['size_max'] = pd.DataFrame({'flow': sizing_ids, 'value': bounds['size_max'].to_numpy()})
-        zsel = {'flow': sizing_ids}
-        smax = xr.DataArray(bounds['size_max'].to_numpy(), dims=['flow'], coords={'flow': sizing_ids})
-        sources['rate_max_at_size_max'] = tidy((fds.rel_ub.sel(zsel) * smax), drop_zero=True)
+        at_max = envelope.join(
+            bounds.select([pl.col('entity').alias('flow'), pl.col('size_max')]), on='flow', how='inner'
+        )
+        sources['rate_max_at_size_max'] = _live(at_max, pl.col('relative_rate_max') * pl.col('size_max'))
         # Dense: this one also stands on the constant side of
         # `status_sizing_rate_min`, where a dropped zero is a bound rather
         # than an absent coefficient. A flow whose lower bound is zero is the
         # ordinary case, so dropping it would break exactly the common one.
-        sources['rate_min_at_size_max'] = tidy((fds.rel_lb.sel(zsel) * smax), drop_zero=False)
+        sources['rate_min_at_size_max'] = _live(
+            at_max, pl.col('relative_rate_min') * pl.col('size_max'), drop_zero=False
+        )
         lump_frames += [
             ('effects_per_size', 'flow', sz.effects, 'per_size'),
             ('effects_fixed', 'flow', sz.effects, 'fixed'),
@@ -728,7 +746,7 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         for n in ('has_sizing', 'size_optional', 'size_min', 'size_max'):
             sources[n] = _empty(n, 'flow')
         for n in ('rate_max_at_size_max', 'rate_min_at_size_max'):
-            sources[n] = _empty(n, 'flow', 'time')
+            sources[n] = _empty(n, 'flow', 'time', 'period')
 
     if 'has_capacity_sizing' not in sources:
         for n in ('has_capacity_sizing', 'capacity_optional', 'capacity_min', 'capacity_max'):
@@ -737,23 +755,23 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
             sources[n] = _empty(n, 'storage', 'time')
 
     # --- ramps ------------------------------------------------------------
-    sized_set = set(sizing_ids) if sz is not None else set()
-    for kind, arr in (('up', fds.ramp_up), ('down', fds.ramp_down)):
-        if arr is None:
-            sources[f'has_ramp_{kind}'] = _empty(f'has_ramp_{kind}', 'flow')
-            sources[f'ramp_{kind}_limit'] = _empty(f'ramp_{kind}_limit', 'flow', 'time')
-            sources[f'ramp_{kind}_coeff'] = _empty(f'ramp_{kind}_coeff', 'flow', 'time')
-            continue
-        nonflow = [d for d in arr.dims if d != 'flow']
-        live = arr.notnull().any(nonflow) if nonflow else arr.notnull()
-        ids = [str(f) for f in arr.coords['flow'].values[live.values]]
-        sources[f'has_ramp_{kind}'] = _flags(f'has_ramp_{kind}', 'flow', ids)
-        coeff = (arr * dims.dt).sel(flow=ids)
-        sources[f'ramp_{kind}_coeff'] = tidy(coeff.sel(flow=[f for f in ids if f in sized_set]), drop_zero=True)
-        fixed = [f for f in ids if f not in sized_set]
-        sources[f'ramp_{kind}_limit'] = tidy((coeff * size).sel(flow=fixed), drop_zero=True)
+    # A ramp limit is per hour, so the step's allowance is limit x dt. Where
+    # the size is a number that allowance is absolute; where it is a variable
+    # the per-unit coefficient travels instead and the program multiplies.
+    ramps = fds.ramps.join(dt_by_time, on='time').join(fds.sizes, on='flow', how='left')
+    for kind in ('up', 'down'):
+        declared = ramps.filter(pl.col(f'ramp_{kind}').is_not_null())
+        sources[f'has_ramp_{kind}'] = _flags(
+            f'has_ramp_{kind}', 'flow', declared['flow'].unique(maintain_order=True).to_list()
+        )
+        allowance = pl.col(f'ramp_{kind}') * pl.col('dt')
+        # The split follows the program's `has_sizing`, not the absence of a
+        # fixed size: those are the two branches the constraints are written in.
+        sized = pl.col('flow').is_in(pl.Series(sizing_ids, dtype=pl.String).implode())
+        sources[f'ramp_{kind}_coeff'] = _live(declared.filter(sized), allowance)
+        sources[f'ramp_{kind}_limit'] = _live(declared.filter(~sized), allowance * pl.col('size'))
     sources['ramp_bigM'] = pd.DataFrame(
-        {'flow': flow_ids, 'value': [_size_upper(data, f) for f in flow_ids]},
+        {'flow': flow_ids, 'value': [size_upper_of[f] for f in flow_ids]},
     )
 
     # --- investment -------------------------------------------------------
@@ -818,22 +836,20 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
 
     # `sizing_rate` covers both mechanisms, so its envelope must span both.
     sized_ids = [*sizing_ids, *invest_ids]
-    envelope_sel = {'flow': sized_ids}
-    sources['relative_rate_min'] = tidy(fds.rel_lb.sel(envelope_sel), drop_zero=True)
-    sources['relative_rate_max'] = tidy(fds.rel_ub.sel(envelope_sel), drop_zero=True)
-    sources['fixed_relative_profile'] = tidy(fds.fixed_profile.sel(envelope_sel), drop_zero=True)
-
-    # upper bound of `size`: whichever mechanism sizes the flow
-    size_upper = xr.full_like(fds.size, np.inf)
-    for ids, maxima in (
-        (sizing_ids, sz.bounds['size_max'].to_numpy() if sz is not None else None),
-        (invest_ids, inv.bounds['size_max'].to_numpy() if inv is not None else None),
+    on_sized = grid.filter(pl.col('flow').is_in(pl.Series(sized_ids, dtype=pl.String).implode()))
+    for key, column in (
+        ('relative_rate_min', 'relative_rate_min'),
+        ('relative_rate_max', 'relative_rate_max'),
+        ('fixed_relative_profile', 'fixed'),
     ):
-        if maxima is None or not ids:
-            continue
-        per_flow = xr.DataArray(maxima, dims=['flow'], coords={'flow': ids}).reindex(flow=flow_ids)
-        size_upper = xr.where(per_flow.notnull(), per_flow, size_upper)
-    sources['size_upper'] = _tidy(size_upper, drop_zero=False)
+        sources[key] = _live(on_sized, pl.col(column))
+
+    # upper bound of `size`: whichever mechanism sizes the flow, else free
+    maxima: dict[str, float] = {}
+    for container in (sz, inv):
+        if container is not None:
+            maxima.update(zip(container.bounds['entity'], container.bounds['size_max'], strict=True))
+    sources['size_upper'] = pd.DataFrame({'flow': flow_ids, 'value': [maxima.get(f, np.inf) for f in flow_ids]})
 
     # --- effects: the sparse one -----------------------------------------
     eds = data.effects
@@ -841,9 +857,12 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
     # dt stays: a per-flow-hour rate times a duration is the step's energy.
     # The aggregation weight does not — the program applies it in the sum,
     # so a named contribution reads as the physical per-step quantity.
-    cf = eds.cf_matrix(dims.period.values.tolist() if dims.period is not None else None)
+    cf = eds.cf_matrix()
     leo = leontief(cf) if cf is not None else None
-    sources['effects_per_flow_hour'] = _flow_hour_coefficients(fds, dims, leo, tidy)
+    pairs = fds.effect_pairs.join(dt_by_time, on='time').select(
+        ['flow', 'effect', 'time', 'period', (pl.col('value') * pl.col('dt')).alias('value')]
+    )
+    sources['effects_per_flow_hour'] = _fold_effect_rows(pairs.rename({'flow': 'entity'}), 'flow', 'value', leo, tidy)
     for name, arr in ec_extra:
         sources[name] = tidy(apply_leontief(leo, arr) if leo is not None else arr, drop_zero=True)
     for name, frame, column in status_effect_frames:
@@ -922,20 +941,20 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
     weight = dims.dt * dims.weights
     sources['flow_hour_weight'] = pd.DataFrame({'time': ordinals, 'value': weight.values})
     total_duration = float(weight.sum('time'))
-    sized = set(sizing_ids) | set(invest_ids)
-    static = xr.DataArray([f not in sized for f in flow_ids], dims=['flow'], coords={'flow': fds.size.coords['flow']})
-    for name, arr in (('flow_hours_min', fds.flow_hours_min), ('flow_hours_max', fds.flow_hours_max)):
-        sources[name] = tidy(arr.where(arr.notnull()), drop_zero=False) if arr is not None else _empty(name, 'flow')
-    for kind, arr in (('min', fds.load_factor_min), ('max', fds.load_factor_max)):
-        if arr is None:
-            sources[f'load_factor_{kind}_bound'] = _empty(f'load_factor_{kind}_bound', 'flow')
-            sources[f'load_factor_{kind}_coeff'] = _empty(f'load_factor_{kind}_coeff', 'flow')
-            continue
-        live = arr.notnull()
-        sources[f'load_factor_{kind}_bound'] = tidy(
-            (arr * fds.size * total_duration).where(live & static), drop_zero=False
+    # A load factor bounds the mean rate as a fraction of the size. Where the
+    # size is a number the bound is one too; where it is a variable the bound
+    # travels as a coefficient and the program multiplies.
+    aggregates = fds.aggregates.join(fds.sizes, on='flow', how='left')
+    for name in ('flow_hours_min', 'flow_hours_max'):
+        sources[name] = aggregates.select(['flow', pl.col(name).alias('value')]).drop_nulls('value')
+    for kind in ('min', 'max'):
+        declared = aggregates.filter(pl.col(f'load_factor_{kind}').is_not_null())
+        sources[f'load_factor_{kind}_bound'] = declared.select(
+            ['flow', (pl.col(f'load_factor_{kind}') * pl.col('size') * total_duration).alias('value')]
+        ).drop_nulls('value')
+        sources[f'load_factor_{kind}_coeff'] = declared.filter(pl.col('size').is_null()).select(
+            ['flow', (pl.col(f'load_factor_{kind}') * total_duration).alias('value')]
         )
-        sources[f'load_factor_{kind}_coeff'] = tidy((arr * total_duration).where(live & ~static), drop_zero=False)
 
     # --- piecewise conversion ------------------------------------------
     # The curve tables are already the shape the program wants: a link is a

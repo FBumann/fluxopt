@@ -86,9 +86,7 @@ class TestRoundtrip:
 
         assert loaded.data is not None
         # Flows dataset preserved
-        assert list(loaded.data.flows.rel_lb.coords['flow'].values) == list(
-            result.data.flows.rel_lb.coords['flow'].values
-        )
+        assert loaded.data.flows.ids == result.data.flows.ids
         # Storages dataset preserved
         assert loaded.data.storages is not None
         assert result.data.storages is not None
@@ -335,21 +333,20 @@ class TestWaistGuards:
 
     def test_zeroed_status_lower_bound_rejected_on_load(self, tmp_nc: Path) -> None:
         """rel_lb = 0 on a status flow would make on/off degenerate; load fails loudly."""
-        import netCDF4
+        import polars as pl
 
         from fluxopt import ModelData
 
         p = self._status_system_path(tmp_nc)
-        with netCDF4.Dataset(p / 'flows' / 'arrays.nc', 'a') as nc:
-            nc['rel_lb'][:] = 0.0
+        table = p / 'flows' / 'envelope.parquet'
+        pl.read_parquet(table).with_columns(pl.lit(0.0).alias('relative_rate_min')).write_parquet(table)
 
         with pytest.raises(ValueError, match='on/off is indistinguishable'):
             ModelData.load(p)
 
     def test_nan_size_on_ramp_flow_rejected_on_load(self, tmp_nc: Path) -> None:
         """Removing the size under a ramp-limited flow fails at load, not as NaN math."""
-        import netCDF4
-        import numpy as np
+        import polars as pl
 
         from fluxopt import ModelData
 
@@ -362,8 +359,8 @@ class TestWaistGuards:
             ports=[Port(id='grid', imports=[source]), Port(id='demand', exports=[demand])],
         )
         data.save(tmp_nc)
-        with netCDF4.Dataset(tmp_nc / 'flows' / 'arrays.nc', 'a') as nc:
-            nc['size'][:] = np.nan
+        table = tmp_nc / 'flows' / 'sizes.parquet'
+        pl.read_parquet(table).clear().write_parquet(table)
 
         with pytest.raises(ValueError, match='ramp_up requires a sized flow'):
             ModelData.load(tmp_nc)

@@ -105,41 +105,6 @@ def variate_out_of_range(
     return float(bad[0]) if bad.size else None
 
 
-def fast_concat(arrays: list[xr.DataArray], dim: pd.Index) -> xr.DataArray:
-    """Stack DataArrays along a new leading dimension.
-
-    Drop-in replacement for ``xr.concat`` when all slices already share the
-    same dims, shape, and coords. Skips alignment, deepcopy, and reindex —
-    just stacks the underlying numpy arrays.
-
-    Args:
-        arrays: DataArrays with identical dims, shape, and coords.
-        dim: Index for the new leading dimension.
-
-    Raises:
-        ValueError: If *arrays* is empty or any slice has a different shape or dims than the first.
-    """
-    if not arrays:
-        raise ValueError("fast_concat: 'arrays' must not be empty")
-    first = arrays[0]
-    expected_shape = first.shape
-    expected_dims = first.dims
-    for i, a in enumerate(arrays[1:], 1):
-        if a.shape != expected_shape:
-            raise ValueError(f'fast_concat: slice {i} shape {a.shape} != expected {expected_shape}')
-        if a.dims != expected_dims:
-            raise ValueError(f'fast_concat: slice {i} dims {a.dims} != expected {expected_dims}')
-    data = np.array([a.values for a in arrays])
-    name = str(dim.name)
-    dims = [name, *expected_dims]
-    coords: dict[str, object] = {name: dim}
-    for d in expected_dims:
-        key = str(d)
-        if key in first.coords:
-            coords[key] = first.coords[key]
-    return xr.DataArray(data, dims=dims, coords=coords)
-
-
 def as_dataarray(
     value: Variate,
     coords: Mapping[str, Any],

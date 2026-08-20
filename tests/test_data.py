@@ -32,12 +32,11 @@ class TestFlowsTable:
             ports=[Port(id='src', imports=[flow])],
         )
         ds = data.flows
-        lb = ds.rel_lb.sel(flow='src(b)').values
-        ub = ds.rel_ub.sel(flow='src(b)').values
-        assert list(lb) == [0.2, 0.2, 0.2]
-        assert list(ub) == [0.8, 0.8, 0.8]
-        assert float(ds.size.sel(flow='src(b)').values) == 100.0
-        assert str(ds.bound_type.sel(flow='src(b)').values) == 'bounded'
+        envelope = ds.envelope.filter(pl.col('flow') == 'src(b)')
+        assert envelope['relative_rate_min'].to_list() == [0.2, 0.2, 0.2]
+        assert envelope['relative_rate_max'].to_list() == [0.8, 0.8, 0.8]
+        assert ds.sizes.filter(pl.col('flow') == 'src(b)')['size'].to_list() == [100.0]
+        assert ds.flows.filter(pl.col('flow') == 'src(b)')['bound_type'].to_list() == ['bounded']
 
     def test_fixed_profile(self):
         flow = Flow(carrier='b', size=100, fixed_relative_profile=[0.5, 0.8, 0.6])
@@ -47,9 +46,9 @@ class TestFlowsTable:
             effects=[Effect(id='cost')],
             ports=[Port(id='sink', exports=[flow])],
         )
-        fixed = data.flows.fixed_profile.sel(flow='sink(b)').values
-        assert list(fixed) == [0.5, 0.8, 0.6]
-        assert str(data.flows.bound_type.sel(flow='sink(b)').values) == 'profile'
+        fixed = data.flows.fixed_profile.filter(pl.col('flow') == 'sink(b)')
+        assert fixed['value'].to_list() == [0.5, 0.8, 0.6]
+        assert data.flows.flows['bound_type'].to_list() == ['profile']
 
     def test_unsized_flow(self):
         flow = Flow(carrier='b')
@@ -59,7 +58,7 @@ class TestFlowsTable:
             effects=[Effect(id='cost')],
             ports=[Port(id='src', imports=[flow])],
         )
-        assert str(data.flows.bound_type.sel(flow='src(b)').values) == 'unsized'
+        assert data.flows.flows['bound_type'].to_list() == ['unsized']
 
 
 class TestCarriersData:
@@ -140,9 +139,10 @@ class TestEffectsTable:
         fds = data.flows
         # One row per (flow, effect) the flow actually charges — not a dense
         # product over every flow and every effect.
-        assert list(fds.effect_pair_flow.values) == ['src(b)']
-        assert list(fds.effect_pair_effect.values) == ['cost']
-        assert all(v == 0.04 for v in fds.effect_pair_coeff.isel(effect_pair=0).values)
+        pairs = fds.effect_pairs
+        assert pairs['flow'].unique().to_list() == ['src(b)']
+        assert pairs['effect'].unique().to_list() == ['cost']
+        assert pairs['value'].to_list() == [0.04, 0.04, 0.04]
 
 
 class TestFlowNodeId:
@@ -205,7 +205,7 @@ class TestFlowQualification:
             effects=[Effect(id='cost')],
             ports=[Port(id='src', imports=[f]), Port(id='sink', exports=[f])],
         )
-        assert list(data.flows.size.coords['flow'].values) == ['src(b)', 'sink(b)']
+        assert data.flows.ids == ['src(b)', 'sink(b)']
 
     def test_port_duplicate_short_ids_raise_at_construction(self):
         with pytest.raises(ValueError, match=r"Port 'grid': duplicate flow short_id\(s\) \['elec'\]"):

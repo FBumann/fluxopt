@@ -60,13 +60,10 @@ def _first_governed_flow(data: ModelData) -> dict[str, str]:
     attributes them to the component's first governed flow (a presentation
     policy of the breakdown, not part of the model math).
     """
-    governed = data.flows.governed_by
-    if governed is None:
-        return {}
     first: dict[str, str] = {}
-    for fid, owner in zip(governed.coords['flow'].values, governed.values, strict=True):
-        if str(owner):
-            first.setdefault(str(owner), str(fid))
+    governed = data.flows.governed_by
+    for fid, owner in zip(governed['flow'], governed['component'], strict=True):
+        first.setdefault(owner, fid)
     return first
 
 
@@ -89,7 +86,7 @@ def _gather(
     read: Any, names: dict[str, str], data: ModelData, all_ids: list[str], collapse: str | None
 ) -> xr.DataArray:
     """Sum the named contributions onto one contributor axis."""
-    flow_ids = [str(f) for f in data.flows.flow_id.values]
+    flow_ids = data.flows.ids
     total: xr.DataArray | None = None
     for name, entity in names.items():
         arr = read(name)
@@ -170,7 +167,7 @@ def contributions_from(read: Any, data: ModelData, *, cross_effects: bool = True
         Dataset with ``temporal`` (contributor, effect, time), ``lump``
         (contributor, effect) and ``total`` (contributor, effect).
     """
-    flow_ids = [str(f) for f in data.flows.flow_id.values]
+    flow_ids = data.flows.ids
     stor_ids = data.storages.ids if data.storages is not None else []
     all_ids = flow_ids + stor_ids
 

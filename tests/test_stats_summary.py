@@ -80,8 +80,8 @@ def test_resolved_sizes_fills_in_invested_size():
 
     invested = result.sizes.sel(flow=flow).item()
     resolved = stats.resolved_sizes.sel(flow=flow).item()
-    # data.flows.size is NaN for invested flows; resolved_sizes fills from the solution.
-    assert np.isnan(result.data.flows.size.sel(flow=flow).item())
+    # An invested flow has no row in `sizes`; resolved_sizes fills it from the solution.
+    assert flow not in result.data.flows.sized_ids
     assert np.isfinite(resolved)
     assert np.isclose(resolved, invested)
     assert np.isclose(resolved, 80)  # peak demand
