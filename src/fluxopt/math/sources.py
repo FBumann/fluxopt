@@ -36,8 +36,6 @@ PROGRAM = Path(__file__).with_name('program.yaml')
 #: carries its own period column and is not in this list.
 PERIOD_PARAMS = frozenset(
     {
-        'uptime_upper',
-        'downtime_upper',
         'prior_level',
         'pw_avail_bound',
         'flow_hours_min',
@@ -628,9 +626,9 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         sources['uptime_big_m'] = big_m.select(['status_entity', pl.col('up').alias('value')])
         sources['downtime_big_m'] = big_m.select(['status_entity', pl.col('down').alias('value')])
 
-        # The duration variables' own upper bound, over the entity's timeline:
-        # the declared maximum where there is one, the big-M where there is not.
-        steps = pl.DataFrame({'time': ordinals}, schema={'time': pl.Int64})
+        # The duration variables' ceiling: the declared maximum where there is
+        # one, the big-M where there is not. Per entity — lpspec broadcasts it
+        # over the (time, period) grid the variable is declared on.
         for kind, ids, declared, fallback in (
             ('uptime', bounded_up, 'uptime_max', 'up'),
             ('downtime', bounded_down, 'downtime_max', 'down'),
@@ -642,7 +640,7 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
                 .with_columns(pl.col(declared).fill_null(pl.col(fallback)).alias('value'))
                 .select(['status_entity', 'value'])
             )
-            sources[f'{kind}_upper'] = ceiling.join(steps, how='cross').select(['status_entity', 'time', 'value'])
+            sources[f'{kind}_upper'] = ceiling
 
         # A prior run shorter than the minimum forces continuation.
         for forced_key, prev_column, min_column in (
@@ -671,8 +669,10 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         for n in (
             'uptime_min',
             'uptime_big_m',
+            'uptime_upper',
             'downtime_big_m',
             'downtime_min',
+            'downtime_upper',
             'initial_status',
             'previous_uptime',
             'previous_downtime',
@@ -680,8 +680,6 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
             'forced_off_at_start',
         ):
             sources[n] = _empty(n, 'status_entity')
-        for n in ('uptime_upper', 'downtime_upper'):
-            sources[n] = _empty(n, 'status_entity', 'time')
         for n in ('rate_min_when_on', 'rate_max_when_on', 'rate_fixed_when_on'):
             sources[n] = _empty(n, 'flow', 'time', 'period')
 
