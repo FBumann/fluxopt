@@ -148,10 +148,10 @@ class Result:
         converters: dict[str, dict[str, list[str]]] = {}
         if self.data.converters is not None:
             cd = self.data.converters
-            # Deduplicate pairs (pair dim may repeat per equation index)
-            pairs = dict.fromkeys(zip(cd.pair_converter.values, cd.pair_flow.values, strict=True))
-            for conv_id, fid in pairs:
-                conv_id, fid = str(conv_id), str(fid)
+            # One row per (converter, flow, equation, timestep), so the pairs
+            # are what is left after asking which distinct flows each names.
+            pairs = cd.coefficients.select(['converter', 'flow']).unique(maintain_order=True)
+            for conv_id, fid in zip(pairs['converter'], pairs['flow'], strict=True):
                 if conv_id not in converters:
                     converters[conv_id] = {'inputs': [], 'outputs': []}
                 target = 'inputs' if flow_sign[fid] < 0 else 'outputs'

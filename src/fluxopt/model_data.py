@@ -984,67 +984,54 @@ class CarriersData:
 
 @dataclass
 class ConvertersData:
-    pair_coeff: xr.DataArray  # (pair, eq_idx, time) — non-zero coefficients only
-    pair_converter: xr.DataArray  # (pair,) — converter id per pair
-    pair_flow: xr.DataArray  # (pair,) — flow id per pair
-    #: (converter,) — how many conversion equations each converter states.
-    #: Equations are numbered 0..n-1 per converter, so which (converter, eq_idx)
-    #: pairs are live follows from the count; this used to be that same fact as
-    #: a dense boolean matrix.
-    n_equations: xr.DataArray
+    """Linear conversion equations, as the coefficients they actually have.
+
+    A converter states some equations; each names some of its flows with a
+    coefficient. That is a table, and only the non-zero entries are in it —
+    a flow a given equation does not mention has no row rather than a zero.
+    """
+
+    #: (converter, flow, eq_idx, time, value) — non-zero coefficients only
+    coefficients: pl.DataFrame
+    #: (converter, n_equations) — equations are numbered 0..n-1 per converter
+    equations: pl.DataFrame
+
+    @property
+    def ids(self) -> list[str]:
+        """The converters stating linear equations, in declaration order."""
+        return self.equations['converter'].to_list()
+
+    @property
+    def width(self) -> int:
+        """The most equations any one converter states."""
+        return int(self.equations['n_equations'].max() or 0)  # type: ignore[arg-type]
 
     def __post_init__(self) -> None:
-        """Check the counts are positive and the pairs name converters we carry.
+        """Check the counts are positive and the rows name converters we carry.
 
         Layer 3 — see docs/design/validation-layers.md.
         """
-        counts = self.n_equations.values
-        if counts.dtype.kind not in 'iu' or (counts < 1).any():
-            raise ValueError(f'ConvertersData.n_equations must be positive integers, got {counts.tolist()}')
-        known = set(self.n_equations.coords['converter'].values)
-        if unknown := sorted(set(self.pair_converter.values) - known):
-            raise ValueError(f'ConvertersData.pair_converter references unknown converter(s) {unknown}')
-
-    @property
-    def flow_coeff(self) -> xr.DataArray:
-        """Dense (converter, eq_idx, flow, time) view for inspection."""
-        conv_ids = list(dict.fromkeys(self.pair_converter.values))
-        flow_ids = list(dict.fromkeys(self.pair_flow.values))
-        eq_idx = list(self.pair_coeff.coords['eq_idx'].values)
-        time = self.pair_coeff.coords['time']
-
-        dense = xr.DataArray(
-            np.full((len(conv_ids), len(eq_idx), len(flow_ids), len(time)), np.nan),
-            dims=['converter', 'eq_idx', 'flow', 'time'],
-            coords={'converter': conv_ids, 'eq_idx': eq_idx, 'flow': flow_ids, 'time': time},
-        )
-        for i in range(len(self.pair_converter)):
-            conv_id = str(self.pair_converter.values[i])
-            flow_id = str(self.pair_flow.values[i])
-            dense.loc[conv_id, :, flow_id, :] = self.pair_coeff.isel(pair=i)
-        return dense
+        if len(short := self.equations.filter(pl.col('n_equations') < 1)):
+            raise ValueError(f'ConvertersData.n_equations must be positive; got {short["n_equations"].to_list()}')
+        stray = self.coefficients.filter(~pl.col('converter').is_in(self.equations['converter'].implode()))
+        if len(stray):
+            raise ValueError(
+                f'ConvertersData.coefficients references unknown converter(s) '
+                f'{sorted(set(stray["converter"].to_list()))}'
+            )
 
     def to_dataset(self) -> xr.Dataset:
-        """Serialize to xr.Dataset."""
-        return _to_dataset(self)
+        """Serialize to xr.Dataset — one group's worth, via the frame bridge."""
+        return _frames_to_dataset({'coefficients': self.coefficients, 'equations': self.equations})
 
     @classmethod
     def from_dataset(cls, ds: xr.Dataset) -> Self:
-        """Deserialize from xr.Dataset.
-
-        Args:
-            ds: Dataset with pair-based converter coefficient variables.
-        """
-        return cls(
-            pair_coeff=ds['pair_coeff'],
-            pair_converter=ds['pair_converter'],
-            pair_flow=ds['pair_flow'],
-            n_equations=ds['n_equations'],
-        )
+        """Deserialize from xr.Dataset."""
+        return cls(**_frames_from_dataset(ds, ('coefficients', 'equations')))
 
     @classmethod
     def build(cls, converters: list[Converter], time: TimeIndex) -> Self | None:
-        """Build ConvertersData with sparse pair-based conversion coefficients.
+        """Build ConvertersData from the equations each converter states.
 
         Only linear converters are included; piecewise converters
         (``conversion is not None``) live in :class:`PiecewiseData`.
@@ -1057,38 +1044,42 @@ class ConvertersData:
         if not converters:
             return None
 
-        conv_ids = [c.id for c in converters]
-        max_eq = max(len(c.conversion_factors) for c in converters)
-        n_time = len(time)
-        eq_idx_list = list(range(max_eq))
-
-        pairs_conv: list[str] = []
-        pairs_flow: list[str] = []
-        coeff_arrays: list[np.ndarray] = []
-
+        labels = list(time)
+        n_time = len(labels)
+        conv_col: list[str] = []
+        flow_col: list[str] = []
+        eq_col: list[int] = []
+        time_col: list[Any] = []
+        value_col: list[float] = []
         for conv in converters:
             for fid, flow, _sign in conv._qualified_flows():
                 short = flow.short_id
-                eq_coeffs = np.zeros((max_eq, n_time))
                 for eq_i, equation in enumerate(conv.conversion_factors):
-                    if short in equation:
-                        eq_coeffs[eq_i] = as_dataarray(equation[short], {'time': time}).values
-                pairs_conv.append(conv.id)
-                pairs_flow.append(fid)
-                coeff_arrays.append(eq_coeffs)
+                    if short not in equation:
+                        continue
+                    values = np.broadcast_to(as_dataarray(equation[short], {'time': time}).values, (n_time,))
+                    conv_col.extend([conv.id] * n_time)
+                    flow_col.extend([fid] * n_time)
+                    eq_col.extend([eq_i] * n_time)
+                    time_col.extend(labels)
+                    value_col.extend(float(v) for v in values)
 
         return cls(
-            pair_coeff=xr.DataArray(
-                np.array(coeff_arrays),
-                dims=['pair', 'eq_idx', 'time'],
-                coords={'eq_idx': eq_idx_list, 'time': time},
+            coefficients=pl.DataFrame(
+                {
+                    'converter': conv_col,
+                    'flow': flow_col,
+                    'eq_idx': eq_col,
+                    'time': time_col,
+                    'value': value_col,
+                }
             ),
-            pair_converter=xr.DataArray(pairs_conv, dims=['pair']),
-            pair_flow=xr.DataArray(pairs_flow, dims=['pair']),
-            n_equations=xr.DataArray(
-                np.array([len(c.conversion_factors) for c in converters]),
-                dims=['converter'],
-                coords={'converter': conv_ids},
+            equations=pl.DataFrame(
+                {
+                    'converter': [c.id for c in converters],
+                    'n_equations': [len(c.conversion_factors) for c in converters],
+                },
+                schema={'converter': pl.String, 'n_equations': pl.Int64},
             ),
         )
 
@@ -1841,7 +1832,7 @@ class ModelData:
             if unknown := sorted(named - components):
                 raise ValueError(f'flows.governed_by names components without a Status: {unknown}')
         if self.converters is not None:
-            check_flows([str(v) for v in self.converters.pair_flow.values], 'converters.pair_flow')
+            check_flows(self.converters.coefficients['flow'].to_list(), 'converters.coefficients')
         if self.piecewise is not None:
             check_flows([str(v) for v in self.piecewise.pair_flow.values], 'piecewise.pair_flow')
         if self.storages is not None:

@@ -198,6 +198,25 @@ def _tidy(da: xr.DataArray, *, drop_zero: bool, time_ord: dict[Any, int] | None 
     return pd.DataFrame(cols)
 
 
+def _with_time_ordinals(frame: pl.DataFrame, dims: Any) -> pl.DataFrame:
+    """Replace a frame's ``time`` labels with the ordinals the program uses.
+
+    The element layer indexes time by whatever the user gave it; the program
+    indexes it by position, because a timestamp is a poor join key.
+
+    Both sides are cast to one time unit first. A freshly built frame carries
+    microseconds and one read back from netCDF carries nanoseconds, and polars
+    refuses to join across the two — which is the good outcome, since the
+    alternative is the failure the labels themselves have: numpy datetimes are
+    nanoseconds and reading their raw integers as microseconds turns 2024 into
+    the year 55969, so the join matches nothing rather than failing.
+    """
+    unit = pl.Datetime('us')
+    labels = pd.to_datetime(dims.time.values).to_pydatetime().tolist()
+    ordinals = pl.DataFrame({'time': labels, 'ord': list(range(len(labels)))}).with_columns(pl.col('time').cast(unit))
+    return frame.with_columns(pl.col('time').cast(unit)).join(ordinals, on='time').drop('time').rename({'ord': 'time'})
+
+
 def _fold_lump_rows(frame: pl.DataFrame, entity: str, column: str, leo: xr.DataArray | None) -> pl.DataFrame:
     """A lump coefficient table, Leontief-folded on the rows.
 
@@ -391,20 +410,21 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
     # --- converters -------------------------------------------------------
     if data.converters is not None:
         cds = data.converters
-        pair_flow = [str(v) for v in cds.pair_flow.values]
-        pair_conv = [str(v) for v in cds.pair_converter.values]
-        conv_of = dict(zip(pair_flow, pair_conv, strict=True))
+        coeffs = cds.coefficients
+        conv_of = dict(zip(coeffs['flow'], coeffs['converter'], strict=True))
         flow_index['converter_of'] = [conv_of.get(f) for f in flow_ids]
-        pc = cds.pair_coeff.assign_coords(pair=pair_flow).rename({'pair': 'flow'})
-        sources['conversion_factor'] = tidy(pc, drop_zero=True)
-        # One row per equation each converter states — the counts, expanded.
-        sources['conversion_active'] = pd.DataFrame(
-            [
-                {'converter': str(cid), 'eq_idx': i, 'value': True}
-                for cid, n in zip(cds.n_equations.coords['converter'].values, cds.n_equations.values, strict=True)
-                for i in range(int(n))
-            ]
+        # Already the table the parameter wants — only the time labels are
+        # the element layer's and the program indexes them by ordinal.
+        sources['conversion_factor'] = _with_time_ordinals(coeffs.filter(pl.col('value') != 0), dims).select(
+            ['flow', 'eq_idx', 'time', 'value']
         )
+        # One row per equation each converter states — the counts, expanded.
+        sources['conversion_active'] = pl.DataFrame(
+            {
+                'converter': [c for c, n in zip(cds.ids, cds.equations['n_equations'], strict=True) for _ in range(n)],
+                'eq_idx': [i for n in cds.equations['n_equations'] for i in range(n)],
+            }
+        ).with_columns(pl.lit(True).alias('value'))
     else:
         flow_index['converter_of'] = None
         sources['conversion_factor'] = _empty('conversion_factor', 'flow', 'eq_idx', 'time')
@@ -861,9 +881,7 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
     # `breakpoints` is already keyed per (converter, flow) pair, which is the
     # shape the program wants: a link is a row on `flow`, so nothing has to be
     # reshaped into link slots.
-    linear_convs = (
-        [str(c) for c in data.converters.n_equations.coords['converter'].values] if data.converters is not None else []
-    )
+    linear_convs = data.converters.ids if data.converters is not None else []
     bp_width = 0
     pw_status_of: dict[str, str | None] = {}
     pw = data.piecewise
@@ -1013,7 +1031,7 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         # or one of each. The axis is the union, or a curve's own converter
         # would not be a coordinate of the dimension its rows are keyed on.
         'converter': _index_frame('converter', converter_ids, {'pw_status_of': pw_status_of}),
-        'eq_idx': axis('eq_idx', range(int(data.converters.n_equations.max())) if data.converters is not None else []),
+        'eq_idx': axis('eq_idx', range(data.converters.width) if data.converters is not None else []),
         'storage': labels(storage_ids),
         'effect': labels(effect_ids),
         'status_entity': labels(entity_ids),

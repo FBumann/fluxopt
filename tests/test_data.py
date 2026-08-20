@@ -118,14 +118,12 @@ class TestConvertersTable:
         )
         ds = data.converters
         assert ds is not None
-        fuel_coeff = float(
-            ds.flow_coeff.sel(converter='boiler', eq_idx=0, flow='boiler(gas)', time=data.dims.time[0]).values
-        )
-        heat_coeff = float(
-            ds.flow_coeff.sel(converter='boiler', eq_idx=0, flow='boiler(heat)', time=data.dims.time[0]).values
-        )
-        assert fuel_coeff == 0.9
-        assert heat_coeff == -1.0
+        first = ds.coefficients.filter(pl.col('eq_idx') == 0).group_by('flow').first()
+        by_flow = dict(zip(first['flow'], first['value'], strict=True))
+        assert by_flow['boiler(gas)'] == 0.9
+        assert by_flow['boiler(heat)'] == -1.0
+        # Only the flows the equation names have rows at all
+        assert set(by_flow) == {'boiler(gas)', 'boiler(heat)'}
 
 
 class TestEffectsTable:
