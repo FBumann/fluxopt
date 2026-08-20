@@ -104,7 +104,7 @@ def _gather(
         part = _onto_contributor(arr, entity, data, flow_ids).reindex(contributor=all_ids, fill_value=0.0).fillna(0.0)
         total = part if total is None else total + part
     if total is None:
-        effects = [str(e) for e in data.effects.total_min.coords['effect'].values]
+        effects = data.effects.ids
         total = xr.DataArray(
             np.zeros((len(all_ids), len(effects))),
             dims=['contributor', 'effect'],
@@ -122,7 +122,8 @@ def _undo_cross_effects(
     rather than another inversion — so the two views cannot disagree about
     anything but floating point.
     """
-    cf = data.effects.cf_matrix()
+    periods = list(data.dims.period.values) if data.dims.period is not None else None
+    cf = data.effects.cf_matrix(periods)
     if cf is None:
         return temporal, lump
 
