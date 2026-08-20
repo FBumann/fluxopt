@@ -60,6 +60,11 @@ parameters:
   # bounds: accepts only a bare parameter name) ---------------------------
   rate_min: {dims: [flow, time, period]}
   rate_max: {dims: [flow, time, period]}
+  # The largest rate a flow could ever carry: its fixed size, or the maximum
+  # it could be sized to. A big-M wherever a binary has to release a rate —
+  # a ramp across a start-up, a storage's charge/discharge exclusion. The
+  # storage side reads it through the lookup rather than keeping a copy.
+  size_bound: {dims: [flow]}
 
   # --- carrier balance ---------------------------------------------------
   carrier_sign: {dims: [flow]}
@@ -71,8 +76,8 @@ parameters:
   conversion_active: {dims: [converter, eq_idx], dtype: bool}
 
   # --- storage -----------------------------------------------------------
-  charge_gain: {dims: [flow, time]}      # eta_c * dt
-  discharge_draw: {dims: [flow, time]}   # dt / eta_d
+  charge_gain: {dims: [storage, time]}     # eta_c * dt
+  discharge_draw: {dims: [storage, time]}  # dt / eta_d
   retention: {dims: [storage, time]}       # (1 - loss) ** dt
   level_min: {dims: [storage, time]}
   level_max: {dims: [storage, time]}
@@ -153,14 +158,11 @@ parameters:
   ramp_down_limit: {dims: [flow, time, period]}
   ramp_up_coeff: {dims: [flow, time, period]}    # r+ * dt          (sized: size is a variable)
   ramp_down_coeff: {dims: [flow, time, period]}
-  ramp_bigM: {dims: [flow]}              # static size bound, relaxes across transitions
 
   # --- storage: end-of-horizon bounds and charge/discharge exclusion --------
   final_level_min: {dims: [storage]}
   final_level_max: {dims: [storage]}
   prevent_simultaneous: {dims: [storage], dtype: bool}
-  charge_size_bound: {dims: [storage]}      # static size bound of the charge flow
-  discharge_size_bound: {dims: [storage]}
 
   # --- storage sizing -----------------------------------------------------
   has_capacity_sizing: {dims: [storage], dtype: bool}
@@ -390,8 +392,8 @@ expressions:
 
   net_charge:
     expression: >-
-      sum(rate * charge_gain, by=charge_storage)
-      - sum(rate * discharge_draw, by=discharge_storage)
+      sum(rate, by=charge_storage) * charge_gain
+      - sum(rate, by=discharge_storage) * discharge_draw
     description: Energy entering a storage per step, net of discharge draw.
 
 constraints:
@@ -554,7 +556,7 @@ constraints:
   ramp_up_status:
     foreach: [flow, time, period]
     where: "has_ramp_up AND NOT is_first AND NOT has_sizing AND is_gated"
-    expression: rate - shift(rate, over=time, offset=1) - ramp_bigM * at(startup, by=status_of) <= ramp_up_limit
+    expression: rate - shift(rate, over=time, offset=1) - size_bound * at(startup, by=status_of) <= ramp_up_limit
 
   ramp_up_sized:
     foreach: [flow, time, period]
@@ -566,7 +568,7 @@ constraints:
     where: "has_ramp_up AND NOT is_first AND has_sizing AND is_gated"
     expression: >-
       rate - shift(rate, over=time, offset=1) - ramp_up_coeff * size
-      - ramp_bigM * at(startup, by=status_of) <= 0
+      - size_bound * at(startup, by=status_of) <= 0
 
   ramp_down:
     foreach: [flow, time, period]
@@ -576,7 +578,7 @@ constraints:
   ramp_down_status:
     foreach: [flow, time, period]
     where: "has_ramp_down AND NOT is_first AND NOT has_sizing AND is_gated"
-    expression: shift(rate, over=time, offset=1) - rate - ramp_bigM * at(shutdown, by=status_of) <= ramp_down_limit
+    expression: shift(rate, over=time, offset=1) - rate - size_bound * at(shutdown, by=status_of) <= ramp_down_limit
 
   ramp_down_sized:
     foreach: [flow, time, period]
@@ -588,7 +590,7 @@ constraints:
     where: "has_ramp_down AND NOT is_first AND has_sizing AND is_gated"
     expression: >-
       shift(rate, over=time, offset=1) - rate - ramp_down_coeff * size
-      - ramp_bigM * at(shutdown, by=status_of) <= 0
+      - size_bound * at(shutdown, by=status_of) <= 0
 
   # --- capacity as a decision variable: the level envelope becomes rows.
   cap_level_max:
@@ -687,14 +689,14 @@ constraints:
   storage_no_simul_charge:
     foreach: [storage, time, period]
     where: "prevent_simultaneous"
-    expression: sum(rate, by=charge_storage) - charge_size_bound * charging <= 0
+    expression: sum(rate, by=charge_storage) - sum(size_bound, by=charge_storage) * charging <= 0
 
   storage_no_simul_discharge:
     foreach: [storage, time, period]
     where: "prevent_simultaneous"
     expression: >-
-      sum(rate, by=discharge_storage) + discharge_size_bound * charging
-      <= discharge_size_bound
+      sum(rate, by=discharge_storage) + sum(size_bound, by=discharge_storage) * charging
+      <= sum(size_bound, by=discharge_storage)
 
   # --- build at most once (exactly once when mandatory); never when capacity
   # already exists from before the horizon.
