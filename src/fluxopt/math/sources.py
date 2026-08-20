@@ -108,15 +108,14 @@ _BOOL_PARAMS = frozenset(
         'forced_on_at_start',
         'forced_off_at_start',
         'has_sizing',
-        'size_optional',
+        'mandatory',
         'has_invest',
-        'invest_mandatory',
         'has_prior_capacity',
         'has_ramp_up',
         'has_ramp_down',
         'prevent_simultaneous',
         'has_capacity_sizing',
-        'capacity_optional',
+        'capacity_mandatory',
     }
 )
 
@@ -495,9 +494,10 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         csz = sds.sizing
         if csz is not None:
             cap_ids = csz.ids
-            copt = csz.bounds.filter(~pl.col('mandatory'))['entity'].to_list()
             sources['has_capacity_sizing'] = _flags('has_capacity_sizing', 'storage', cap_ids)
-            sources['capacity_optional'] = _flags('capacity_optional', 'storage', copt)
+            sources['capacity_mandatory'] = _flags(
+                'capacity_mandatory', 'storage', csz.bounds.filter('mandatory')['entity'].to_list()
+            )
             sources['capacity_min'] = pd.DataFrame({'storage': cap_ids, 'value': csz.bounds['size_min'].to_numpy()})
             sources['capacity_max'] = pd.DataFrame({'storage': cap_ids, 'value': csz.bounds['size_max'].to_numpy()})
             sized = profiles.filter(pl.col('storage').is_in(pl.Series(cap_ids).implode()))
@@ -689,9 +689,8 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
     # --- sizing -----------------------------------------------------------
     if sz is not None:
         bounds = sz.bounds
-        opt_ids = bounds.filter(~pl.col('mandatory'))['entity'].to_list()
         sources['has_sizing'] = _flags('has_sizing', 'flow', sizing_ids)
-        sources['size_optional'] = _flags('size_optional', 'flow', opt_ids)
+        sources['mandatory'] = _flags('mandatory', 'flow', bounds.filter('mandatory')['entity'].to_list())
         sources['size_min'] = pd.DataFrame({'flow': sizing_ids, 'value': bounds['size_min'].to_numpy()})
         sources['size_max'] = pd.DataFrame({'flow': sizing_ids, 'value': bounds['size_max'].to_numpy()})
         at_max = envelope.join(
@@ -710,13 +709,13 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
             ('effects_fixed', 'flow', sz.effects, 'fixed'),
         ]
     else:
-        for n in ('has_sizing', 'size_optional', 'size_min', 'size_max'):
+        for n in ('has_sizing', 'mandatory', 'size_min', 'size_max'):
             sources[n] = _empty(n, 'flow')
         for n in ('rate_max_at_size_max', 'rate_min_at_size_max'):
             sources[n] = _empty(n, 'flow', 'time', 'period')
 
     if 'has_capacity_sizing' not in sources:
-        for n in ('has_capacity_sizing', 'capacity_optional', 'capacity_min', 'capacity_max'):
+        for n in ('has_capacity_sizing', 'capacity_mandatory', 'capacity_min', 'capacity_max'):
             sources[n] = _empty(n, 'storage')
         for n in ('relative_level_min', 'relative_level_max'):
             sources[n] = _empty(n, 'storage', 'time')
@@ -766,7 +765,12 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
             drop_zero=False,
         )
         sources['has_invest'] = _flags('has_invest', 'flow', invest_ids)
-        sources['invest_mandatory'] = pd.DataFrame({'flow': invest_ids, 'value': inv.bounds['mandatory'].to_numpy()})
+        # The same parameter the sizing block fills. A flow's size is a
+        # `Sizing` or an `Investment`, never both, so the two never collide.
+        sources['mandatory'] = pd.concat(
+            [sources['mandatory'], pd.DataFrame({'flow': invest_ids, 'value': inv.bounds['mandatory'].to_numpy()})],
+            ignore_index=True,
+        )
         sources['invest_min'] = pd.DataFrame({'flow': invest_ids, 'value': inv.bounds['size_min'].to_numpy()})
         sources['invest_max'] = pd.DataFrame({'flow': invest_ids, 'value': inv.bounds['size_max'].to_numpy()})
         sources['prior_capacity'] = pd.DataFrame({'flow': invest_ids, 'value': prior})
@@ -787,7 +791,6 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
     else:
         for name in (
             'has_invest',
-            'invest_mandatory',
             'invest_min',
             'invest_max',
             'prior_capacity',

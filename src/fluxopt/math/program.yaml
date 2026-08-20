@@ -120,7 +120,10 @@ parameters:
 
   # --- sizing (capacity optimisation) -------------------------------------
   has_sizing: {dims: [flow], dtype: bool}
-  size_optional: {dims: [flow], dtype: bool}   # sizing without `mandatory`
+  # Whether the build decision is already taken. Serves both mechanisms: a
+  # flow's size is a `Sizing` or an `Investment`, never both, so the two
+  # never claim the same row.
+  mandatory: {dims: [flow], dtype: bool}
   size_min: {dims: [flow]}
   size_max: {dims: [flow]}
   size_upper: {dims: [flow, period]}   # upper bound of `size`: sizing max or invest max
@@ -137,7 +140,6 @@ parameters:
 
   # --- investment (build timing over periods) ------------------------------
   has_invest: {dims: [flow], dtype: bool}
-  invest_mandatory: {dims: [flow], dtype: bool}
   invest_min: {dims: [flow]}
   invest_max: {dims: [flow]}
   prior_capacity: {dims: [flow]}
@@ -169,7 +171,7 @@ parameters:
 
   # --- storage sizing -----------------------------------------------------
   has_capacity_sizing: {dims: [storage], dtype: bool}
-  capacity_optional: {dims: [storage], dtype: bool}
+  capacity_mandatory: {dims: [storage], dtype: bool}
   capacity_min: {dims: [storage]}
   capacity_max: {dims: [storage]}
   relative_level_min: {dims: [storage, time]}
@@ -526,27 +528,27 @@ constraints:
 
   status_sizing_gate_built:
     foreach: [flow, time, period]
-    where: "is_gated AND has_sizing AND size_optional AND NOT (size_min > 0)"
+    where: "is_gated AND has_sizing AND NOT mandatory AND NOT (size_min > 0)"
     expression: at(running, by=status_of) <= size_built
 
   sizing_mandatory_built:
     foreach: [flow, period]
-    where: "has_sizing AND NOT size_optional"
+    where: "has_sizing AND mandatory"
     expression: size_built == 1
 
   sizing_min:
     foreach: [flow, period]
-    where: "has_sizing AND NOT size_optional"
+    where: "has_sizing AND mandatory"
     expression: size >= size_min
 
   sizing_optional_min:
     foreach: [flow, period]
-    where: "has_sizing AND size_optional"
+    where: "has_sizing AND NOT mandatory"
     expression: size >= size_min * size_built
 
   sizing_optional_max:
     foreach: [flow, period]
-    where: "has_sizing AND size_optional"
+    where: "has_sizing AND NOT mandatory"
     expression: size <= size_max * size_built
 
   # --- P_t - P_{t-1} <= r+ * S * dt, relaxed at a startup for status flows.
@@ -613,22 +615,22 @@ constraints:
 
   cap_mandatory_built:
     foreach: [storage, period]
-    where: "has_capacity_sizing AND NOT capacity_optional"
+    where: "has_capacity_sizing AND capacity_mandatory"
     expression: capacity_built == 1
 
   cap_min:
     foreach: [storage, period]
-    where: "has_capacity_sizing AND NOT capacity_optional"
+    where: "has_capacity_sizing AND capacity_mandatory"
     expression: capacity >= capacity_min
 
   cap_optional_min:
     foreach: [storage, period]
-    where: "has_capacity_sizing AND capacity_optional"
+    where: "has_capacity_sizing AND NOT capacity_mandatory"
     expression: capacity >= capacity_min * capacity_built
 
   cap_optional_max:
     foreach: [storage, period]
-    where: "has_capacity_sizing AND capacity_optional"
+    where: "has_capacity_sizing AND NOT capacity_mandatory"
     expression: capacity <= capacity_max * capacity_built
 
   # --- downtime mirrors uptime with the state inverted: (1 - running).
@@ -705,12 +707,12 @@ constraints:
   # already exists from before the horizon.
   invest_build_mandatory:
     foreach: [flow]
-    where: "has_invest AND invest_mandatory AND NOT has_prior_capacity"
+    where: "has_invest AND mandatory AND NOT has_prior_capacity"
     expression: sum(invest_build, over=build_period) == 1
 
   invest_build_optional:
     foreach: [flow]
-    where: "has_invest AND NOT invest_mandatory AND NOT has_prior_capacity"
+    where: "has_invest AND NOT mandatory AND NOT has_prior_capacity"
     expression: sum(invest_build, over=build_period) <= 1
 
   invest_build_prior:
@@ -732,17 +734,17 @@ constraints:
 
   invest_size_mandatory_min:
     foreach: [flow]
-    where: "has_invest AND invest_mandatory AND NOT has_prior_capacity"
+    where: "has_invest AND mandatory AND NOT has_prior_capacity"
     expression: invest_size >= invest_min
 
   invest_size_optional_min:
     foreach: [flow]
-    where: "has_invest AND NOT invest_mandatory AND NOT has_prior_capacity"
+    where: "has_invest AND NOT mandatory AND NOT has_prior_capacity"
     expression: invest_size - invest_min * sum(invest_build, over=build_period) >= 0
 
   invest_size_optional_max:
     foreach: [flow]
-    where: "has_invest AND NOT invest_mandatory AND NOT has_prior_capacity"
+    where: "has_invest AND NOT mandatory AND NOT has_prior_capacity"
     expression: invest_size - invest_max * sum(invest_build, over=build_period) <= 0
 
   # --- size == invest_size when active, 0 when not (big-M).
