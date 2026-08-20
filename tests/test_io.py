@@ -4,6 +4,7 @@ import os
 from datetime import datetime
 from typing import TYPE_CHECKING
 
+import polars as pl
 import pytest
 import xarray as xr
 
@@ -186,9 +187,11 @@ class TestCarrierMetadataRoundtrip:
         loaded = Result.from_netcdf(tmp_nc)
 
         assert loaded.data is not None
-        assert str(loaded.data.carriers.unit.sel(carrier='elec').values) == 'kWh'
-        assert str(loaded.data.carriers.color.sel(carrier='elec').values) == '#ff0000'
-        assert str(loaded.data.carriers.description.sel(carrier='elec').values) == 'Electrical energy'
+        assert loaded.data.carriers.carriers.filter(pl.col('carrier') == 'elec')['unit'][0] == 'kWh'
+        assert loaded.data.carriers.carriers.filter(pl.col('carrier') == 'elec')['color'][0] == '#ff0000'
+        assert (
+            loaded.data.carriers.carriers.filter(pl.col('carrier') == 'elec')['description'][0] == 'Electrical energy'
+        )
 
 
 class TestRoundtripContributionFrom:

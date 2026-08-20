@@ -135,13 +135,11 @@ class Result:
         and ``outputs`` (flows that consume from it).
         """
         cd = self.data.carriers
-        flow_ids = [str(f) for f in cd.carrier_of.coords['flow'].values]
-        of = [str(c) for c in cd.carrier_of.values]
-        signs = cd.sign.values
+        flow_ids = cd.membership['flow'].to_list()
+        of = cd.membership['carrier'].to_list()
+        signs = cd.membership['sign'].to_numpy()
 
-        carriers: dict[str, dict[str, list[str]]] = {
-            str(cid): {'inputs': [], 'outputs': []} for cid in cd.unit.coords['carrier'].values
-        }
+        carriers: dict[str, dict[str, list[str]]] = {cid: {'inputs': [], 'outputs': []} for cid in cd.ids}
         for fid, carrier, sign in zip(flow_ids, of, signs, strict=True):
             carriers[carrier]['inputs' if sign > 0 else 'outputs'].append(fid)
 

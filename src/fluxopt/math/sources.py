@@ -384,9 +384,9 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
     sources['rate_max'] = tidy(ub, drop_zero=False)
 
     # --- carrier balance --------------------------------------------------
-    carriers_of = [str(c) for c in data.carriers.carrier_of.values]
-    flow_index = pd.DataFrame({'flow': flow_ids, 'carrier_of': carriers_of})
-    sources['carrier_sign'] = pd.DataFrame({'flow': flow_ids, 'value': data.carriers.sign.values})
+    membership = data.carriers.membership
+    flow_index = pd.DataFrame({'flow': flow_ids, 'carrier_of': membership['carrier'].to_list()})
+    sources['carrier_sign'] = pd.DataFrame({'flow': flow_ids, 'value': membership['sign'].to_numpy()})
 
     # --- converters -------------------------------------------------------
     if data.converters is not None:
@@ -1008,7 +1008,7 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         'time': axis('time', ordinals),
         'period': axis('period', p_ordinals),
         'build_period': axis('build_period', p_ordinals),
-        'carrier': labels([str(c) for c in data.carriers.unit.coords['carrier'].values]),
+        'carrier': labels(data.carriers.ids),
         # Both kinds: a converter states linear equations, a piecewise curve,
         # or one of each. The axis is the union, or a curve's own converter
         # would not be a coordinate of the dimension its rows are keyed on.

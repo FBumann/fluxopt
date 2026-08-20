@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+import polars as pl
 import pytest
 import xarray as xr
 from conftest import ts
@@ -71,10 +72,11 @@ class TestCarriersData:
             effects=[Effect(id='cost')],
             ports=[Port(id='src', imports=[out_flow]), Port(id='sink', exports=[in_flow])],
         )
-        cd = data.carriers
-        assert float(cd.sign.sel(flow='src(b)')) == 1.0  # output to carrier
-        assert float(cd.sign.sel(flow='sink(b)')) == -1.0  # input from carrier
-        assert {str(c) for c in cd.carrier_of.values} == {'b'}
+        m = data.carriers.membership
+        by_flow = dict(zip(m['flow'], m['sign'], strict=True))
+        assert by_flow['src(b)'] == 1.0  # output to carrier
+        assert by_flow['sink(b)'] == -1.0  # input from carrier
+        assert set(m['carrier'].to_list()) == {'b'}
 
     def test_metadata(self):
         data = ModelData.build(
@@ -83,9 +85,9 @@ class TestCarriersData:
             effects=[Effect(id='cost')],
             ports=[Port(id='src', imports=[Flow(carrier='elec', size=100)])],
         )
-        assert str(data.carriers.unit.sel(carrier='elec').values) == 'kWh'
-        assert str(data.carriers.color.sel(carrier='elec').values) == 'blue'
-        assert str(data.carriers.description.sel(carrier='elec').values) == 'Electricity'
+        assert data.carriers.carriers.filter(pl.col('carrier') == 'elec')['unit'][0] == 'kWh'
+        assert data.carriers.carriers.filter(pl.col('carrier') == 'elec')['color'][0] == 'blue'
+        assert data.carriers.carriers.filter(pl.col('carrier') == 'elec')['description'][0] == 'Electricity'
 
     def test_from_dataset_roundtrip(self):
         from fluxopt.model_data import CarriersData
@@ -98,9 +100,8 @@ class TestCarriersData:
         )
         ds = data.carriers.to_dataset()
         loaded = CarriersData.from_dataset(ds)
-        assert str(loaded.unit.sel(carrier='elec').values) == 'kWh'
-        assert str(loaded.color.sel(carrier='elec').values) == 'red'
-        assert str(loaded.description.sel(carrier='elec').values) == 'Power'
+        assert loaded.carriers.equals(data.carriers.carriers)
+        assert loaded.membership.equals(data.carriers.membership)
 
 
 class TestConvertersTable:
@@ -386,7 +387,7 @@ class TestMultiNodeCarrier:
                 ),
             ],
         )
-        carrier_ids = list(data.carriers.unit.coords['carrier'].values)
+        carrier_ids = data.carriers.ids
         assert 'heat:A' in carrier_ids
         assert 'heat:B' in carrier_ids
         assert len(carrier_ids) == 2

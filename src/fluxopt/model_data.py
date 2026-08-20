@@ -904,51 +904,45 @@ def _carrier_dim_id(flow: Flow) -> str:
 
 @dataclass
 class CarriersData:
-    """Which carrier each flow balances on, and which way it points.
+    """Which carrier each flow balances on, and what a carrier is called.
 
-    A flow is on exactly one carrier, so this is two columns rather than the
-    ``(carrier, flow)`` matrix it used to be: that matrix held one entry per
-    column and every reader collapsed it straight back, at a cost quadratic in
-    a size that is only ever linear.
+    Two frames because they are two things: `membership` is per flow,
+    `carriers` is per carrier. A flow is on exactly one carrier, so
+    membership is a column rather than the `(carrier, flow)` matrix it used
+    to be.
     """
 
-    carrier_of: xr.DataArray  # (flow,) — the carrier this flow balances on
-    sign: xr.DataArray  # (flow,) — +1 produces into it, -1 consumes from it
-    unit: xr.DataArray  # (carrier,) — energy unit label
-    color: xr.DataArray  # (carrier,) — plot color ('' if unset)
-    description: xr.DataArray  # (carrier,) — human-readable description
+    #: (flow, carrier, sign) — +1 produces into it, -1 consumes from it
+    membership: pl.DataFrame
+    #: (carrier, unit, color, description) — one row per declared carrier
+    carriers: pl.DataFrame
+
+    @property
+    def ids(self) -> list[str]:
+        """The declared carriers, in declaration order."""
+        return self.carriers['carrier'].to_list()
 
     def __post_init__(self) -> None:
         """Check the signs, and that every carrier named is declared.
 
         Layer 3 — see docs/design/validation-layers.md.
         """
-        values = self.sign.values
-        if not np.isin(values, (1.0, -1.0)).all():
-            bad = sorted({float(v) for v in values[~np.isin(values, (1.0, -1.0))]})
-            raise ValueError(f'CarriersData.sign must be +1 or -1; got {bad}')
-        known = {str(c) for c in self.unit.coords['carrier'].values}
-        if unknown := sorted({str(c) for c in self.carrier_of.values} - known):
-            raise ValueError(f'CarriersData.carrier_of names carriers that are not declared: {unknown}')
+        if len(bad := self.membership.filter(~pl.col('sign').is_in(pl.Series([1.0, -1.0]).implode()))):
+            raise ValueError(f'CarriersData.sign must be +1 or -1; got {bad["sign"].to_list()}')
+        if len(stray := self.membership.filter(~pl.col('carrier').is_in(self.carriers['carrier'].implode()))):
+            raise ValueError(
+                f'CarriersData.membership names carriers that are not declared: '
+                f'{sorted(set(stray["carrier"].to_list()))}'
+            )
 
     def to_dataset(self) -> xr.Dataset:
-        """Serialize to xr.Dataset."""
-        return _to_dataset(self)
+        """Serialize to xr.Dataset — one group's worth, via the frame bridge."""
+        return _frames_to_dataset({'membership': self.membership, 'carriers': self.carriers})
 
     @classmethod
     def from_dataset(cls, ds: xr.Dataset) -> Self:
-        """Deserialize from xr.Dataset.
-
-        Args:
-            ds: Dataset with ``carrier_of``, ``sign``, ``unit``, ``color``, ``description``.
-        """
-        return cls(
-            carrier_of=ds['carrier_of'],
-            sign=ds['sign'],
-            unit=ds['unit'],
-            color=ds['color'],
-            description=ds['description'],
-        )
+        """Deserialize from xr.Dataset."""
+        return cls(**_frames_from_dataset(ds, ('membership', 'carriers')))
 
     @classmethod
     def build(cls, carriers: list[Carrier], flows: list[_BoundFlow], carrier_coeff: dict[str, float]) -> Self:
@@ -961,34 +955,30 @@ class CarriersData:
         """
         from fluxopt.elements import node_id
 
-        flow_ids = [bf.id for bf in flows]
-        # Build carrier dim ids from explicit declarations
-        carrier_ids: list[str] = []
-        for c in carriers:
-            if c.nodes:
-                carrier_ids.extend(node_id(c.id, node) for node in c.nodes)
-            else:
-                carrier_ids.append(c.id)
-
-        of = [_carrier_dim_id(f) for _fid, f, _sign in flows]
-        signs = np.array([carrier_coeff[bf.id] for bf in flows])
-
-        # Expand carrier metadata to match carrier dim (one entry per node)
-        units: list[str] = []
-        colors: list[str] = []
-        descriptions: list[str] = []
-        for c in carriers:
-            n = max(len(c.nodes), 1)
-            units.extend([c.unit] * n)
-            colors.extend([c.color or ''] * n)
-            descriptions.extend([c.description] * n)
+        rows = [
+            (node_id(c.id, node) if node else c.id, c.unit, c.color or '', c.description)
+            for c in carriers
+            for node in c.nodes or [None]
+        ]
 
         return cls(
-            carrier_of=xr.DataArray(of, dims=['flow'], coords={'flow': flow_ids}),
-            sign=xr.DataArray(signs, dims=['flow'], coords={'flow': flow_ids}),
-            unit=xr.DataArray(units, dims=['carrier'], coords={'carrier': carrier_ids}),
-            color=xr.DataArray(colors, dims=['carrier'], coords={'carrier': carrier_ids}),
-            description=xr.DataArray(descriptions, dims=['carrier'], coords={'carrier': carrier_ids}),
+            membership=pl.DataFrame(
+                {
+                    'flow': [bf.id for bf in flows],
+                    'carrier': [_carrier_dim_id(f) for _fid, f, _sign in flows],
+                    'sign': [float(carrier_coeff[bf.id]) for bf in flows],
+                },
+                schema={'flow': pl.String, 'carrier': pl.String, 'sign': pl.Float64},
+            ),
+            carriers=pl.DataFrame(
+                {
+                    'carrier': [r[0] for r in rows],
+                    'unit': [r[1] for r in rows],
+                    'color': [r[2] for r in rows],
+                    'description': [r[3] for r in rows],
+                },
+                schema={'carrier': pl.String, 'unit': pl.String, 'color': pl.String, 'description': pl.String},
+            ),
         )
 
 
@@ -1834,7 +1824,7 @@ class ModelData:
         def coord_ids(da: xr.DataArray) -> list[str]:
             return [str(v) for v in da.coords[da.dims[0]].values]
 
-        check_flows([str(v) for v in self.carriers.carrier_of.coords['flow'].values], 'carriers.carrier_of')
+        check_flows(self.carriers.membership['flow'].to_list(), 'carriers.membership')
         if self.flows.sizing is not None:
             check_flows(self.flows.sizing.ids, 'flows.sizing')
         if self.flows.invest is not None:
