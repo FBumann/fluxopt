@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Literal, NamedTuple, override
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from fluxopt.types import PiecewiseMethod, Variate
 
@@ -81,9 +81,9 @@ class Sizing(Element):
     See: docs/math/sizing.md
     """
 
-    size_min: float
+    size_min: float = Field(ge=0)
     """Minimum capacity if invested."""
-    size_max: float
+    size_max: float = Field(ge=0)
     """Maximum capacity."""
     mandatory: bool = True
     """If True, must be built (no binary indicator)."""
@@ -91,6 +91,14 @@ class Sizing(Element):
     """Effect cost per unit size (e.g. €/MW)."""
     effects_fixed: dict[str, Variate] = Field(default_factory=dict)
     """Fixed effect cost if built (optional only)."""
+
+    @model_validator(mode='after')
+    def _bounds_are_ordered(self) -> Sizing:
+        """An empty range is a typo, not a model."""
+        if self.size_max < self.size_min:
+            msg = f'size_max ({self.size_max}) is below size_min ({self.size_min})'
+            raise ValueError(msg)
+        return self
 
 
 class Investment(Element):
@@ -101,15 +109,15 @@ class Investment(Element):
     Size is decided once — no growth or partial retirement.
     """
 
-    size_min: float
+    size_min: float = Field(ge=0)
     """Minimum capacity if built."""
-    size_max: float
+    size_max: float = Field(ge=0)
     """Maximum capacity."""
     mandatory: bool = True
     """If True, must build exactly once; if False, may build at most once."""
-    lifetime: int | None = None
+    lifetime: int | None = Field(default=None, gt=0)
     """Periods active after build; None = forever."""
-    prior_size: float = 0.0
+    prior_size: float = Field(default=0.0, ge=0)
     """Pre-existing capacity available from period 0."""
     effects_per_size_at_build: dict[str, Variate] = Field(default_factory=dict)
     """One-time per-MW costs charged in the build period."""
@@ -119,6 +127,14 @@ class Investment(Element):
     """Recurring per-MW costs charged every active period."""
     effects_fixed_recurring: dict[str, Variate] = Field(default_factory=dict)
     """Recurring fixed costs charged every active period."""
+
+    @model_validator(mode='after')
+    def _bounds_are_ordered(self) -> Investment:
+        """An empty range is a typo, not a model."""
+        if self.size_max < self.size_min:
+            msg = f'size_max ({self.size_max}) is below size_min ({self.size_min})'
+            raise ValueError(msg)
+        return self
 
 
 class Status(Element):
@@ -130,18 +146,30 @@ class Status(Element):
     See: docs/math/status.md
     """
 
-    uptime_min: float | None = None  # [h]
+    uptime_min: float | None = Field(default=None, ge=0)  # [h]
     """Minimum consecutive on-hours."""
-    uptime_max: float | None = None  # [h]
+    uptime_max: float | None = Field(default=None, ge=0)  # [h]
     """Maximum consecutive on-hours."""
-    downtime_min: float | None = None  # [h]
+    downtime_min: float | None = Field(default=None, ge=0)  # [h]
     """Minimum consecutive off-hours."""
-    downtime_max: float | None = None  # [h]
+    downtime_max: float | None = Field(default=None, ge=0)  # [h]
     """Maximum consecutive off-hours."""
     effects_per_running_hour: dict[str, Variate] = Field(default_factory=dict)
     """Effect cost per running hour."""
     effects_per_startup: dict[str, Variate] = Field(default_factory=dict)
     """Effect cost per startup event."""
+
+    @model_validator(mode='after')
+    def _durations_are_ordered(self) -> Status:
+        """An empty window is a typo, not a model."""
+        for lo, hi, what in (
+            (self.uptime_min, self.uptime_max, 'uptime'),
+            (self.downtime_min, self.downtime_max, 'downtime'),
+        ):
+            if lo is not None and hi is not None and hi < lo:
+                msg = f'{what}_max ({hi}) is below {what}_min ({lo})'
+                raise ValueError(msg)
+        return self
 
 
 class Flow(Element):

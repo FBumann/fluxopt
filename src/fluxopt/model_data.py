@@ -179,7 +179,13 @@ class SizingData:
     effects_fixed: xr.DataArray  # (dim, effect, period?) — dense, zero where absent
 
     def __post_init__(self) -> None:
-        """Validate min >= 0 and max >= min."""
+        """Re-check the bounds `Sizing` already refuses, for a reloaded file.
+
+        The element layer is where this rule is enforced — there it fires on
+        the value the user wrote, naming the field. Here it fires on an array
+        and has to reconstruct which entity failed, which is only worth doing
+        because a hand-edited netCDF never passed through `Sizing` at all.
+        """
         mask = self.min < 0
         if mask.any():
             raise ValueError(f'Sizing.size_min < 0 on {list(self.min.coords[self.min.dims[0]][mask].values)}')
@@ -216,7 +222,6 @@ class SizingData:
         if not items:
             return None
 
-        effect_set = set(effect_ids)
         tmpl = _effect_template({'effect': effect_ids}, period)
 
         ids: list[str] = []
@@ -235,12 +240,8 @@ class SizingData:
             eps = tmpl.zeros()
             ef = tmpl.zeros()
             for ek, ev in s.effects_per_size.items():
-                if ek not in effect_set:
-                    raise ValueError(f'Unknown effect {ek!r} in Sizing.effects_per_size on {item_id!r}')
                 eps.loc[ek] = as_dataarray(ev, tmpl.as_da_coords)
             for ek, ev in s.effects_fixed.items():
-                if ek not in effect_set:
-                    raise ValueError(f'Unknown effect {ek!r} in Sizing.effects_fixed on {item_id!r}')
                 ef.loc[ek] = as_dataarray(ev, tmpl.as_da_coords)
             eps_slices.append(eps)
             ef_slices.append(ef)
@@ -311,7 +312,6 @@ class InvestmentData:
         if not items:
             return None
 
-        effect_set = set(effect_ids)
         tmpl = _effect_template({'effect': effect_ids}, period)
 
         ids: list[str] = []
@@ -335,16 +335,14 @@ class InvestmentData:
             lifetimes.append(float(inv.lifetime) if inv.lifetime is not None else np.nan)
             prior_sizes.append(inv.prior_size)
 
-            for label, src_dict, dest_key in [
-                ('Investment.effects_per_size_at_build', inv.effects_per_size_at_build, 'eps'),
-                ('Investment.effects_fixed_at_build', inv.effects_fixed_at_build, 'ef'),
-                ('Investment.effects_per_size_recurring', inv.effects_per_size_recurring, 'eps_p'),
-                ('Investment.effects_fixed_recurring', inv.effects_fixed_recurring, 'ef_p'),
+            for src_dict, dest_key in [
+                (inv.effects_per_size_at_build, 'eps'),
+                (inv.effects_fixed_at_build, 'ef'),
+                (inv.effects_per_size_recurring, 'eps_p'),
+                (inv.effects_fixed_recurring, 'ef_p'),
             ]:
                 arr = tmpl.zeros()
                 for ek, ev in src_dict.items():
-                    if ek not in effect_set:
-                        raise ValueError(f'Unknown effect {ek!r} in {label} on {item_id!r}')
                     arr.loc[ek] = as_dataarray(ev, tmpl.as_da_coords)
                 all_slices[dest_key].append(arr)
 
@@ -431,7 +429,6 @@ class StatusData:
             return None
 
         prior_rates_map = prior_rates_map or {}
-        effect_set = set(effect_ids)
         tmpl = _effect_template({'effect': effect_ids, 'time': time}, period)
 
         ids: list[str] = []
@@ -465,15 +462,11 @@ class StatusData:
 
             er = tmpl.zeros()
             for ek, ev in s.effects_per_running_hour.items():
-                if ek not in effect_set:
-                    raise ValueError(f'Unknown effect {ek!r} in Status.effects_per_running_hour on {item_id!r}')
                 er.loc[ek] = as_dataarray(ev, tmpl.as_da_coords)
             er_slices.append(er)
 
             es = tmpl.zeros()
             for ek, ev in s.effects_per_startup.items():
-                if ek not in effect_set:
-                    raise ValueError(f'Unknown effect {ek!r} in Status.effects_per_startup on {item_id!r}')
                 es.loc[ek] = as_dataarray(ev, tmpl.as_da_coords)
             es_slices.append(es)
 
@@ -644,7 +637,6 @@ class FlowsData:
 
         flow_ids = [bf.id for bf in flows]
         effect_ids = [e.id for e in effects]
-        effect_set = set(effect_ids)
         n_time = len(time)
 
         bound_type: list[str] = []
@@ -723,8 +715,6 @@ class FlowsData:
             if period is not None:
                 as_da_coords['period'] = period
             for effect_label, factor in f.effects_per_flow_hour.items():
-                if effect_label not in effect_set:
-                    raise ValueError(f'Unknown effect {effect_label!r} in Flow.effects_per_flow_hour on {fid!r}')
                 pair_flows.append(fid)
                 pair_effects.append(effect_label)
                 effect_coeffs.append(as_dataarray(factor, as_da_coords))
@@ -1243,7 +1233,6 @@ class EffectsData:
             period: Period index (multi-period only).
         """
         effect_ids = [e.id for e in effects]
-        effect_set = set(effect_ids)
         n = len(effects)
         total_min = np.full(n, np.nan)
         total_max = np.full(n, np.nan)
@@ -1281,8 +1270,6 @@ class EffectsData:
             temporal_mat = tmpl_t.zeros()
             for e in effects:
                 for src_id, factor in e.contribution_from.items():
-                    if src_id not in effect_set:
-                        raise ValueError(f'Unknown effect {src_id!r} in Effect.contribution_from on {e.id!r}')
                     temporal_mat.loc[e.id, src_id] = as_dataarray(factor, tmpl_t.as_da_coords)
             cf_temporal = temporal_mat
 
