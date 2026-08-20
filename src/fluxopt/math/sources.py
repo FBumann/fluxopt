@@ -205,6 +205,47 @@ def _tidy(da: xr.DataArray, *, drop_zero: bool, time_ord: dict[Any, int] | None 
     return pd.DataFrame(cols)
 
 
+def _flow_hour_coefficients(
+    fds: Any,
+    dims: Any,
+    leo: xr.DataArray | None,
+    tidy: Any,
+) -> pd.DataFrame:
+    """The per-flow-hour coefficient table, never materialised dense.
+
+    `effect_pair_coeff` already holds one row per (flow, effect) a flow
+    actually charges. What used to happen here was to broadcast that back to
+    the full `(flow, effect, time, period)` product so the Leontief contraction
+    could be a `xr.dot` over the effect axis — 443 MB at 4% live on the stress
+    reference system, thrown away one line later by `drop_zero`.
+
+    So the contraction happens on the rows instead: every live pair is joined
+    against the effects it feeds and the products summed back per
+    (flow, effect). Same numbers, and the widest thing built is the result.
+    """
+    pairs = tidy(fds.effect_pair_coeff * dims.dt, drop_zero=True)
+    if pairs.empty:
+        return _empty('effects_per_flow_hour', 'flow', 'effect', 'time')
+    index = pairs.pop('effect_pair').to_numpy().astype(int)
+    pairs.insert(0, 'flow', fds.effect_pair_flow.values[index])
+    pairs.insert(1, 'effect', fds.effect_pair_effect.values[index])
+    if leo is None:
+        return pairs
+
+    # (effect, source_effect[, time]) -> rows, dropping the zeros that make a
+    # sparse effect graph sparse.
+    factors = tidy(leo, drop_zero=True).rename(columns={'effect': 'charged', 'source_effect': 'effect'})
+    # Join on every axis the factor itself varies along: `contribution_from`
+    # may differ per timestep and per period, and joining on fewer keys than
+    # it carries would silently cross-multiply them.
+    on = ['effect', *[c for c in ('time', 'period') if c in factors.columns and c in pairs.columns]]
+    merged = pairs.merge(factors, on=on, suffixes=('', '_leo'))
+    merged['value'] = merged['value'] * merged['value_leo']
+    keys = ['flow', 'charged', *[c for c in ('time', 'period') if c in pairs.columns]]
+    out = merged.groupby(keys, as_index=False)['value'].sum().rename(columns={'charged': 'effect'})
+    return out[[c for c in pairs.columns if c != 'value'] + ['value']]
+
+
 def _reject_unsupported(data: ModelData) -> None:
     fds = data.flows
     if data.piecewise is not None:
@@ -727,11 +768,8 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
     # dt stays: a per-flow-hour rate times a duration is the step's energy.
     # The aggregation weight does not — the program applies it in the sum,
     # so a named contribution reads as the physical per-step quantity.
-    ec = fds.effect_coeff * dims.dt
-    if eds.cf_temporal is not None:
-        ec = apply_leontief(leontief(eds.cf_temporal), ec)
-    sources['effects_per_flow_hour'] = tidy(ec, drop_zero=True)
     leo = leontief(eds.cf_temporal) if eds.cf_temporal is not None else None
+    sources['effects_per_flow_hour'] = _flow_hour_coefficients(fds, dims, leo, tidy)
     for name, arr in ec_extra:
         sources[name] = tidy(apply_leontief(leo, arr) if leo is not None else arr, drop_zero=True)
     for name in ('effects_per_running_hour', 'effects_per_startup'):
