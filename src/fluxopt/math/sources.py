@@ -768,7 +768,8 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
     # dt stays: a per-flow-hour rate times a duration is the step's energy.
     # The aggregation weight does not — the program applies it in the sum,
     # so a named contribution reads as the physical per-step quantity.
-    leo = leontief(eds.cf_temporal) if eds.cf_temporal is not None else None
+    cf = eds.cf_matrix()
+    leo = leontief(cf) if cf is not None else None
     sources['effects_per_flow_hour'] = _flow_hour_coefficients(fds, dims, leo, tidy)
     for name, arr in ec_extra:
         sources[name] = tidy(apply_leontief(leo, arr) if leo is not None else arr, drop_zero=True)
@@ -777,7 +778,7 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
 
     # Lump domain: effect_lump = (I - cf_lump)^-1 . lump_direct, folded into
     # the coefficients so no self-referential effect_lump variable is needed.
-    leo_lump = leontief(eds.cf_temporal.mean('time')) if eds.cf_temporal is not None else None
+    leo_lump = leontief(cf.mean('time')) if cf is not None else None
 
     def fold(arr: xr.DataArray) -> xr.DataArray:
         """Apply the lump-domain Leontief inverse, if there are cross-effects."""

@@ -209,14 +209,15 @@ class TestRoundtripContributionFrom:
             ports=[Port(id='grid', imports=[source]), Port(id='demand', exports=[sink])],
         )
         assert result.data is not None
-        assert result.data.effects.cf_temporal is not None
+        assert result.data.effects.cf_pair_effect is not None
 
         result.to_netcdf(tmp_nc)
         loaded = Result.from_netcdf(tmp_nc)
 
         assert loaded.data is not None
-        assert loaded.data.effects.cf_temporal is not None
-        xr.testing.assert_equal(loaded.data.effects.cf_temporal, result.data.effects.cf_temporal)
+        assert loaded.data.effects.cf_pair_effect is not None
+        # The pairs survive, and so does the matrix they build on demand.
+        xr.testing.assert_equal(loaded.data.effects.cf_matrix(), result.data.effects.cf_matrix())
 
         # Re-solve gives same objective
         from fluxopt.math import solve

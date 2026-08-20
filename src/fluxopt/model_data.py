@@ -1197,27 +1197,60 @@ class EffectsData:
     total_max: xr.DataArray  # (effect,) — weighted total bound
     periodic_min: xr.DataArray  # (effect[, period]) — per-period bound
     periodic_max: xr.DataArray  # (effect[, period]) — per-period bound
-    cf_temporal: xr.DataArray | None = None  # (effect, source_effect, time, period?)
+    #: One row per declared ``contribution_from`` factor, each carrying its
+    #: own ``(time[, period])`` series. The dense ``(effect, source_effect,
+    #: time, period)`` matrix this replaces was 67 MB at 2% live on the stress
+    #: reference system — and most of that was not sparsity but repetition,
+    #: a scalar factor broadcast across every timestep and period.
+    cf_pair_effect: xr.DataArray | None = None  # (cf_pair,) — the effect charged
+    cf_pair_source: xr.DataArray | None = None  # (cf_pair,) — the effect it comes from
+    cf_pair_factor: xr.DataArray | None = None  # (cf_pair, time[, period])
     period_weights: xr.DataArray | None = None  # (effect, period)
+
+    def cf_matrix(self) -> xr.DataArray | None:
+        """The cross-effect factors as a square matrix, or None if there are none.
+
+        Built here rather than stored, because inverting it is the only thing
+        that wants it square — and a stored one costs a full
+        ``(effect, source_effect, time, period)`` grid to hold a handful of
+        declared factors. Transient by design: nothing keeps the result.
+        """
+        if self.cf_pair_effect is None:
+            return None
+        assert self.cf_pair_source is not None
+        assert self.cf_pair_factor is not None
+        effects = list(self.total_min.coords['effect'].values)
+        factor = self.cf_pair_factor
+        rest = {d: factor.coords[d] for d in factor.dims if d != 'cf_pair'}
+        matrix = xr.DataArray(
+            np.zeros((len(effects), len(effects), *[len(v) for v in rest.values()])),
+            dims=['effect', 'source_effect', *rest],
+            coords={'effect': effects, 'source_effect': effects, **rest},
+        )
+        for i, (e, src) in enumerate(zip(self.cf_pair_effect.values, self.cf_pair_source.values, strict=True)):
+            matrix.loc[{'effect': str(e), 'source_effect': str(src)}] = factor.isel(cf_pair=i)
+        return matrix
 
     def __post_init__(self) -> None:
         """Reject self-references and cycles in the cross-effect matrix (also on netCDF reload)."""
-        if self.cf_temporal is None:
+        if self.cf_pair_effect is None:
             return
-        contributes = self.cf_temporal != 0
-        extra_dims = [d for d in contributes.dims if d not in ('effect', 'source_effect')]
-        contributes = contributes.any(extra_dims)  # (effect, source_effect)
-        for eid in contributes.coords['effect'].values:
-            if bool(contributes.sel(effect=eid, source_effect=eid)):
+        assert self.cf_pair_source is not None
+        assert self.cf_pair_factor is not None
+        live = (self.cf_pair_factor != 0).any([d for d in self.cf_pair_factor.dims if d != 'cf_pair'])
+        edges = [
+            (str(e), str(src))
+            for e, src, keep in zip(self.cf_pair_effect.values, self.cf_pair_source.values, live.values, strict=True)
+            if keep
+        ]
+        for eid, src in edges:
+            if eid == src:
                 raise ValueError(f'Effect {eid!r} cannot reference itself in contribution_from')
-        adjacency = {
-            str(eid): [
-                str(s)
-                for s in contributes.coords['source_effect'].values
-                if bool(contributes.sel(effect=eid, source_effect=s))
-            ]
-            for eid in contributes.coords['effect'].values
-        }
+        # Every effect is a node, edges or not: the cycle walk looks up each
+        # neighbour's state, so a node reachable but unlisted is a KeyError.
+        adjacency: dict[str, list[str]] = {str(e): [] for e in self.total_min.coords['effect'].values}
+        for eid, src in edges:
+            adjacency[eid].append(src)
         cycle = _detect_contribution_cycle(adjacency)
         if cycle is not None:
             raise ValueError(f'Circular contribution_from dependency: {" -> ".join(cycle)}')
@@ -1281,14 +1314,16 @@ class EffectsData:
 
         # Build cross-effect contribution arrays; self-references and cycles
         # are rejected by __post_init__ on the dense matrix.
-        cf_temporal: xr.DataArray | None = None
+        cf_effects: list[str] = []
+        cf_sources: list[str] = []
+        cf_factors: list[xr.DataArray] = []
         if has_contributions:
-            tmpl_t = _effect_template({'effect': effect_ids, 'source_effect': effect_ids, 'time': time}, period)
-            temporal_mat = tmpl_t.zeros()
+            tmpl_t = _effect_template({'effect': effect_ids, 'time': time}, period)
             for e in effects:
                 for src_id, factor in e.contribution_from.items():
-                    temporal_mat.loc[e.id, src_id] = as_dataarray(factor, tmpl_t.as_da_coords)
-            cf_temporal = temporal_mat
+                    cf_effects.append(e.id)
+                    cf_sources.append(src_id)
+                    cf_factors.append(as_dataarray(factor, tmpl_t.as_da_coords))
 
         effect_idx = pd.Index(effect_ids, name='effect')
 
@@ -1316,7 +1351,11 @@ class EffectsData:
             total_max=xr.DataArray(total_max, dims=['effect'], coords={'effect': effect_ids}),
             periodic_min=fast_concat(periodic_mins, effect_idx),
             periodic_max=fast_concat(periodic_maxs, effect_idx),
-            cf_temporal=cf_temporal,
+            cf_pair_effect=xr.DataArray(cf_effects, dims=['cf_pair']) if cf_factors else None,
+            cf_pair_source=xr.DataArray(cf_sources, dims=['cf_pair']) if cf_factors else None,
+            cf_pair_factor=(
+                fast_concat(cf_factors, pd.Index(range(len(cf_factors)), name='cf_pair')) if cf_factors else None
+            ),
             period_weights=pw,
         )
 
