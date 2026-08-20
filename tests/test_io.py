@@ -134,9 +134,9 @@ class TestUnicodePath:
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, os_name: str, relpath: str, clarified: bool
     ) -> None:
         """Read failures get a clear message only for non-ASCII paths on Windows; else propagate."""
-        from fluxopt.model_data import _raise_netcdf_read_error
+        from fluxopt.results import _raise_netcdf_read_error
 
-        monkeypatch.setattr('fluxopt.model_data.os.name', os_name)
+        monkeypatch.setattr('fluxopt.results.os.name', os_name)
         original = PermissionError(13, 'Permission denied')
         with pytest.raises((ValueError, OSError)) as excinfo:
             _raise_netcdf_read_error(tmp_path / relpath, original)
