@@ -8,6 +8,7 @@ import numpy as np
 import polars as pl
 import pytest
 from conftest import ts
+from numpy.testing import assert_allclose
 
 from fluxopt import Carrier, Effect, Flow, FlowSystem, Port
 from fluxopt.math import Parameters
@@ -120,3 +121,88 @@ class TestDerivedNotAuthored:
         # co2 as declared, and cost as folded through `contribution_from`
         assert by_effect['co2'] == 3.0
         assert by_effect['cost'] == 30.0
+
+
+class TestSupplyingALookup:
+    """A caller who adds a lookup in `math=` can supply it.
+
+    A lookup is not a source key — it travels as a column on the index of the
+    dimension it runs over. That made it the one thing `math=` could declare
+    and nothing could fill: handing back the index table means supplying a
+    name the program owns, which `parameters=` refuses on purpose.
+    """
+
+    def _grouped(self) -> tuple[FlowSystem, object]:
+        """A system, and math that groups its flows by a caller-named region."""
+        system = FlowSystem(
+            timesteps=ts(2),
+            carriers=[Carrier(id='heat')],
+            effects=[Effect(id='cost')],
+            objective='cost',
+            ports=[
+                Port(id='demand', exports=[Flow(carrier='heat', size=1, fixed_relative_profile=np.array([4, 4]))]),
+                Port(id='north', imports=[Flow(carrier='heat', size=10, effects_per_flow_hour={'cost': 1})]),
+                Port(id='south', imports=[Flow(carrier='heat', size=10, effects_per_flow_hour={'cost': 5})]),
+            ],
+        )
+        math = system.math()
+        raw = math.to_dict()
+        raw['dimensions']['region'] = {'dtype': 'str'}
+        raw['lookups']['region_of'] = {'over': 'flow', 'into': 'region'}
+        raw['parameters']['region_cap'] = {'dims': ['region', 'time', 'period']}
+        raw['constraints']['region_limit'] = {
+            'foreach': ['region', 'time', 'period'],
+            'where': 'region_cap',
+            'expression': 'sum(rate, by=region_of) <= region_cap',
+        }
+        import lpspec
+
+        return system, lpspec.load_model(raw)
+
+    def test_a_supplied_lookup_reaches_the_constraint_that_reads_it(self) -> None:
+        """Capping the cheap region forces the expensive one, which changes the cost."""
+        system, math = self._grouped()
+        assert_allclose(system.optimize().effect_totals.sel(effect='cost').item(), 8.0, rtol=1e-6)
+
+        result = system.optimize(
+            math=math,
+            lookups={'region_of': pl.DataFrame({'flow': ['north(heat)'], 'region': ['cheap']})},
+            parameters={
+                'region': pl.DataFrame({'region': ['cheap']}),
+                'region_cap': pl.DataFrame({'region': ['cheap'], 'time': [0], 'period': [0], 'value': [1.0]}),
+            },
+        )
+        # t0: 1 cheap + 3 expensive = 16; t1: 4 cheap = 4
+        assert_allclose(result.effect_totals.sel(effect='cost').item(), 20.0, rtol=1e-6)
+
+    def test_an_undeclared_lookup_is_refused_by_name(self) -> None:
+        system, math = self._grouped()
+        with pytest.raises(ValueError, match="'nope' is not a lookup this program declares"):
+            system.optimize(math=math, lookups={'nope': pl.DataFrame({'flow': ['north(heat)'], 'x': ['a']})})
+
+    def test_a_lookup_whose_dimension_was_never_supplied_says_so(self) -> None:
+        """The one check lpspec cannot make: it knows the declaration, not our tables.
+
+        `region` is the caller's own dimension, so fluxopt builds no index for
+        it. A lookup running *over* it, with the dimension itself never
+        supplied, leaves the merge with nothing to land on.
+        """
+        system, _ = self._grouped()
+        raw = system.math().to_dict()
+        raw['dimensions']['region'] = {'dtype': 'str'}
+        raw['lookups']['zone_of'] = {'over': 'region', 'dtype': 'str'}
+        import lpspec
+
+        with pytest.raises(ValueError, match="runs over 'region', which this system has no index for"):
+            system.optimize(
+                math=lpspec.load_model(raw),
+                lookups={'zone_of': pl.DataFrame({'region': ['cheap'], 'zone': ['north']})},
+            )
+
+    def test_a_lookup_needs_the_two_columns_it_maps_between(self) -> None:
+        system, math = self._grouped()
+        with pytest.raises(ValueError, match='needs a two-column table'):
+            system.optimize(
+                math=math,
+                lookups={'region_of': pl.DataFrame({'flow': ['north(heat)'], 'region': ['a'], 'extra': [1]})},
+            )
