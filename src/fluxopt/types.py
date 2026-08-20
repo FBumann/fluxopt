@@ -72,6 +72,39 @@ type TimeIndex = pd.DatetimeIndex | pd.Index
 type PiecewiseMethod = Literal['auto', 'sos2', 'incremental', 'lp']
 
 
+def variate_out_of_range(
+    value: Variate,
+    *,
+    low: float,
+    high: float,
+    low_open: bool = False,
+) -> float | None:
+    """The first value outside ``[low, high]``, or None if all of them are in.
+
+    A :data:`Variate` is a scalar, a series, or a :class:`ProfileRef` that
+    names numbers living somewhere else. The first two can be checked where
+    they are written, which is what this is for; a ``ProfileRef`` cannot,
+    because its values arrive when profiles are resolved — so it reads as in
+    range here and is checked again once it is real
+    (``docs/design/validation-layers.md``).
+
+    Args:
+        value: The declared value.
+        low: Lower bound.
+        high: Upper bound.
+        low_open: Whether *low* itself is excluded.
+
+    Returns:
+        An offending value, or None.
+    """
+    if isinstance(value, ProfileRef):
+        return None
+    values = np.atleast_1d(np.asarray(value, dtype=float))
+    below = values <= low if low_open else values < low
+    bad = values[below | (values > high)]
+    return float(bad[0]) if bad.size else None
+
+
 def fast_concat(arrays: list[xr.DataArray], dim: pd.Index) -> xr.DataArray:
     """Stack DataArrays along a new leading dimension.
 
