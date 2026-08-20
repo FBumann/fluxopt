@@ -53,14 +53,14 @@ is what makes it the place to put such a rule *once*.
 
 A rule about a materialised table's internal consistency: `pair_converter`
 naming a converter the table does not carry, `governed_by` naming a component
-without a Status, `Dims.dt` matching `Dims.time`.
+without a Status, a ramp limit on a flow with no size.
 
 Two things reach this layer that the earlier ones could not see, and both
 are real reasons for it to exist.
 
 **Reload.** `ModelData` round-trips
-through netCDF, and a file that was hand-edited — or written by an older
-version — never passed through layers 1 and 2. Every check here is answering
+through a directory of parquet tables, and a file that was hand-edited — or
+written by an older version — never passed through layers 1 and 2. Every check here is answering
 "could this table have arrived broken?", and the honest test for whether one
 belongs is:
 

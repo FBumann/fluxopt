@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import dataclasses
-import os
 import warnings
-from dataclasses import dataclass, fields, is_dataclass
+from dataclasses import dataclass, fields
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, NoReturn, Self, get_args
+from typing import TYPE_CHECKING, Any, Self, get_args
 
 import numpy as np
 import pandas as pd
@@ -108,66 +107,9 @@ _NC_GROUPS = {
 }
 
 
-def _raise_netcdf_read_error(path: Path, exc: OSError) -> NoReturn:
-    """Re-raise a netCDF read failure, clarifying the Windows non-ASCII path bug.
-
-    netcdf4/libnetcdf (through 4.9.3) fails to open files under non-ASCII
-    *directories* on Windows with a misleading ``PermissionError``/``OSError``
-    (upstream bug Unidata/netcdf4-python#1482). When the failing path is
-    non-ASCII on Windows we surface an actionable message; otherwise the original
-    error propagates unchanged. Only read paths are wrapped — the error only
-    surfaces if netcdf4 actually raises, so nothing that would work is blocked.
-
-    Args:
-        path: The path being read.
-        exc: The error raised by the netCDF engine.
-
-    Raises:
-        ValueError: On Windows when the failing path contains non-ASCII characters.
-        OSError: The original error, on any other platform or path.
-    """
-    if os.name == 'nt' and not str(path).isascii():
-        raise ValueError(
-            f'Failed to read netCDF at a path containing non-ASCII characters on Windows: {path}. '
-            'netcdf4 cannot open files under non-ASCII directories on Windows '
-            '(upstream bug Unidata/netcdf4-python#1482). Use an ASCII-only directory and file name.'
-        ) from exc
-    raise exc
-
-
-def _to_dataset(obj: DataclassInstance) -> xr.Dataset:
-    """Convert a data dataclass to an xr.Dataset.
-
-    Args:
-        obj: Dataclass with DataArray fields and scalar attrs.
-    """
-    data_vars: dict[str, xr.DataArray] = {}
-    attrs: dict[str, object] = {}
-    for f in fields(obj):
-        val = getattr(obj, f.name)
-        if val is None or is_dataclass(val):
-            continue  # nested container fields serialize as their own netCDF sub-group
-        if isinstance(val, xr.DataArray):
-            data_vars[f.name] = val
-        else:
-            attrs[f.name] = val
-    ds = xr.Dataset(data_vars)
-    ds.attrs.update(attrs)
-    return ds
-
-
-# Nested container fields on FlowsData / StoragesData — serialized as netCDF
-# sub-groups, not variables in the parent table's Dataset.
+# Nested container fields on FlowsData / StoragesData — written to a
+# sub-directory of their own, not as frames of the parent container.
 _CONTAINER_FIELD_NAMES = frozenset({'sizing', 'status', 'invest', 'cstatus'})
-
-
-def _container_from_dataset[T: DataclassInstance](cls: type[T], ds: xr.Dataset) -> T:
-    """Rebuild a nested container dataclass from its own Dataset node.
-
-    Every field is a plain ``xr.DataArray | None``; required fields are always
-    present in *ds*, optional ones fall back to ``None`` when absent.
-    """
-    return cls(**{f.name: ds.get(f.name) for f in fields(cls)})
 
 
 @dataclass
@@ -194,7 +136,7 @@ class SizingData:
         """Re-check the bounds `Sizing` already refuses, for a reloaded file.
 
         The element layer is where this rule is enforced — there it fires on
-        the value the user wrote, naming the field. A hand-edited netCDF never
+        the value the user wrote, naming the field. A hand-edited file never
         passed through `Sizing` at all, which is the only reason to say it
         twice. See docs/design/validation-layers.md.
         """
@@ -1765,14 +1707,6 @@ class Dims:
         return cls(timesteps=timesteps, periods=period_table)
 
 
-_CONTAINER_TYPES: dict[str, type] = {
-    'sizing': SizingData,
-    'status': StatusData,
-    'invest': InvestmentData,
-    'cstatus': StatusData,
-}
-
-
 #: Which sub-container each top-level one carries, and of what class. Read by
 #: :meth:`ModelData.load` to rebuild them from their own directories.
 _SUB_CONTAINERS: dict[str, dict[str, Any]] = {
@@ -1782,12 +1716,7 @@ _SUB_CONTAINERS: dict[str, dict[str, Any]] = {
 
 
 def _frames_of(obj: Any) -> dict[str, pl.DataFrame]:
-    """Every polars frame a container holds, by field name.
-
-    Empty for a container still holding arrays, which is how
-    :meth:`ModelData.save` tells the two apart without asking either to
-    declare which it is.
-    """
+    """Every polars frame a container holds, by field name."""
     return {f.name: value for f in dataclasses.fields(obj) if isinstance(value := getattr(obj, f.name), pl.DataFrame)}
 
 
@@ -1798,43 +1727,6 @@ def _table_containers(obj: DataclassInstance) -> dict[str, Any]:
         for f in fields(obj)
         if f.name in _CONTAINER_FIELD_NAMES and getattr(obj, f.name) is not None
     }
-
-
-def _nc_group_paths(p: Path) -> set[str]:
-    """All group paths present in a netCDF file (e.g. ``{'model', 'model/flows', ...}``).
-
-    Group *absence* is decided from this listing, so real I/O errors while
-    reading a present group propagate instead of being mistaken for absence.
-    """
-    import netCDF4
-
-    def walk(grp: Any, prefix: str) -> set[str]:
-        out: set[str] = set()
-        for name, sub in grp.groups.items():
-            path = f'{prefix}{name}'
-            out.add(path)
-            out |= walk(sub, path + '/')
-        return out
-
-    with netCDF4.Dataset(p) as nc:
-        return walk(nc, '')
-
-
-def _load_containers(p: Path, group: str, cls: type[DataclassInstance], present: set[str]) -> dict[str, Any]:
-    """Load a table's nested container sub-groups from netCDF, keyed by field name.
-
-    Args:
-        p: File path.
-        group: The table's group path (e.g. ``'model/flows'``).
-        cls: Table dataclass whose container fields to look for.
-        present: Group paths that exist in the file (see :func:`_nc_group_paths`).
-    """
-    out: dict[str, Any] = {}
-    for f in fields(cls):
-        if f.name in _CONTAINER_FIELD_NAMES and f'{group}/{f.name}' in present:
-            ds = xr.load_dataset(p, group=f'{group}/{f.name}', engine='netcdf4')
-            out[f.name] = _CONTAINER_TYPES[f.name].from_dataset(ds)
-    return out
 
 
 @dataclass
@@ -1908,11 +1800,10 @@ class ModelData:
     def save(self, path: str | Path) -> None:
         """Write the model data as a directory of tables.
 
-        One parquet file per frame, one netCDF file per container still
-        holding arrays. Parquet because these *are* tables: it carries the
-        schema, so a column with no rows still knows it holds strings, and a
-        timestamp survives without anyone deciding what unit its integers
-        meant.
+        One parquet file per frame, in a directory per container. Parquet
+        because these *are* tables: it carries the schema, so a column with no
+        rows still knows it holds strings, and an empty frame reloads as the
+        same empty frame rather than as something that lost its dtypes.
 
         Args:
             path: Directory to write into. Created if absent.
@@ -1924,19 +1815,13 @@ class ModelData:
                 continue
             group = root / name
             group.mkdir(exist_ok=True)
-            frames = _frames_of(obj)
-            for frame_name, frame in frames.items():
+            for frame_name, frame in _frames_of(obj).items():
                 frame.write_parquet(group / f'{frame_name}.parquet')
-            if not frames:
-                obj.to_dataset().to_netcdf(group / 'arrays.nc', engine='netcdf4')
             for cname, sub in _table_containers(obj).items():
                 sub_group = group / cname
                 sub_group.mkdir(exist_ok=True)
-                sub_frames = _frames_of(sub)
-                for frame_name, frame in sub_frames.items():
+                for frame_name, frame in _frames_of(sub).items():
                     frame.write_parquet(sub_group / f'{frame_name}.parquet')
-                if not sub_frames:
-                    sub.to_dataset().to_netcdf(sub_group / 'arrays.nc', engine='netcdf4')
 
     @classmethod
     def load(cls, path: str | Path) -> ModelData:
@@ -1957,10 +1842,7 @@ class ModelData:
             if not group.is_dir():
                 return None
             frames = {f.stem: pl.read_parquet(f) for f in sorted(group.glob('*.parquet'))}
-            if frames:
-                return klass(**frames, **(subs or {}))
-            ds = xr.load_dataset(group / 'arrays.nc', engine='netcdf4')
-            return klass.from_dataset(ds, subs) if subs is not None else klass.from_dataset(ds)
+            return klass(**frames, **(subs or {})) if frames else None
 
         def read_subs(name: str, klass: Any) -> dict[str, Any]:
             out: dict[str, Any] = {}

@@ -89,18 +89,20 @@ model.build()                                            # …and rebuild
 For a one-off tweak, stay on level 1/2 and pass
 `customize=lambda m: m.m.add_constraints(...)` instead.
 
-**4. Data-level** — build or load the xarray `ModelData` yourself and edit it
-before modeling:
+**4. Data-level** — build or load the `ModelData` tables yourself and edit
+them before modeling:
 
 ```python
-data = fx.ModelData.build(...)                  # or ModelData.from_netcdf(path)
-data.flows.fixed_profile.loc[{"flow": "demand(heat)"}] = 0.7
+data = fx.ModelData.build(...)                  # or ModelData.load(path)
+data.flows.fixed_profile = data.flows.fixed_profile.with_columns(
+    pl.when(pl.col("flow") == "demand(heat)").then(0.7).otherwise(pl.col("value")).alias("value")
+)
 result = fx.FlowSystemModel(data, objective="cost").optimize()
 ```
 
 Results close the loop: `result.flow_rates`, `result.effect_totals`,
-`result.stats` (KPIs, effect contributions), `result.plot`, netCDF round-trip,
-and `result.data` — the exact `ModelData` the solution came from.
+`result.stats` (KPIs, effect contributions), `result.plot`, `save`/`load`
+round-trip, and `result.data` — the exact `ModelData` the solution came from.
 
 ## Roadmap
 

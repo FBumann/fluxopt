@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass, field
 from functools import cached_property
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, NoReturn
 
 import xarray as xr
 
@@ -18,6 +19,50 @@ except ImportError:
 if TYPE_CHECKING:
     from fluxopt.model_data import ModelData
     from fluxopt.stats import StatsAccessor
+
+
+def _read_netcdf(path: Path) -> xr.Dataset:
+    """Read a netCDF file, clarifying the Windows non-ASCII path bug.
+
+    netcdf4/libnetcdf (through 4.9.3) fails to open files under non-ASCII
+    *directories* on Windows with a misleading ``PermissionError``/``OSError``
+    (upstream bug Unidata/netcdf4-python#1482). When the failing path is
+    non-ASCII on Windows we surface an actionable message; otherwise the
+    original error propagates unchanged. Only reads are wrapped — the message
+    only appears if netcdf4 actually raises, so nothing that would work is
+    blocked.
+
+    Args:
+        path: The file to read.
+
+    Raises:
+        ValueError: On Windows when the failing path contains non-ASCII characters.
+        OSError: The original error, on any other platform or path.
+    """
+    try:
+        return xr.load_dataset(path, engine='netcdf4')
+    except OSError as exc:
+        _raise_netcdf_read_error(path, exc)
+
+
+def _raise_netcdf_read_error(path: Path, exc: OSError) -> NoReturn:
+    """Re-raise a netCDF read failure, clarifying the Windows non-ASCII path bug.
+
+    Args:
+        path: The path being read.
+        exc: The error raised by the netCDF engine.
+
+    Raises:
+        ValueError: On Windows when the failing path contains non-ASCII characters.
+        OSError: The original error, on any other platform or path.
+    """
+    if os.name == 'nt' and not str(path).isascii():
+        raise ValueError(
+            f'Failed to read netCDF at a path containing non-ASCII characters on Windows: {path}. '
+            'netcdf4 cannot open files under non-ASCII directories on Windows '
+            '(upstream bug Unidata/netcdf4-python#1482). Use an ASCII-only directory and file name.'
+        ) from exc
+    raise exc
 
 
 @dataclass
@@ -219,12 +264,8 @@ class Result:
         root = Path(path)
         if not (root / 'solution.nc').is_file():
             raise OSError(f'No fluxopt result found in {root} (missing solution.nc)')
-        solution = xr.load_dataset(root / 'solution.nc', engine='netcdf4')
-        expressions = (
-            xr.load_dataset(root / 'expressions.nc', engine='netcdf4')
-            if (root / 'expressions.nc').is_file()
-            else xr.Dataset()
-        )
+        solution = _read_netcdf(root / 'solution.nc')
+        expressions = _read_netcdf(root / 'expressions.nc') if (root / 'expressions.nc').is_file() else xr.Dataset()
         if not expressions.data_vars:
             warnings.warn(
                 f'{root} carries none of the quantities the model names — including the '
