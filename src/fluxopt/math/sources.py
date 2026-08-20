@@ -306,9 +306,11 @@ def _reject_unsupported(data: ModelData) -> None:
         bad = sorted(set(data.piecewise.curves['method'].to_list()) & {'lp'})
         if bad:
             raise UnsupportedFeatureError(
-                "piecewise method 'lp' is linopy's tangent-line relaxation, which this lane has no "
-                'formulation for — the adjacency formulation it does have is exact, so it would '
-                'answer a different question. Use the default method, or lpspec #695.'
+                "piecewise method 'lp' states a curve as its segment lines, which this lane has "
+                'no formulation for — the one it does have interpolates between breakpoints, so it '
+                'would answer a different question. Use the default method. lpspec has it as '
+                '`method: lp` since #926, but only through its `piecewise:` block, which cannot '
+                'take a curve whose arity is data (lpspec #1101).'
             )
     if fds.invest is not None and not data.dims.has_periods:
         raise UnsupportedFeatureError('investment requires multi-period optimization (periods must be specified)')

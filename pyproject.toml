@@ -67,7 +67,7 @@ linopy = ["lpspec[linopy]"]
 # Pinned to a tag: lpspec is pre-1.0 and its language surface still moves, so
 # an unpinned git ref would let a `uv sync` change what `core.yaml` means.
 # Bumping this is a deliberate change with `pytest tests/` behind it.
-lpspec = { git = "https://github.com/fluxopt/lpspec.git", tag = "v0.0.1-alpha.213" }
+lpspec = { git = "https://github.com/fluxopt/lpspec.git", tag = "v0.0.1-alpha.227" }
 
 [project.urls]
 repository = "https://github.com/FBumann/fluxopt"

@@ -18,7 +18,7 @@ from 117 lines to 54; NaN-as-absent is gone in favour of row absence;
 
 What did not happen is the half this page is about. The artifact we store is
 **fluxopt's own schema** — `flows.sizes`, `flows.envelope`, `sizing.bounds`,
-`effects` — while the thing lpspec binds is **the program's 104 parameter
+`effects` — while the thing lpspec binds is **the program's 93 parameter
 tables**. `math/sources.py` stands between them, 1089 lines, running at every
 solve and producing something no caller can see or keep.
 
@@ -50,7 +50,7 @@ keep two schemas, or is the stored middle layer the program's parameter set?**
 
 ```
 today
-  elements ──▶ ModelData ──▶ build_sources ──▶ {104 param tables} ──▶ lpspec
+  elements ──▶ ModelData ──▶ build_sources ──▶ {93 param tables}  ──▶ lpspec
                parquet dir     1089 lines        ephemeral
                fluxopt schema  at solve time
 
@@ -68,7 +68,7 @@ becomes the binding itself, persisted.
 
 ### One schema instead of two
 
-`contract.py`'s vocabulary, the container classes and `program.yaml`'s 104
+`contract.py`'s vocabulary, the container classes and `program.yaml`'s 93
 declarations state overlapping facts, and `sources.py` is the translation
 between them. The renaming half of that collapses.
 
@@ -134,7 +134,7 @@ the fold that took the effects build from 18.5 s to 4.2 s.
 "Store it like the math" means the same **status**, not the same **format**.
 Three reasons, and each has already cost us something:
 
-1. **Size.** 104 parameters over a horizon; the `stress` benchmark is ~2M
+1. **Size.** 93 parameters over a horizon; the `stress` benchmark is ~2M
    variables. YAML has no random access and no column types.
 2. **Types.** `_INT_DIMS`, `_BOOL_PARAMS` and `_stamp_empty_dtypes` exist
    because an empty column has no dtype and pandas guesses `float64`, which
