@@ -50,23 +50,6 @@ class BoundType(StrEnum):
     """Rate fixed to ``fixed_profile * size``."""
 
 
-class Dim:
-    """Regime dimensions: optional feature tables over an entity subset.
-
-    Distinct from the entity dimensions (plain literals, see module
-    docstring) and from the :class:`~fluxopt.model_data.Dims` data table.
-    """
-
-    SIZING_FLOW = 'sizing_flow'
-    INVEST_FLOW = 'invest_flow'
-    STATUS_FLOW = 'status_flow'
-    CSTATUS_COMPONENT = 'cstatus_component'
-    SIZING_STORAGE = 'sizing_storage'
-    INVEST_STORAGE = 'invest_storage'
-    PW_CONVERTER = 'pw_converter'
-    PW_PAIR = 'pw_pair'
-
-
 class Var:
     """Solution variable names, ``<family>--<field>`` (also keys of ``Result.solution``)."""
 
