@@ -130,12 +130,13 @@ def reject_varying_contribution_into_lump(data: ModelData) -> None:
     """
 
     ds = data.effects
-    if ds.cf_temporal is None:
+    cf = ds.cf_matrix()
+    if cf is None:
         return
-    varying = (ds.cf_temporal != ds.cf_temporal.isel(time=0)).any('time')
+    varying = (cf != cf.isel(time=0)).any('time')
     if not bool(varying.any().item()):
         return
-    bearing = _lump_bearing_effects(data, ds.cf_temporal.mean('time'))
+    bearing = _lump_bearing_effects(data, cf.mean('time'))
     mask = varying & bearing.rename({'effect': 'source_effect'})
     mask = mask.any([d for d in mask.dims if d not in ('effect', 'source_effect')])
     if not bool(mask.any().item()):

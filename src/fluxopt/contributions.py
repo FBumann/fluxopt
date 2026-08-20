@@ -122,7 +122,7 @@ def _undo_cross_effects(
     rather than another inversion — so the two views cannot disagree about
     anything but floating point.
     """
-    cf = data.effects.cf_temporal
+    cf = data.effects.cf_matrix()
     if cf is None:
         return temporal, lump
 
