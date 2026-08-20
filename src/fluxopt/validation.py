@@ -152,32 +152,43 @@ def reject_varying_contribution_into_lump(data: ModelData) -> None:
     )
 
 
-def _lump_coefficient_arrays(data: ModelData) -> list[Any]:
-    """Every coefficient a one-time (lump) contribution is charged through.
+def _lump_bearing_ids(data: ModelData) -> set[str]:
+    """Every effect a one-time (lump) contribution charges, directly.
 
     Read off the containers rather than off a term list: what makes a cost
     one-time is which container declares it, and that is a fact about the
-    data layer.
+    data layer. Frame-backed containers name their effects in a column;
+    array-backed ones carry them on a coordinate, so both are asked in the
+    way they can answer.
     """
+    import polars as pl
+
     fds = data.flows
     containers = [fds.sizing, fds.invest]
     if data.storages is not None:
         containers += [data.storages.sizing, data.storages.invest]
-    fields = (
-        'effects_per_size',
-        'effects_fixed',
-        'effects_per_size_at_build',
-        'effects_fixed_at_build',
-        'effects_per_size_recurring',
-        'effects_fixed_recurring',
-    )
-    return [
-        arr
-        for container in containers
-        if container is not None
-        for name in fields
-        if (arr := getattr(container, name, None)) is not None
-    ]
+
+    charged: set[str] = set()
+    for container in containers:
+        if container is None:
+            continue
+        frame = getattr(container, 'effects', None)
+        if frame is not None:
+            live = frame.filter((pl.col('per_size') != 0) | (pl.col('fixed') != 0))
+            charged |= set(live['effect'].to_list())
+            continue
+        for name in (
+            'effects_per_size_at_build',
+            'effects_fixed_at_build',
+            'effects_per_size_recurring',
+            'effects_fixed_recurring',
+        ):
+            arr = getattr(container, name, None)
+            if arr is None:
+                continue
+            nonzero = (arr.notnull() & (arr != 0)).any([d for d in arr.dims if d != 'effect'])
+            charged |= {str(e) for e, keep in zip(arr.coords['effect'].values, nonzero.values, strict=True) if keep}
+    return charged
 
 
 def _lump_bearing_effects(data: ModelData, cf_lump: Any) -> Any:
@@ -192,9 +203,10 @@ def _lump_bearing_effects(data: ModelData, cf_lump: Any) -> Any:
 
     effect_ids = cf_lump.indexes['effect']
     bearing = xr.DataArray(np.zeros(len(effect_ids), dtype=bool), coords={'effect': effect_ids}, dims='effect')
-    for coeff in _lump_coefficient_arrays(data):
-        nonzero = (coeff.notnull() & (coeff != 0)).any([d for d in coeff.dims if d != 'effect'])
-        bearing = bearing | nonzero.reindex_like(bearing, fill_value=False)
+    charged = _lump_bearing_ids(data)
+    bearing = bearing | xr.DataArray(
+        [str(e) in charged for e in effect_ids], coords={'effect': effect_ids}, dims='effect'
+    )
 
     adjacency = (cf_lump.notnull() & (cf_lump != 0)).any(
         [d for d in cf_lump.dims if d not in ('effect', 'source_effect')]
