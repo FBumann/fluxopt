@@ -92,9 +92,7 @@ class TestRoundtrip:
         # Storages dataset preserved
         assert loaded.data.storages is not None
         assert result.data.storages is not None
-        assert list(loaded.data.storages.capacity.coords['storage'].values) == list(
-            result.data.storages.capacity.coords['storage'].values
-        )
+        assert loaded.data.storages.ids == result.data.storages.ids
         # Dims roundtrip: dt, time, and weights preserved with coordinates
         xr.testing.assert_equal(loaded.data.dims.dt, result.data.dims.dt)
         xr.testing.assert_equal(loaded.data.dims.time, result.data.dims.time)
@@ -372,7 +370,7 @@ class TestWaistGuards:
 
     def test_dangling_storage_flow_reference_rejected_on_load(self, tmp_nc: Path) -> None:
         """A charge_flow naming a nonexistent flow fails at load, not as a KeyError at build."""
-        import netCDF4
+        import polars as pl
 
         from fluxopt import ModelData, Storage
 
@@ -388,8 +386,8 @@ class TestWaistGuards:
             storages=[Storage(id='bat', charging=charge, discharging=discharge, capacity=100.0)],
         )
         data.save(tmp_nc)
-        with netCDF4.Dataset(tmp_nc / 'storages' / 'arrays.nc', 'a') as nc:
-            nc['charge_flow'][0] = 'bat(gone)'
+        table = tmp_nc / 'storages' / 'storages.parquet'
+        pl.read_parquet(table).with_columns(pl.lit('bat(gone)').alias('charge_flow')).write_parquet(table)
 
         with pytest.raises(
             ValueError, match=r"storages\.charge_flow references unknown flow id\(s\) \['bat\(gone\)'\]"
