@@ -587,16 +587,6 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
             )
             return live if len(live) else _empty(column, 'status_entity')
 
-        # Envelopes are per gated flow: a governed flow is sized like any
-        # other, and `size * rel` is what the binary scales.
-        on_gated = grid.filter(pl.col('flow').is_in(pl.Series(gated_ids, dtype=pl.String).implode()))
-        for key, column in (
-            ('rate_min_when_on', 'relative_rate_min'),
-            ('rate_max_when_on', 'relative_rate_max'),
-            ('rate_fixed_when_on', 'fixed'),
-        ):
-            sources[key] = _live(on_gated, pl.col('size') * pl.col(column))
-
         horizon = float(dims.timesteps['dt'].sum())
         bounded_up = durations.filter(pl.col('uptime_min').is_not_null() | pl.col('uptime_max').is_not_null())[
             'entity'
@@ -679,8 +669,6 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
             'forced_off_at_start',
         ):
             sources[n] = _empty(n, 'status_entity')
-        for n in ('rate_min_when_on', 'rate_max_when_on', 'rate_fixed_when_on'):
-            sources[n] = _empty(n, 'flow', 'time', 'period')
 
     sources['dt'] = dims.timesteps.select(['time', pl.col('dt').alias('value')])
     sources['is_last'] = pd.DataFrame({'time': ordinals, 'value': [i == len(ordinals) - 1 for i in ordinals]})
@@ -692,17 +680,6 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         sources['mandatory'] = _flags('mandatory', 'flow', bounds.filter('mandatory')['entity'].to_list())
         sources['size_min'] = pd.DataFrame({'flow': sizing_ids, 'value': bounds['size_min'].to_numpy()})
         sources['size_max'] = pd.DataFrame({'flow': sizing_ids, 'value': bounds['size_max'].to_numpy()})
-        at_max = envelope.join(
-            bounds.select([pl.col('entity').alias('flow'), pl.col('size_max')]), on='flow', how='inner'
-        )
-        sources['rate_max_at_size_max'] = _live(at_max, pl.col('relative_rate_max') * pl.col('size_max'))
-        # Dense: this one also stands on the constant side of
-        # `status_sizing_rate_min`, where a dropped zero is a bound rather
-        # than an absent coefficient. A flow whose lower bound is zero is the
-        # ordinary case, so dropping it would break exactly the common one.
-        sources['rate_min_at_size_max'] = _live(
-            at_max, pl.col('relative_rate_min') * pl.col('size_max'), drop_zero=False
-        )
         lump_frames += [
             ('effects_per_size', 'flow', sz.effects, 'per_size'),
             ('effects_fixed', 'flow', sz.effects, 'fixed'),
@@ -710,8 +687,6 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
     else:
         for n in ('has_sizing', 'mandatory', 'size_min', 'size_max'):
             sources[n] = _empty(n, 'flow')
-        for n in ('rate_max_at_size_max', 'rate_min_at_size_max'):
-            sources[n] = _empty(n, 'flow', 'time', 'period')
 
     if 'has_capacity_sizing' not in sources:
         for n in ('has_capacity_sizing', 'capacity_mandatory', 'capacity_min', 'capacity_max'):
@@ -802,15 +777,18 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         sources['lifetime_window'] = _empty('lifetime_window', 'flow', 'period', 'build_period')
         sources['prior_capacity_active'] = _empty('prior_capacity_active', 'flow', 'period')
 
-    # `sizing_rate` covers both mechanisms, so its envelope must span both.
+    # The envelope is read by both mechanisms and by the status family, so it
+    # must span every flow whose rate is scaled by a size: sized flows, whose
+    # `size` is a variable, and gated flows, whose `size_bound` is a number.
     sized_ids = [*sizing_ids, *invest_ids]
-    on_sized = grid.filter(pl.col('flow').is_in(pl.Series(sized_ids, dtype=pl.String).implode()))
-    for key, column in (
-        ('relative_rate_min', 'relative_rate_min'),
-        ('relative_rate_max', 'relative_rate_max'),
-        ('fixed_relative_profile', 'fixed'),
-    ):
-        sources[key] = _live(on_sized, pl.col(column))
+    scaled = grid.filter(pl.col('flow').is_in(pl.Series([*sized_ids, *gated_ids], dtype=pl.String).implode()))
+    sources['relative_rate_max'] = _live(scaled, pl.col('relative_rate_max'))
+    sources['fixed_relative_profile'] = _live(scaled, pl.col('fixed'))
+    # Dense: the lower bound also stands on the constant side of
+    # `status_sizing_rate_min`, where a dropped zero is a bound rather than an
+    # absent coefficient — and a flow whose lower bound is zero is the
+    # ordinary case, so dropping it would break exactly the common one.
+    sources['relative_rate_min'] = _live(scaled, pl.col('relative_rate_min'), drop_zero=False)
 
     # --- effects: the sparse one -----------------------------------------
     eds = data.effects
@@ -895,9 +873,7 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
     # --- flow aggregates ------------------------------------------------
     # `size` here is the static one; a sized flow's is a variable, so its bound
     # travels as a coefficient instead of a product and the program multiplies.
-    weight = dims.timesteps.select(['time', (pl.col('dt') * pl.col('weight')).alias('value')])
-    sources['flow_hour_weight'] = weight
-    total_duration = float(weight['value'].sum())
+    total_duration = float((dims.timesteps['dt'] * dims.timesteps['weight']).sum())
     # A load factor bounds the mean rate as a fraction of the size. Where the
     # size is a number the bound is one too; where it is a variable the bound
     # travels as a coefficient and the program multiplies.
