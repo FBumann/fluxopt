@@ -201,7 +201,6 @@ parameters:
   has_piecewise: {dims: [converter], dtype: bool}
   pw_gated: {dims: [converter], dtype: bool}       # the curve answers to a Status
   pw_bp_present: {dims: [converter, bp], dtype: bool}   # this curve has this breakpoint
-  pw_seg_present: {dims: [converter, bp], dtype: bool}  # ...and a segment starts here
   is_piecewise: {dims: [flow], dtype: bool}        # this flow is a link of a curve
   pw_equal: {dims: [flow], dtype: bool}            # pinned to the curve
   pw_upper: {dims: [flow], dtype: bool}            # bounded above by it
@@ -315,18 +314,22 @@ variables:
     where: "pw_bp_present"
     bounds: {lower: 0, upper: 1}
 
-  # Which segment the operating point sits on. `absence: zero` is what makes
-  # the adjacency row read correctly at the last breakpoint, where no segment
-  # starts: the term goes to zero rather than taking the row with it.
-  seg:
-    foreach: [converter, bp, time, period]
-    where: "pw_seg_present"
-    absence: zero
-    domain: binary
-
   effect_total:
     foreach: [effect, period]
     bounds: {lower: -.inf, upper: .inf}
+
+# The restriction that makes the weights a piecewise curve rather than any
+# convex combination: at most two nonzero, and those two adjacent. A set
+# rather than binaries and an adjacency row, because that is what it is —
+# one declaration covering every curve whatever its width, sign or gating,
+# and no assumption that a curve's breakpoints are contiguous.
+sos:
+  on_one_segment:
+    variable: lam
+    over: bp
+    type: 2
+    big_m: 1
+    description: The operating point lies on one segment of the curve.
 
 expressions:
   # The two halves of the ledger, named rather than inlined: each is a
@@ -845,21 +848,6 @@ constraints:
 
   # Adjacency: weight may only be carried by the segment in use, or the one
   # ending at this breakpoint. Together with the pick row below this is SOS2.
-  pw_adjacency:
-    foreach: [converter, bp, time, period]
-    where: "pw_bp_present"
-    expression: lam <= seg + shift(seg, over=bp, offset=1, edge=0)
-
-  pw_segment_pick:
-    foreach: [converter, time, period]
-    where: "has_piecewise AND NOT pw_gated"
-    expression: sum(seg, over=bp) == 1
-
-  pw_segment_pick_gated:
-    foreach: [converter, time, period]
-    where: "has_piecewise AND pw_gated"
-    expression: sum(seg, over=bp) == at(running, by=pw_status_of)
-
   # Availability scales the envelope rather than the curve, so it bounds the
   # reference link instead of moving the breakpoints.
   pw_availability:
