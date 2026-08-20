@@ -55,7 +55,10 @@ A rule about a materialised table's internal consistency: `pair_converter`
 naming a converter the table does not carry, `governed_by` naming a component
 without a Status, `Dims.dt` matching `Dims.time`.
 
-The reason this layer exists at all is **reload**. `ModelData` round-trips
+Two things reach this layer that the earlier ones could not see, and both
+are real reasons for it to exist.
+
+**Reload.** `ModelData` round-trips
 through netCDF, and a file that was hand-edited — or written by an older
 version — never passed through layers 1 and 2. Every check here is answering
 "could this table have arrived broken?", and the honest test for whether one
@@ -68,10 +71,18 @@ If not, the check is dead. Seven were: `Unknown effect {k!r} in ...` in five
 container builders, all of them behind `validate_system`'s sweep of the same
 element models. They were reachable only through the private container API.
 
-A check that duplicates layer 1 but *does* guard reload is a different
-case — `PiecewiseData.method` is a `Literal` on the element and re-checked
-here. That one earns its place, and its docstring should say it is a reload
-guard so the next reader does not mistake it for the enforcement.
+**A value the element could not see.** A `Variate` may be a
+`ProfileRef` — a name pointing at numbers supplied later — so a rule about
+its *values* cannot be decided when the element is written. `Storage`
+refuses `eta_charge=1.5` at construction and cannot refuse
+`eta_charge=ProfileRef(...)` until profiles are resolved, which is here. A
+range check that looks duplicated is doing this job.
+
+A check that duplicates layer 1 but *does* guard one of those two is a
+different case from a dead one — `PiecewiseData.method` is a `Literal` on
+the element and re-checked here. Those earn their place, and their
+docstrings should say which job they are doing so the next reader does not
+mistake a guard for the enforcement.
 
 ### 4. The bind
 
@@ -89,10 +100,10 @@ cannot see the program, so it will be the weaker of the two.
 ## Deciding
 
 ```
-Can one element answer it alone?            -> 1, the element
-Does it need to see other elements?         -> 2, the system
-Only violable by a file that skipped 1 - 2? -> 3, the data
-Is it about shape, dtype, or coverage?      -> 4, leave it to lpspec
+Can one element answer it alone?                  -> 1, the element
+Does it need to see other elements?               -> 2, the system
+Only violable by a reload, or by a resolved ref?  -> 3, the data
+Is it about shape, dtype, or coverage?            -> 4, leave it to lpspec
 ```
 
 Two smells worth naming, both of which had occurred:
@@ -105,10 +116,13 @@ Two smells worth naming, both of which had occurred:
 
 ## Where this leaves layer 3
 
-Most of what remains there is genuinely reload's, and it stays as long as
-`ModelData` serializes itself field by field. It is worth noting what would
-retire it: if a reloaded file were rebuilt through `ModelData.build` rather
-than reconstructed around it, layers 1 and 2 would run on the way back in and
-layer 3 would have nothing left to catch that they had not. That is a
-consequence of the tidy-frames re-cut rather than a reason for it, but it is
-the second reason.
+The reload half of it stays only as long as `ModelData` serializes itself
+field by field. If a reloaded file were rebuilt through `ModelData.build`
+rather than reconstructed around it, layers 1 and 2 would run on the way back
+in and there would be nothing left for reload to catch. That is a consequence
+of the tidy-frames re-cut rather than a reason for it, but it is a second
+reason.
+
+The `ProfileRef` half does not go away, and should not. A rule about values
+that arrive later has to be checked later, whatever the container is made of —
+so layer 3 shrinks rather than closes.

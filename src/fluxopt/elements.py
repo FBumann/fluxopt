@@ -4,7 +4,7 @@ from typing import Any, Literal, NamedTuple, override
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from fluxopt.types import PiecewiseMethod, Variate
+from fluxopt.types import PiecewiseMethod, Variate, variate_out_of_range
 
 # Element models hold arbitrary xarray/numpy/pandas values (Variate);
 # pydantic validates ids/scalars/structure while passing those through by
@@ -428,7 +428,20 @@ class Storage(Element):
 
     @override
     def model_post_init(self, __context: Any) -> None:
-        """Validate carrier match and status/size requirements."""
+        """Validate physical ranges, carrier match, and status/size requirements."""
+        if isinstance(self.capacity, (int, float)) and self.capacity < 0:
+            msg = f'Storage {self.id!r}: capacity is negative ({self.capacity})'
+            raise ValueError(msg)
+        for name, low, high, low_open in (
+            ('eta_charge', 0.0, 1.0, True),
+            ('eta_discharge', 0.0, 1.0, True),
+            ('relative_loss_per_hour', 0.0, 1.0, False),
+        ):
+            bad = variate_out_of_range(getattr(self, name), low=low, high=high, low_open=low_open)
+            if bad is not None:
+                span = f'({low}, {high}]' if low_open else f'[{low}, {high}]'
+                msg = f'Storage {self.id!r}: {name} must be in {span}, got {bad}'
+                raise ValueError(msg)
         if self.charging.carrier != self.discharging.carrier:
             msg = (
                 f'Storage {self.id!r}: charging carrier {self.charging.carrier!r} '

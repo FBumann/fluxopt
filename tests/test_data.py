@@ -4,8 +4,21 @@ import numpy as np
 import pytest
 import xarray as xr
 from conftest import ts
+from pydantic import ValidationError
 
-from fluxopt import Carrier, Converter, Dims, Effect, Flow, ModelData, Port, Storage, optimize
+from fluxopt import (
+    Carrier,
+    Converter,
+    Dims,
+    Effect,
+    Flow,
+    FlowSystem,
+    ModelData,
+    Port,
+    ProfileRef,
+    Storage,
+    optimize,
+)
 
 
 class TestFlowsTable:
@@ -416,3 +429,42 @@ class TestContributionsAreDeclared:
         summed = program.expressions['effect_temporal'].expression + program.expressions['effect_lump'].expression
         for name in declared:
             assert name in summed, f'{name} is read back but the ledger never sums it'
+
+
+class TestStorageRanges:
+    """Physical ranges are refused where the value is written."""
+
+    def _storage(self, **kwargs):
+        return Storage(id='b', charging=Flow(carrier='e'), discharging=Flow(carrier='e'), **kwargs)
+
+    @pytest.mark.parametrize(
+        ('kwargs', 'match'),
+        [
+            ({'capacity': -5}, 'capacity is negative'),
+            ({'eta_charge': 0}, r'eta_charge must be in \(0.0, 1.0\]'),
+            ({'eta_discharge': 1.5}, r'eta_discharge must be in \(0.0, 1.0\]'),
+            ({'relative_loss_per_hour': 1.4}, r'relative_loss_per_hour must be in \[0.0, 1.0\]'),
+            ({'relative_loss_per_hour': [0.1, 1.4]}, 'relative_loss_per_hour must be in'),
+        ],
+    )
+    def test_refused_at_construction(self, kwargs, match):
+        with pytest.raises(ValidationError, match=match):
+            self._storage(**kwargs)
+
+    def test_a_profile_ref_is_checked_when_it_is_resolved(self):
+        """Its numbers live elsewhere, so the element cannot see them.
+
+        This is the path that keeps the data-layer range check alive: an
+        element accepts the reference, and the values only exist once
+        profiles are bound.
+        """
+        system = FlowSystem(
+            timesteps=ts(3),
+            carriers=[Carrier(id='e')],
+            effects=[Effect(id='cost')],
+            objective='cost',
+            ports=[Port(id='g', imports=[Flow(carrier='e', size=10, effects_per_flow_hour={'cost': 1.0})])],
+            storages=[self._storage(capacity=10, eta_charge=ProfileRef(dataset='p', variable='eta'))],
+        )
+        with pytest.raises(ValueError, match='eta_charge must be in'):
+            system.build_data({'p': {'eta': xr.DataArray([0.9, 0.9, 1.7], dims=['time'])}})

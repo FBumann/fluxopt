@@ -1340,11 +1340,13 @@ class StoragesData:
     invest: InvestmentData | None = None  # dim Dim.INVEST_STORAGE
 
     def __post_init__(self) -> None:
-        """Check capacity, efficiencies and loss rates are in range.
+        """Re-check the ranges `Storage` already refuses, on the resolved values.
 
-        These are element rules that `Storage` does not yet state, so this is
-        the enforcement rather than a reload guard — which is the shape
-        docs/design/validation-layers.md says to move up when convenient.
+        Two things reach here that the element could not see: a reloaded
+        netCDF, which never passed through `Storage` at all, and a
+        `ProfileRef`, whose numbers arrive when profiles are resolved and so
+        are not there to check when the storage is written. Everything else
+        was refused at construction — see docs/design/validation-layers.md.
         """
         s = self.capacity.coords['storage']
         cap = self.capacity
