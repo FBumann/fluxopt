@@ -11,7 +11,7 @@ import pandas as pd
 import polars as pl
 import xarray as xr
 
-from fluxopt.contract import BoundType, Dim
+from fluxopt.contract import BoundType
 from fluxopt.types import PiecewiseMethod, as_dataarray, normalize_timesteps
 from fluxopt.validation import validate_system
 
@@ -148,20 +148,14 @@ class SizingData:
     def build(
         cls,
         items: list[tuple[str, Sizing]],
-        effect_ids: list[str],
-        dim: str,
         period: pd.Index | None = None,
     ) -> Self | None:
         """Collect Sizing objects into frames, or None if there are none.
 
         Args:
             items: Pairs of (element_id, Sizing).
-            effect_ids: Declared effects; unused now that the pairs name their
-                own, kept so every container builds the same way.
-            dim: Historic dimension name; the frame keys on ``entity``.
             period: Period index for period-varying effects.
         """
-        del effect_ids, dim
         if not items:
             return None
 
@@ -280,19 +274,14 @@ class InvestmentData:
     def build(
         cls,
         items: list[tuple[str, Investment]],
-        effect_ids: list[str],
-        dim: str,
         period: pd.Index | None = None,
     ) -> Self | None:
         """Collect Investment objects into frames, or None if there are none.
 
         Args:
             items: Pairs of (element_id, Investment).
-            effect_ids: Declared effects; the pairs name their own.
-            dim: Historic dimension name; the frames key on ``entity``.
             period: Period index for period-varying effects.
         """
-        del effect_ids, dim
         if not items:
             return None
 
@@ -399,9 +388,7 @@ class StatusData:
     def build(
         cls,
         items: list[tuple[str, Status]],
-        effect_ids: list[str],
         time: TimeIndex,
-        dim: str,
         prior_rates_map: dict[str, list[float]] | None = None,
         dt: float = 1.0,
         period: pd.Index | None = None,
@@ -410,14 +397,11 @@ class StatusData:
 
         Args:
             items: Pairs of (id, Status).
-            effect_ids: Declared effects; the pairs name their own.
             time: Time index for effect series.
-            dim: Historic dimension name; the frames key on ``entity``.
             prior_rates_map: Item id to prior flow rates (MW) before horizon.
             dt: Scalar timestep duration in hours for prior duration computation.
             period: Period index for period-varying effects.
         """
-        del effect_ids, dim
         if not items:
             return None
 
@@ -558,10 +542,11 @@ class FlowsData:
     #: governed by at most one component, so this is a column rather than the
     #: ragged padded matrix it used to be on the component's Status.
     governed_by: pl.DataFrame
-    sizing: SizingData | None = None  # dim Dim.SIZING_FLOW
-    status: StatusData | None = None  # dim Dim.STATUS_FLOW
-    invest: InvestmentData | None = None  # dim Dim.INVEST_FLOW
-    cstatus: StatusData | None = None  # dim Dim.CSTATUS_COMPONENT, entity coord 'component'
+    sizing: SizingData | None = None
+    status: StatusData | None = None
+    invest: InvestmentData | None = None
+    #: A component's Status, governing several flows at once
+    cstatus: StatusData | None = None
 
     @property
     def ids(self) -> list[str]:
@@ -626,7 +611,6 @@ class FlowsData:
         cls,
         flows: list[_BoundFlow],
         time: TimeIndex,
-        effects: list[Effect],
         dt: float = 1.0,
         period: pd.Index | None = None,
         component_status_items: list[tuple[str, Status, list[str]]] | None = None,
@@ -636,7 +620,6 @@ class FlowsData:
         Args:
             flows: All collected flows with qualified ids.
             time: Time index.
-            effects: Effect definitions for cost coefficients.
             dt: Scalar timestep duration in hours for prior duration computation.
             period: Period index for multi-period models. `envelope`,
                 `fixed_profile`, `effect_pairs` and `ramps` carry a period
@@ -651,7 +634,6 @@ class FlowsData:
         from fluxopt.elements import Investment, Sizing
 
         flow_ids = [bf.id for bf in flows]
-        effect_ids = [e.id for e in effects]
         n_time = len(np.asarray(time))
         n_period = len(period) if period is not None else 1
         envelope_coords: dict[str, Any] = {'time': time}
@@ -792,24 +774,10 @@ class FlowsData:
                 {'flow': list(owner), 'component': list(owner.values())},
                 schema={'flow': pl.String, 'component': pl.String},
             ),
-            sizing=SizingData.build(sizing_items, effect_ids, dim=Dim.SIZING_FLOW, period=period),
-            invest=InvestmentData.build(invest_items, effect_ids, dim=Dim.INVEST_FLOW, period=period),
-            status=StatusData.build(
-                status_items,
-                effect_ids,
-                time,
-                dim=Dim.STATUS_FLOW,
-                prior_rates_map=prior_rates_map,
-                dt=dt,
-                period=period,
-            ),
-            cstatus=StatusData.build(
-                [(cid, s) for cid, s, _ in (component_status_items or [])],
-                effect_ids,
-                time,
-                dim=Dim.CSTATUS_COMPONENT,
-                period=period,
-            ),
+            sizing=SizingData.build(sizing_items, period=period),
+            invest=InvestmentData.build(invest_items, period=period),
+            status=StatusData.build(status_items, time, prior_rates_map=prior_rates_map, dt=dt, period=period),
+            cstatus=StatusData.build([(cid, s) for cid, s, _ in (component_status_items or [])], time, period=period),
         )
 
 
@@ -1375,8 +1343,8 @@ class StoragesData:
     #: (storage, prior_level, final_level_min, final_level_max) — only
     #: storages fixing a level at one end of the horizon
     levels: pl.DataFrame
-    sizing: SizingData | None = None  # dim Dim.SIZING_STORAGE
-    invest: InvestmentData | None = None  # dim Dim.INVEST_STORAGE
+    sizing: SizingData | None = None
+    invest: InvestmentData | None = None
 
     @property
     def ids(self) -> list[str]:
@@ -1409,8 +1377,6 @@ class StoragesData:
         cls,
         storages: list[Storage],
         time: TimeIndex,
-        dt: xr.DataArray,
-        effects: list[Effect] | None = None,
         period: pd.Index | None = None,
     ) -> Self | None:
         """Build StoragesData from element objects.
@@ -1418,8 +1384,6 @@ class StoragesData:
         Args:
             storages: Storage definitions.
             time: Time index.
-            dt: Timestep durations.
-            effects: Effect definitions for sizing cost validation.
             period: Period index for period-varying effects.
         """
         from fluxopt.elements import Investment, Sizing
@@ -1427,7 +1391,6 @@ class StoragesData:
         if not storages:
             return None
 
-        effect_ids = [e.id for e in effects] if effects else []
         labels = np.asarray(time)
         n_time = len(labels)
 
@@ -1522,8 +1485,8 @@ class StoragesData:
                     'final_level_max': pl.Float64,
                 },
             ),
-            sizing=SizingData.build(sizing_items, effect_ids, dim=Dim.SIZING_STORAGE, period=period),
-            invest=InvestmentData.build(invest_items, effect_ids, dim=Dim.INVEST_STORAGE, period=period),
+            sizing=SizingData.build(sizing_items, period=period),
+            invest=InvestmentData.build(invest_items, period=period),
         )
 
 
@@ -1941,17 +1904,12 @@ class ModelData:
         )
 
         flows_data = FlowsData.build(
-            flows,
-            time,
-            effects,
-            dt=dt_scalar,
-            period=period_idx,
-            component_status_items=comp_status_items,
+            flows, time, dt=dt_scalar, period=period_idx, component_status_items=comp_status_items
         )
         carriers_data = CarriersData.build(carriers, flows, carrier_coeff)
         converters_data = ConvertersData.build(converters, time)
         effects_data = EffectsData.build(effects, time, period=period_idx)
-        storages_data = StoragesData.build(stor_list, time, dims.dt, effects, period=period_idx)
+        storages_data = StoragesData.build(stor_list, time, period=period_idx)
         piecewise_data = PiecewiseData.build(converters, time)
 
         return cls(
