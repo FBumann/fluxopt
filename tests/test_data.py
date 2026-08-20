@@ -123,8 +123,12 @@ class TestEffectsTable:
             effects=[Effect(id='cost')],
             ports=[Port(id='src', imports=[flow])],
         )
-        coeff = data.flows.effect_coeff.sel(flow='src(b)', effect='cost')
-        assert all(v == 0.04 for v in coeff.values)
+        fds = data.flows
+        # One row per (flow, effect) the flow actually charges — not a dense
+        # product over every flow and every effect.
+        assert list(fds.effect_pair_flow.values) == ['src(b)']
+        assert list(fds.effect_pair_effect.values) == ['cost']
+        assert all(v == 0.04 for v in fds.effect_pair_coeff.isel(effect_pair=0).values)
 
 
 class TestFlowNodeId:

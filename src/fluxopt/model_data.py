@@ -507,7 +507,15 @@ class FlowsData:
     rel_ub: xr.DataArray  # (flow, time[, period])
     fixed_profile: xr.DataArray  # (flow, time[, period]) — NaN where not fixed
     size: xr.DataArray  # (flow,) — NaN for unsized
-    effect_coeff: xr.DataArray  # (flow, effect, time[, period])
+    #: One row per (flow, effect) a flow actually charges, each carrying its
+    #: own ``(time[, period])`` series. Dense over the pair product it is not:
+    #: on the stress reference system that product is 443 MB at 4% live.
+    effect_pair_flow: xr.DataArray  # (pair,) — flow id
+    effect_pair_effect: xr.DataArray  # (pair,) — effect id
+    effect_pair_coeff: xr.DataArray  # (pair, time[, period])
+    #: (flow,) — every flow, in order. The pair table names only the flows
+    #: that charge something, so the roster cannot be read off it.
+    flow_id: xr.DataArray
     flow_hours_min: xr.DataArray | None = None  # (flow,) — NaN = unbounded, per period
     flow_hours_max: xr.DataArray | None = None  # (flow,) — NaN = unbounded, per period
     load_factor_min: xr.DataArray | None = None  # (flow,) — NaN = unbounded, per period
@@ -623,7 +631,7 @@ class FlowsData:
             effects: Effect definitions for cost coefficients.
             dt: Scalar timestep duration in hours for prior duration computation.
             period: Period index for multi-period models. When provided,
-                ``effect_coeff``, ``rel_lb``, ``rel_ub`` and ``fixed_profile``
+                ``effect_pair_coeff``, ``rel_lb``, ``rel_ub`` and ``fixed_profile``
                 gain a ``period`` dimension so that ``effects_per_flow_hour``,
                 ``relative_rate_min``, ``relative_rate_max`` and
                 ``fixed_relative_profile`` can vary across periods.
@@ -638,7 +646,6 @@ class FlowsData:
         effect_ids = [e.id for e in effects]
         effect_set = set(effect_ids)
         n_time = len(time)
-        n_effects = len(effect_ids)
 
         bound_type: list[str] = []
         rel_lbs: list[xr.DataArray] = []
@@ -654,6 +661,8 @@ class FlowsData:
         has_ramp_up = False
         has_ramp_down = False
         effect_coeffs: list[xr.DataArray] = []
+        pair_flows: list[str] = []
+        pair_effects: list[str] = []
         sizing_items: list[tuple[str, Sizing]] = []
         invest_items: list[tuple[str, Investment]] = []
         status_items: list[tuple[str, Status]] = []
@@ -709,27 +718,16 @@ class FlowsData:
                 profiles.append(nan_envelope)
                 bound_type.append(BoundType.BOUNDED)
 
-            # Effect coefficients for this flow
-            ec_coords: dict[str, Any] = {'effect': effect_ids, 'time': time}
-            ec_shape = [n_effects, n_time]
-            ec_dims = ['effect', 'time']
-            if period is not None:
-                ec_coords['period'] = period
-                ec_shape.append(len(period))
-                ec_dims.append('period')
-            ec = xr.DataArray(
-                np.zeros(ec_shape),
-                dims=ec_dims,
-                coords=ec_coords,
-            )
+            # Effect coefficients for this flow — one row per effect charged
             as_da_coords: dict[str, Any] = {'time': time}
             if period is not None:
                 as_da_coords['period'] = period
             for effect_label, factor in f.effects_per_flow_hour.items():
                 if effect_label not in effect_set:
                     raise ValueError(f'Unknown effect {effect_label!r} in Flow.effects_per_flow_hour on {fid!r}')
-                ec.loc[effect_label] = as_dataarray(factor, as_da_coords)
-            effect_coeffs.append(ec)
+                pair_flows.append(fid)
+                pair_effects.append(effect_label)
+                effect_coeffs.append(as_dataarray(factor, as_da_coords))
 
             if f.status is not None:
                 status_items.append((fid, f.status))
@@ -744,7 +742,14 @@ class FlowsData:
             rel_ub=fast_concat(rel_ubs, flow_idx),
             fixed_profile=fast_concat(profiles, flow_idx),
             size=xr.DataArray(size_vals, dims=['flow'], coords={'flow': flow_ids}),
-            effect_coeff=fast_concat(effect_coeffs, flow_idx),
+            effect_pair_flow=xr.DataArray(pair_flows, dims=['effect_pair']),
+            effect_pair_effect=xr.DataArray(pair_effects, dims=['effect_pair']),
+            effect_pair_coeff=(
+                fast_concat(effect_coeffs, pd.Index(range(len(effect_coeffs)), name='effect_pair'))
+                if effect_coeffs
+                else xr.DataArray(np.zeros((0, n_time)), dims=['effect_pair', 'time'], coords={'time': time})
+            ),
+            flow_id=xr.DataArray(flow_ids, dims=['flow'], coords={'flow': flow_ids}),
             flow_hours_min=_flow_bound_or_none(fh_min_vals, flow_ids),
             flow_hours_max=_flow_bound_or_none(fh_max_vals, flow_ids),
             load_factor_min=_flow_bound_or_none(lf_min_vals, flow_ids),
@@ -1719,10 +1724,10 @@ class ModelData:
                     raise ValueError(f'{what} references unknown storage id(s) {unknown}')
 
         effect_ids = set(map(str, self.effects.total_min.coords['effect'].values))
-        coeff_effects = set(map(str, self.flows.effect_coeff.coords['effect'].values))
-        if coeff_effects != effect_ids:
+        coeff_effects = {str(e) for e in self.flows.effect_pair_effect.values}
+        if not coeff_effects <= effect_ids:
             raise ValueError(
-                f'flows.effect_coeff effect coordinate {sorted(coeff_effects)} does not match '
+                f'flows.effect_pair_effect names effects {sorted(coeff_effects - effect_ids)} that are not in '
                 f'the effects table {sorted(effect_ids)}'
             )
 

@@ -89,7 +89,7 @@ def _gather(
     read: Any, names: dict[str, str], data: ModelData, all_ids: list[str], collapse: str | None
 ) -> xr.DataArray:
     """Sum the named contributions onto one contributor axis."""
-    flow_ids = [str(f) for f in data.flows.effect_coeff.coords['flow'].values]
+    flow_ids = [str(f) for f in data.flows.flow_id.values]
     total: xr.DataArray | None = None
     for name, entity in names.items():
         arr = read(name)
@@ -169,7 +169,7 @@ def contributions_from(read: Any, data: ModelData, *, cross_effects: bool = True
         Dataset with ``temporal`` (contributor, effect, time), ``lump``
         (contributor, effect) and ``total`` (contributor, effect).
     """
-    flow_ids = [str(f) for f in data.flows.effect_coeff.coords['flow'].values]
+    flow_ids = [str(f) for f in data.flows.flow_id.values]
     stor_ids = [str(s) for s in data.storages.capacity.coords['storage'].values] if data.storages is not None else []
     all_ids = flow_ids + stor_ids
 
