@@ -392,48 +392,43 @@ class InvestmentData:
 
 @dataclass
 class StatusData:
-    """Binary on/off behavior arrays for one entity family (flow or component)."""
+    """Binary on/off behaviour for one entity family — a flow's or a component's.
 
-    uptime_min: xr.DataArray  # (dim,)
-    uptime_max: xr.DataArray  # (dim,)
-    downtime_min: xr.DataArray  # (dim,)
-    downtime_max: xr.DataArray  # (dim,)
-    initial: xr.DataArray  # (dim,) — NaN = free
-    effects_running: xr.DataArray  # (dim, effect, time, period?) — dense, zero where absent
-    effects_startup: xr.DataArray  # (dim, effect, time, period?) — dense, zero where absent
-    previous_uptime: xr.DataArray | None = None  # (dim,) — hours, NaN = no prior
-    previous_downtime: xr.DataArray | None = None  # (dim,) — hours, NaN = no prior
+    Durations are optional on the element, so an entity that constrains none
+    has no row in `durations` rather than a row of NaN. The same for what
+    happened before the horizon: `prior` holds only the entities that ran.
+    """
+
+    #: (entity,) — every entity carrying a Status, in declaration order
+    entities: pl.DataFrame
+    #: (entity, uptime_min, uptime_max, downtime_min, downtime_max) — only
+    #: entities constraining at least one. A null in a column is that one
+    #: bound being unset, which is different from having none at all.
+    durations: pl.DataFrame
+    #: (entity, initial, previous_uptime, previous_downtime) — only entities
+    #: whose state before the horizon is known
+    prior: pl.DataFrame
+    #: (entity, effect, time, period, running, startup) — declared pairs only
+    effects: pl.DataFrame
+
+    @property
+    def ids(self) -> list[str]:
+        """The entities carrying a Status, in declaration order."""
+        return self.entities['entity'].to_list()
 
     def __post_init__(self) -> None:
         """Re-check the durations `Status` already refuses, for a reloaded file.
 
         A reload guard — see docs/design/validation-layers.md.
         """
-        for name in ('uptime_min', 'uptime_max', 'downtime_min', 'downtime_max'):
-            arr: xr.DataArray = getattr(self, name)
-            mask = (~np.isnan(arr)) & (arr < 0)
-            if mask.any():
-                dim = arr.dims[0]
-                raise ValueError(f'Status.{name} < 0 on {list(arr.coords[dim][mask].values)}')
-
-        for lo, hi, what in (
-            (self.uptime_min, self.uptime_max, 'uptime'),
-            (self.downtime_min, self.downtime_max, 'downtime'),
-        ):
-            both = ~np.isnan(lo) & ~np.isnan(hi)
-            bad = both & (hi < lo)
-            if bad.any():
-                dim = lo.dims[0]
-                raise ValueError(f'Status.{what}_max < {what}_min on {list(lo.coords[dim][bad].values)}')
-
-    def to_dataset(self) -> xr.Dataset:
-        """Serialize to xr.Dataset."""
-        return _to_dataset(self)
-
-    @classmethod
-    def from_dataset(cls, ds: xr.Dataset) -> Self:
-        """Deserialize from xr.Dataset."""
-        return _container_from_dataset(cls, ds)
+        columns = ('uptime_min', 'uptime_max', 'downtime_min', 'downtime_max')
+        if len(bad := self.durations.filter(pl.any_horizontal(pl.col(c) < 0 for c in columns))):
+            raise ValueError(f'Status durations are negative on {bad["entity"].to_list()}')
+        unordered = self.durations.filter(
+            (pl.col('uptime_max') < pl.col('uptime_min')) | (pl.col('downtime_max') < pl.col('downtime_min'))
+        )
+        if len(unordered):
+            raise ValueError(f'Status max is below min on {unordered["entity"].to_list()}')
 
     @classmethod
     def build(
@@ -446,83 +441,122 @@ class StatusData:
         dt: float = 1.0,
         period: pd.Index | None = None,
     ) -> Self | None:
-        """Validate Status objects and collect into DataArrays, or None if empty.
+        """Collect Status objects into frames, or None if there are none.
 
         Args:
             items: Pairs of (id, Status).
-            effect_ids: Known effect ids for validation.
-            time: Time index for effect arrays.
-            dim: Dimension name for the resulting arrays.
+            effect_ids: Declared effects; the pairs name their own.
+            time: Time index for effect series.
+            dim: Historic dimension name; the frames key on ``entity``.
             prior_rates_map: Item id to prior flow rates (MW) before horizon.
             dt: Scalar timestep duration in hours for prior duration computation.
             period: Period index for period-varying effects.
         """
+        del effect_ids, dim
         if not items:
             return None
 
         prior_rates_map = prior_rates_map or {}
-        tmpl = _effect_template({'effect': effect_ids, 'time': time}, period)
+        periods = list(range(len(period))) if period is not None else [0]
+        labels = np.asarray(time)
+        n_time = len(labels)
 
-        ids: list[str] = []
-        min_ups: list[float] = []
-        max_ups: list[float] = []
-        min_downs: list[float] = []
-        max_downs: list[float] = []
-        initials: list[float] = []
-        prev_ups: list[float] = []
-        prev_downs: list[float] = []
-        er_slices: list[xr.DataArray] = []
-        es_slices: list[xr.DataArray] = []
+        constrained = [
+            (i, z)
+            for i, z in items
+            if any(v is not None for v in (z.uptime_min, z.uptime_max, z.downtime_min, z.downtime_max))
+        ]
+        ran_before = [i for i, _ in items if prior_rates_map.get(i) is not None]
 
-        for item_id, s in items:
-            ids.append(item_id)
-            min_ups.append(s.uptime_min if s.uptime_min is not None else np.nan)
-            max_ups.append(s.uptime_max if s.uptime_max is not None else np.nan)
-            min_downs.append(s.downtime_min if s.downtime_min is not None else np.nan)
-            max_downs.append(s.downtime_max if s.downtime_max is not None else np.nan)
+        def duration(prior: list[float], state: int) -> float:
+            return compute_previous_duration(xr.DataArray(prior, dims=['_prior_t']), target_state=state, dt=dt)
 
-            prior = prior_rates_map.get(item_id)
-            if prior is not None:
-                initials.append(1.0 if prior[-1] > 0 else 0.0)
-                prior_da = xr.DataArray(prior, dims=['_prior_t'])
-                prev_ups.append(compute_previous_duration(prior_da, target_state=1, dt=dt))
-                prev_downs.append(compute_previous_duration(prior_da, target_state=0, dt=dt))
-            else:
-                initials.append(np.nan)
-                prev_ups.append(np.nan)
-                prev_downs.append(np.nan)
+        coords: dict[str, Any] = {'time': time}
+        if period is not None:
+            coords['period'] = period
+        cols: dict[str, list[np.ndarray]] = {
+            k: [] for k in ('entity', 'effect', 'time', 'period', 'running', 'startup')
+        }
+        for item_id, z in items:
+            for ek in sorted(set(z.effects_per_running_hour) | set(z.effects_per_startup)):
+                for p_index in periods:
+                    cols['entity'].append(np.full(n_time, item_id))
+                    cols['effect'].append(np.full(n_time, ek))
+                    cols['time'].append(labels)
+                    cols['period'].append(np.full(n_time, p_index))
+                    cols['running'].append(_series(z.effects_per_running_hour.get(ek, 0.0), coords, p_index, n_time))
+                    cols['startup'].append(_series(z.effects_per_startup.get(ek, 0.0), coords, p_index, n_time))
 
-            er = tmpl.zeros()
-            for ek, ev in s.effects_per_running_hour.items():
-                er.loc[ek] = as_dataarray(ev, tmpl.as_da_coords)
-            er_slices.append(er)
-
-            es = tmpl.zeros()
-            for ek, ev in s.effects_per_startup.items():
-                es.loc[ek] = as_dataarray(ev, tmpl.as_da_coords)
-            es_slices.append(es)
-
-        coords = {dim: ids}
-        status_idx = pd.Index(ids, name=dim)
-
-        prev_up_arr = np.array(prev_ups)
-        prev_down_arr = np.array(prev_downs)
+        def joined(key: str, dtype: Any) -> np.ndarray:
+            parts = cols[key]
+            return np.concatenate(parts) if parts else np.array([], dtype=dtype)
 
         return cls(
-            uptime_min=xr.DataArray(np.array(min_ups), dims=[dim], coords=coords),
-            uptime_max=xr.DataArray(np.array(max_ups), dims=[dim], coords=coords),
-            downtime_min=xr.DataArray(np.array(min_downs), dims=[dim], coords=coords),
-            downtime_max=xr.DataArray(np.array(max_downs), dims=[dim], coords=coords),
-            initial=xr.DataArray(np.array(initials), dims=[dim], coords=coords),
-            effects_running=fast_concat(er_slices, status_idx),
-            effects_startup=fast_concat(es_slices, status_idx),
-            previous_uptime=xr.DataArray(prev_up_arr, dims=[dim], coords=coords)
-            if not np.all(np.isnan(prev_up_arr))
-            else None,
-            previous_downtime=xr.DataArray(prev_down_arr, dims=[dim], coords=coords)
-            if not np.all(np.isnan(prev_down_arr))
-            else None,
+            entities=pl.DataFrame({'entity': [i for i, _ in items]}, schema={'entity': pl.String}),
+            durations=pl.DataFrame(
+                {
+                    'entity': [i for i, _ in constrained],
+                    'uptime_min': [z.uptime_min for _, z in constrained],
+                    'uptime_max': [z.uptime_max for _, z in constrained],
+                    'downtime_min': [z.downtime_min for _, z in constrained],
+                    'downtime_max': [z.downtime_max for _, z in constrained],
+                },
+                schema={
+                    'entity': pl.String,
+                    'uptime_min': pl.Float64,
+                    'uptime_max': pl.Float64,
+                    'downtime_min': pl.Float64,
+                    'downtime_max': pl.Float64,
+                },
+            ),
+            prior=pl.DataFrame(
+                {
+                    'entity': ran_before,
+                    'initial': [1.0 if prior_rates_map[i][-1] > 0 else 0.0 for i in ran_before],
+                    'previous_uptime': [duration(prior_rates_map[i], 1) for i in ran_before],
+                    'previous_downtime': [duration(prior_rates_map[i], 0) for i in ran_before],
+                },
+                schema={
+                    'entity': pl.String,
+                    'initial': pl.Float64,
+                    'previous_uptime': pl.Float64,
+                    'previous_downtime': pl.Float64,
+                },
+            ),
+            effects=pl.DataFrame(
+                {
+                    'entity': joined('entity', str),
+                    'effect': joined('effect', str),
+                    'time': pd.to_datetime(joined('time', 'datetime64[ns]')).to_pydatetime().tolist(),
+                    'period': joined('period', int),
+                    'running': joined('running', float),
+                    'startup': joined('startup', float),
+                },
+                schema={
+                    'entity': pl.String,
+                    'effect': pl.String,
+                    'time': pl.Datetime('us'),
+                    'period': pl.Int64,
+                    'running': pl.Float64,
+                    'startup': pl.Float64,
+                },
+            ),
         )
+
+
+def _series(value: Any, coords: dict[str, Any], p_index: int, n_time: int) -> np.ndarray:
+    """One period's slice of a possibly period-varying time series.
+
+    Coerced against every axis the model has, not just time: a value may be
+    declared per period, and `as_dataarray` refuses a dim its target does not
+    name rather than guessing which axis was meant.
+    """
+    da = as_dataarray(value, coords)
+    # By name, not by position: a value declared only per period comes back
+    # one-dimensional over `period`, which a shape test reads as a time series.
+    if 'period' in da.dims:
+        da = da.isel(period=p_index if da.sizes['period'] > p_index else 0)
+    return np.broadcast_to(np.asarray(da.values, dtype=float), (n_time,))
 
 
 @dataclass
@@ -579,7 +613,7 @@ class FlowsData:
         """
         if self.status is None:
             return
-        status_ids = list(self.status.uptime_min.coords[self.status.uptime_min.dims[0]].values)
+        status_ids = self.status.ids
         lb = self.rel_lb.sel(flow=status_ids)
         degenerate = (lb <= 0).any([d for d in lb.dims if d != 'flow'])
         if degenerate.any():
@@ -1759,13 +1793,9 @@ class ModelData:
         if self.flows.invest is not None:
             check_flows(self.flows.invest.ids, 'flows.invest')
         if self.flows.status is not None:
-            check_flows(coord_ids(self.flows.status.uptime_min), 'flows.status')
+            check_flows(self.flows.status.ids, 'flows.status')
         if self.flows.governed_by is not None:
-            components = (
-                {str(c) for c in self.flows.cstatus.uptime_min.coords[Dim.CSTATUS_COMPONENT].values}
-                if self.flows.cstatus is not None
-                else set()
-            )
+            components = set(self.flows.cstatus.ids) if self.flows.cstatus is not None else set()
             named = {str(v) for v in self.flows.governed_by.values if str(v)}
             if unknown := sorted(named - components):
                 raise ValueError(f'flows.governed_by names components without a Status: {unknown}')

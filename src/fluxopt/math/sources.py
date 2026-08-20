@@ -52,8 +52,6 @@ PERIOD_PARAMS = frozenset(
         'ramp_up_coeff',
         'ramp_down_coeff',
         'effects_per_flow_hour',
-        'effects_per_running_hour',
-        'effects_per_startup',
         'objective_weight',
         'prior_level',
         'periodic_min',
@@ -217,6 +215,31 @@ def _with_time_ordinals(frame: pl.DataFrame, dims: Any) -> pl.DataFrame:
     return frame.with_columns(pl.col('time').cast(unit)).join(ordinals, on='time').drop('time').rename({'ord': 'time'})
 
 
+def _fold_effect_rows(
+    frame: pl.DataFrame, entity: str, column: str, leo: xr.DataArray | None, tidy: Any
+) -> pl.DataFrame:
+    """A per-timestep coefficient table, Leontief-folded on the rows.
+
+    `_fold_lump_rows` for the temporal domain: the factor may vary along time
+    and period as well, so the join keys follow whatever axes it carries.
+    """
+    rows = frame.select(
+        [pl.col('entity').alias(entity), 'effect', 'time', 'period', pl.col(column).alias('value')]
+    ).filter(pl.col('value') != 0)
+    if leo is None or rows.is_empty():
+        return rows
+    factors = pl.from_pandas(tidy(leo, drop_zero=True)).rename({'effect': 'charged', 'source_effect': 'effect'})
+    on = ['effect', *[c for c in ('time', 'period') if c in factors.columns and c in rows.columns]]
+    return (
+        rows.join(factors, on=on, suffix='_leo')
+        .with_columns((pl.col('value') * pl.col('value_leo')).alias('value'))
+        .group_by([entity, 'charged', 'time', 'period'])
+        .agg(pl.col('value').sum())
+        .rename({'charged': 'effect'})
+        .select([entity, 'effect', 'time', 'period', 'value'])
+    )
+
+
 def _fold_lump_rows(frame: pl.DataFrame, entity: str, column: str, leo: xr.DataArray | None) -> pl.DataFrame:
     """A lump coefficient table, Leontief-folded on the rows.
 
@@ -303,7 +326,7 @@ def _reject_unsupported(data: ModelData) -> None:
         raise UnsupportedFeatureError('investment requires multi-period optimization (periods must be specified)')
     if fds.sizing is not None and fds.status is not None:
         sz = set(fds.sizing.ids)
-        stt = {str(v) for v in fds.status.uptime_min.coords[fds.status.uptime_min.dims[0]].values}
+        stt = set(fds.status.ids)
         both = sz & stt
         profile = {f for f in both if str(fds.bound_type.sel(flow=f).values) == BoundType.PROFILE}
         if profile:
@@ -344,7 +367,6 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
     # corresponding container is present, but later blocks read them.
     sizing_ids: list[str] = []
     status_ids: list[str] = []
-    sdim = ''
     has_sizing = xr.zeros_like(fds.size, dtype=bool)
     # Lump-domain accumulators, filled by the flow- and storage-sizing blocks.
     # (parameter name, entity dim, coefficients) — the entity dim is carried so
@@ -385,8 +407,7 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
 
     st = fds.status
     if st is not None:
-        sdim = st.uptime_min.dims[0]
-        status_ids = [str(v) for v in st.uptime_min.coords[sdim].values]
+        status_ids = st.ids
         has_status = xr.DataArray(
             [f in set(status_ids) for f in flow_ids], dims=['flow'], coords={'flow': fds.size.coords['flow']}
         )
@@ -518,6 +539,8 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
     # rows read which binary is `status_of`, and nothing else distinguishes
     # them.
     ec_extra: list[tuple[str, xr.DataArray]] = []
+    #: (parameter, frame, value column) — status coefficients, per timestep
+    status_effect_frames: list[tuple[str, pl.DataFrame, str]] = []
     cst = fds.cstatus
     blocks: list[tuple[Any, list[str]]] = []
     #: flow id -> the entity whose binary gates it. A self-status flow maps to
@@ -527,8 +550,7 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         blocks.append((st, status_ids))
         status_of.update({f: f for f in status_ids})
     if cst is not None:
-        cdim = cst.uptime_min.dims[0]
-        comp_ids = [str(v) for v in cst.uptime_min.coords[cdim].values]
+        comp_ids = cst.ids
         blocks.append((cst, comp_ids))
         # A piecewise curve's flows are gated by its convexity row, which
         # already pins every weight to zero when the binary is off. Gating
@@ -553,86 +575,94 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
     sources['is_profile'] = pd.DataFrame({'flow': flow_ids, 'value': (bt == BoundType.PROFILE).values})
 
     if blocks:
+        # Every block's frames stacked on the shared entity axis. A vertical
+        # concat is what "the same table for another family" means, and the
+        # nulls that stood for "this block does not set that field" are now
+        # simply rows that are not there.
+        durations = pl.concat([b.durations for b, _ in blocks], how='vertical')
+        prior = pl.concat([b.prior for b, _ in blocks], how='vertical')
+        status_effects = pl.concat([b.effects for b, _ in blocks], how='vertical')
+        all_entities = pl.DataFrame({'status_entity': entity_ids}, schema={'status_entity': pl.String})
 
-        def on_entity(field: str) -> xr.DataArray:
-            """One field of every block, on the shared entity axis.
-
-            A field a block leaves unset (``previous_uptime`` on a container
-            with no prior rates) still has to occupy its entity's rows, or the
-            concatenation would silently shorten the axis — so it arrives as
-            NaN, which is what "not set" already means everywhere else here.
-            """
-            parts: list[xr.DataArray] = []
-            for block, ids in blocks:
-                arr = getattr(block, field)
-                if arr is None:
-                    arr = xr.DataArray(np.full(len(ids), np.nan), dims=['status_entity'])
-                else:
-                    arr = arr.rename({arr.dims[0]: 'status_entity'})
-                parts.append(arr.assign_coords(status_entity=ids))
-            return xr.concat(parts, dim='status_entity')
-
-        def entity_frame(name: str, arr: xr.DataArray) -> None:
-            """Emit *arr* keyed on the entity axis, live rows only."""
-            live = arr.notnull()
-            ids = [e for e, h in zip(entity_ids, live.values, strict=True) if h]
-            sources[name] = (
-                pd.DataFrame({'status_entity': ids, 'value': arr.values[live.values]})
-                if ids
-                else _empty(name, 'status_entity')
+        def per_entity(frame: pl.DataFrame, column: str) -> Any:
+            """One column of a frame, keyed on the entity axis, live rows only."""
+            live = frame.filter(pl.col(column).is_not_null()).select(
+                [pl.col('entity').alias('status_entity'), pl.col(column).alias('value')]
             )
+            return live if len(live) else _empty(column, 'status_entity')
 
-        # Envelopes are per gated flow: an governed flow is sized like any
+        # Envelopes are per gated flow: a governed flow is sized like any
         # other, and `size * rel` is what the binary scales.
         gsel = {'flow': gated_ids}
         sources['rate_min_when_on'] = tidy((size * fds.rel_lb).sel(gsel), drop_zero=True)
         sources['rate_max_when_on'] = tidy((size * fds.rel_ub).sel(gsel), drop_zero=True)
         sources['rate_fixed_when_on'] = tidy((size * fds.fixed_profile).sel(gsel), drop_zero=True)
 
-        up_min, up_max = on_entity('uptime_min'), on_entity('uptime_max')
-        dn_min, dn_max = on_entity('downtime_min'), on_entity('downtime_max')
-        prev_up, prev_dn = on_entity('previous_uptime'), on_entity('previous_downtime')
         horizon = float(dims.dt.sum())
+        bounded_up = durations.filter(pl.col('uptime_min').is_not_null() | pl.col('uptime_max').is_not_null())[
+            'entity'
+        ].to_list()
+        bounded_down = durations.filter(pl.col('downtime_min').is_not_null() | pl.col('downtime_max').is_not_null())[
+            'entity'
+        ].to_list()
+        sources['has_uptime'] = _flags('has_uptime', 'status_entity', bounded_up)
+        sources['has_downtime'] = _flags('has_downtime', 'status_entity', bounded_down)
+        sources['uptime_min'] = per_entity(durations, 'uptime_min')
+        sources['downtime_min'] = per_entity(durations, 'downtime_min')
+        sources['initial_status'] = per_entity(prior, 'initial')
+        sources['previous_uptime'] = per_entity(prior, 'previous_uptime')
+        sources['previous_downtime'] = per_entity(prior, 'previous_downtime')
 
-        up_ids = [e for e, h in zip(entity_ids, (up_min.notnull() | up_max.notnull()).values, strict=True) if h]
-        dn_ids = [e for e, h in zip(entity_ids, (dn_min.notnull() | dn_max.notnull()).values, strict=True) if h]
-        sources['has_uptime'] = _flags('has_uptime', 'status_entity', up_ids)
-        sources['has_downtime'] = _flags('has_downtime', 'status_entity', dn_ids)
-        entity_frame('uptime_min', up_min)
-        entity_frame('downtime_min', dn_min)
-        entity_frame('initial_status', on_entity('initial'))
-
-        uptime_big_m = horizon + prev_up.fillna(0.0)
-        downtime_big_m = horizon + prev_dn.fillna(0.0)
-        sources['uptime_big_m'] = pd.DataFrame({'status_entity': entity_ids, 'value': uptime_big_m.values})
-        sources['downtime_big_m'] = pd.DataFrame({'status_entity': entity_ids, 'value': downtime_big_m.values})
-
-        # The duration variables' own upper bound, over the entity's timeline.
-        span = xr.DataArray(
-            np.ones((len(entity_ids), len(time_labels))),
-            dims=['status_entity', 'time'],
-            coords={'status_entity': entity_ids, 'time': list(dims.time.values)},
+        # Big-M covers the whole horizon plus whatever ran before it. An
+        # entity with no prior has no row in `prior`, and no prior is zero.
+        big_m = all_entities.join(
+            prior.select([pl.col('entity').alias('status_entity'), 'previous_uptime', 'previous_downtime']),
+            on='status_entity',
+            how='left',
+        ).with_columns(
+            (pl.col('previous_uptime').fill_null(0.0) + horizon).alias('up'),
+            (pl.col('previous_downtime').fill_null(0.0) + horizon).alias('down'),
         )
-        sources['uptime_upper'] = tidy((up_max.fillna(uptime_big_m) * span).sel(status_entity=up_ids), drop_zero=False)
-        sources['downtime_upper'] = tidy(
-            (dn_max.fillna(downtime_big_m) * span).sel(status_entity=dn_ids), drop_zero=False
-        )
+        sources['uptime_big_m'] = big_m.select(['status_entity', pl.col('up').alias('value')])
+        sources['downtime_big_m'] = big_m.select(['status_entity', pl.col('down').alias('value')])
 
-        # Pre-horizon carry-over. Names are spelled out, not assembled, so a
-        # rename of the program is greppable from here.
-        for value_key, forced_key, prev, lo in (
-            ('previous_uptime', 'forced_on_at_start', prev_up, up_min),
-            ('previous_downtime', 'forced_off_at_start', prev_dn, dn_min),
+        # The duration variables' own upper bound, over the entity's timeline:
+        # the declared maximum where there is one, the big-M where there is not.
+        steps = pl.DataFrame({'time': ordinals}, schema={'time': pl.Int64})
+        for kind, ids, declared, fallback in (
+            ('uptime', bounded_up, 'uptime_max', 'up'),
+            ('downtime', bounded_down, 'downtime_max', 'down'),
         ):
-            entity_frame(value_key, prev)
-            forced = ((prev > 0) & lo.notnull() & (prev < lo)).values
-            sources[forced_key] = _flags(
-                forced_key, 'status_entity', [e for e, h in zip(entity_ids, forced, strict=True) if h]
+            ceiling = (
+                pl.DataFrame({'status_entity': ids}, schema={'status_entity': pl.String})
+                .join(durations.select([pl.col('entity').alias('status_entity'), declared]), on='status_entity')
+                .join(big_m.select(['status_entity', fallback]), on='status_entity')
+                .with_columns(pl.col(declared).fill_null(pl.col(fallback)).alias('value'))
+                .select(['status_entity', 'value'])
             )
+            sources[f'{kind}_upper'] = ceiling.join(steps, how='cross').select(['status_entity', 'time', 'value'])
 
-        ec_extra = [
-            ('effects_per_running_hour', on_entity('effects_running') * dims.dt),
-            ('effects_per_startup', on_entity('effects_startup')),
+        # A prior run shorter than the minimum forces continuation.
+        for forced_key, prev_column, min_column in (
+            ('forced_on_at_start', 'previous_uptime', 'uptime_min'),
+            ('forced_off_at_start', 'previous_downtime', 'downtime_min'),
+        ):
+            forced = prior.join(durations.select(['entity', min_column]), on='entity', how='inner').filter(
+                (pl.col(prev_column) > 0) & (pl.col(prev_column) < pl.col(min_column))
+            )
+            sources[forced_key] = _flags(forced_key, 'status_entity', forced['entity'].to_list())
+
+        # `dt` turns a per-running-hour rate into the step's cost; a startup
+        # happens once at the step, so it is not scaled.
+        dt_by_time = pl.DataFrame({'time': ordinals, 'dt': dims.dt.values})
+        scaled = (
+            _with_time_ordinals(status_effects, dims)
+            .join(dt_by_time, on='time')
+            .with_columns((pl.col('running') * pl.col('dt')).alias('running'))
+        )
+        status_effect_frames += [
+            ('effects_per_running_hour', scaled, 'running'),
+            ('effects_per_startup', scaled, 'startup'),
         ]
     else:
         for n in ('has_uptime', 'has_downtime'):
@@ -799,8 +829,10 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
     sources['effects_per_flow_hour'] = _flow_hour_coefficients(fds, dims, leo, tidy)
     for name, arr in ec_extra:
         sources[name] = tidy(apply_leontief(leo, arr) if leo is not None else arr, drop_zero=True)
+    for name, frame, column in status_effect_frames:
+        sources[name] = _fold_effect_rows(frame, 'status_entity', column, leo, tidy)
     for name in ('effects_per_running_hour', 'effects_per_startup'):
-        sources.setdefault(name, _empty(name, 'status_entity', 'effect', 'time'))
+        sources.setdefault(name, _empty(name, 'status_entity', 'effect', 'time', 'period'))
 
     # Lump domain: effect_lump = (I - cf_lump)^-1 . lump_direct, folded into
     # the coefficients so no self-referential effect_lump variable is needed.
@@ -976,19 +1008,31 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
     period_labels = list(dims.period.values) if dims.period is not None else [0]
     period_ord = {v: i for i, v in enumerate(period_labels)}
     p_ordinals = list(range(len(period_labels)))
+
+    def onto_periods(df: Any, axis: str) -> Any:
+        """Put *df* on the program's period axis, whichever library holds it.
+
+        A table already naming periods has its labels mapped to ordinals; one
+        that does not is the same in every period, so it is crossed onto all
+        of them. Both shapes arrive in pandas and in polars, and will keep
+        doing so until the last container is converted.
+        """
+        if isinstance(df, pl.DataFrame):
+            if axis in df.columns:
+                return df.with_columns(pl.col(axis).replace_strict(period_ord, return_dtype=pl.Int64))
+            return df.join(pl.DataFrame({axis: p_ordinals}, schema={axis: pl.Int64}), how='cross')
+        if axis in df.columns:
+            return df.assign(**{axis: [period_ord[v] for v in df[axis]]})
+        return df.merge(pd.DataFrame({axis: p_ordinals}), how='cross')
+
     for name in PERIOD_PARAMS:
-        df = sources.get(name)
-        if df is None:
-            continue
-        if 'period' in df.columns:
-            sources[name] = df.assign(period=[period_ord[v] for v in df['period']])
-        else:
-            sources[name] = df.merge(pd.DataFrame({'period': p_ordinals}), how='cross')
+        if (df := sources.get(name)) is not None:
+            sources[name] = onto_periods(df, 'period')
 
     for name in BUILD_PERIOD_PARAMS:
         df = sources.get(name)
         if df is not None and 'build_period' in df.columns:
-            sources[name] = df.assign(build_period=[period_ord[v] for v in df['build_period']])
+            sources[name] = onto_periods(df, 'build_period')
 
     def _index_frame(dim: str, values: list[str], lookups: dict[str, dict[str, str | None]]) -> pl.DataFrame:
         """A dimension's index table plus the lookup columns declared over it.
