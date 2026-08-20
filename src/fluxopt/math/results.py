@@ -90,7 +90,7 @@ def _entity_order(data: ModelData) -> dict[str, list[str]]:
 def _relabel(arr: xr.DataArray, data: ModelData) -> xr.DataArray:
     """Put the element layer's own labels and order back on the axes."""
     dims = data.dims
-    periods = list(dims.period.values) if dims.period is not None else [0]
+    periods = dims.period_labels
     for name, labels in (
         ('time', list(dims.time.values)),
         ('period', periods),
@@ -110,7 +110,7 @@ def _relabel(arr: xr.DataArray, data: ModelData) -> xr.DataArray:
             present = [v for v in labels if v in have]
             arr = arr.sel({name: present})
     # A single-period model never named a period, so it does not carry one out.
-    if dims.period is None and 'period' in arr.dims:
+    if not dims.has_periods and 'period' in arr.dims:
         arr = arr.squeeze('period', drop=True)
     return arr
 

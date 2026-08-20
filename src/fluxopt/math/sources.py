@@ -321,7 +321,7 @@ def _reject_unsupported(data: ModelData) -> None:
                 'formulation for — the adjacency formulation it does have is exact, so it would '
                 'answer a different question. Use the default method, or lpspec #695.'
             )
-    if fds.invest is not None and data.dims.period is None:
+    if fds.invest is not None and not data.dims.has_periods:
         raise UnsupportedFeatureError('investment requires multi-period optimization (periods must be specified)')
     if fds.sizing is not None and fds.status is not None:
         sz = set(fds.sizing.ids)
@@ -352,10 +352,11 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
     reject_varying_contribution_into_lump(data)
     fds, dims = data.flows, data.dims
 
-    time_labels = list(dims.time.values)
-    time_ord = {v: i for i, v in enumerate(time_labels)}
-    ordinals = list(range(len(time_labels)))
-    dt_by_time = pl.DataFrame({'time': ordinals, 'dt': dims.dt.values})
+    # Keyed by the numpy labels an array coordinate carries, not by the frame's
+    # python ones: `tidy` looks these up with whatever xarray hands it.
+    time_ord = {v: i for i, v in enumerate(dims.time.values)}
+    ordinals = dims.timesteps['time'].to_list()
+    dt_by_time = dims.timesteps.select(['time', 'dt'])
     size_upper_of = _size_upper(data)
 
     def tidy(da: xr.DataArray, *, drop_zero: bool) -> pd.DataFrame:
@@ -631,7 +632,7 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         ):
             sources[key] = _live(on_gated, pl.col('size') * pl.col(column))
 
-        horizon = float(dims.dt.sum())
+        horizon = float(dims.timesteps['dt'].sum())
         bounded_up = durations.filter(pl.col('uptime_min').is_not_null() | pl.col('uptime_max').is_not_null())[
             'entity'
         ].to_list()
@@ -716,7 +717,7 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         for n in ('rate_min_when_on', 'rate_max_when_on', 'rate_fixed_when_on'):
             sources[n] = _empty(n, 'flow', 'time', 'period')
 
-    sources['dt'] = pd.DataFrame({'time': ordinals, 'value': dims.dt.values})
+    sources['dt'] = dims.timesteps.select(['time', pl.col('dt').alias('value')])
     sources['is_last'] = pd.DataFrame({'time': ordinals, 'value': [i == len(ordinals) - 1 for i in ordinals]})
 
     # --- sizing -----------------------------------------------------------
@@ -776,7 +777,7 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
 
     # --- investment -------------------------------------------------------
     if inv is not None:
-        period_labels_inv: list[Any] = list(dims.period.values) if dims.period is not None else []
+        period_labels_inv: list[Any] = dims.periods['label'].to_list()
         n_p = len(period_labels_inv)
         # No row means forever, so the lookup's default is the absence.
         expires = dict(zip(inv.lifetime['entity'], inv.lifetime['periods'], strict=True))
@@ -896,12 +897,8 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
     # Objective weight x period weight, folded into one parameter. Both are
     # per (effect, period), so the fold is a join and the defaults are what a
     # missing row means: no override, then no global weight, then 1.
-    global_weights = (
-        pl.DataFrame({'period': list(range(len(dims.period_weights))), 'global_weight': dims.period_weights.values})
-        if dims.period_weights is not None
-        else pl.DataFrame({'period': [], 'global_weight': []}, schema={'period': pl.Int64, 'global_weight': pl.Float64})
-    )
-    period_axis = list(range(len(dims.period.values) if dims.period is not None else 1))
+    global_weights = dims.periods.select(['period', pl.col('weight').alias('global_weight')])
+    period_axis = list(range(dims.n_periods))
     grid = (
         pl.DataFrame({'effect': effect_ids}, schema={'effect': pl.String})
         .join(pl.DataFrame({'period': period_axis}, schema={'period': pl.Int64}), how='cross')
@@ -933,14 +930,14 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
 
     # --- temporal boundary mask ------------------------------------------
     sources['is_first'] = pd.DataFrame({'time': ordinals, 'value': [i == 0 for i in ordinals]})
-    sources['time_weight'] = pd.DataFrame({'time': ordinals, 'value': dims.weights.values})
+    sources['time_weight'] = dims.timesteps.select(['time', pl.col('weight').alias('value')])
 
     # --- flow aggregates ------------------------------------------------
     # `size` here is the static one; a sized flow's is a variable, so its bound
     # travels as a coefficient instead of a product and the program multiplies.
-    weight = dims.dt * dims.weights
-    sources['flow_hour_weight'] = pd.DataFrame({'time': ordinals, 'value': weight.values})
-    total_duration = float(weight.sum('time'))
+    weight = dims.timesteps.select(['time', (pl.col('dt') * pl.col('weight')).alias('value')])
+    sources['flow_hour_weight'] = weight
+    total_duration = float(weight['value'].sum())
     # A load factor bounds the mean rate as a fraction of the size. Where the
     # size is a number the bound is one too; where it is a variable the bound
     # travels as a coefficient and the program multiplies.
@@ -1048,7 +1045,7 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
     )
 
     # Single-period models supply a length-1 period so one program serves both.
-    period_labels = list(dims.period.values) if dims.period is not None else [0]
+    period_labels = dims.period_labels
     period_ord = {v: i for i, v in enumerate(period_labels)}
     p_ordinals = list(range(len(period_labels)))
 
