@@ -44,7 +44,6 @@ PERIOD_PARAMS = frozenset(
         'load_factor_max_bound',
         'load_factor_min_coeff',
         'load_factor_max_coeff',
-        'size_upper',
         'lifetime_window',
         'prior_capacity_active',
     }
@@ -771,8 +770,13 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
             [sources['mandatory'], pd.DataFrame({'flow': invest_ids, 'value': inv.bounds['mandatory'].to_numpy()})],
             ignore_index=True,
         )
-        sources['invest_min'] = pd.DataFrame({'flow': invest_ids, 'value': inv.bounds['size_min'].to_numpy()})
-        sources['invest_max'] = pd.DataFrame({'flow': invest_ids, 'value': inv.bounds['size_max'].to_numpy()})
+        # The same two parameters the sizing block fills, over the other half
+        # of the sized flows.
+        for key in ('size_min', 'size_max'):
+            sources[key] = pd.concat(
+                [sources[key], pd.DataFrame({'flow': invest_ids, 'value': inv.bounds[key].to_numpy()})],
+                ignore_index=True,
+            )
         sources['prior_capacity'] = pd.DataFrame({'flow': invest_ids, 'value': prior})
         sources['has_prior_capacity'] = _flags(
             'has_prior_capacity', 'flow', [f for f, ps in zip(invest_ids, prior, strict=True) if ps > 0]
@@ -791,8 +795,6 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
     else:
         for name in (
             'has_invest',
-            'invest_min',
-            'invest_max',
             'prior_capacity',
             'has_prior_capacity',
         ):
@@ -809,13 +811,6 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         ('fixed_relative_profile', 'fixed'),
     ):
         sources[key] = _live(on_sized, pl.col(column))
-
-    # upper bound of `size`: whichever mechanism sizes the flow, else free
-    maxima: dict[str, float] = {}
-    for container in (sz, inv):
-        if container is not None:
-            maxima.update(zip(container.bounds['entity'], container.bounds['size_max'], strict=True))
-    sources['size_upper'] = pd.DataFrame({'flow': flow_ids, 'value': [maxima.get(f, np.inf) for f in flow_ids]})
 
     # --- effects: the sparse one -----------------------------------------
     eds = data.effects

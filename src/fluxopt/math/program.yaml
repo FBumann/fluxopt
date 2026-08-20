@@ -124,9 +124,11 @@ parameters:
   # flow's size is a `Sizing` or an `Investment`, never both, so the two
   # never claim the same row.
   mandatory: {dims: [flow], dtype: bool}
+  # The size a flow may be built to. Shared by both mechanisms for the same
+  # reason `mandatory` is: they come from the same two element fields, over
+  # entity sets that cannot overlap.
   size_min: {dims: [flow]}
   size_max: {dims: [flow]}
-  size_upper: {dims: [flow, period]}   # upper bound of `size`: sizing max or invest max
   relative_rate_min: {dims: [flow, time, period]}
   relative_rate_max: {dims: [flow, time, period]}
   fixed_relative_profile: {dims: [flow, time, period]}
@@ -140,8 +142,6 @@ parameters:
 
   # --- investment (build timing over periods) ------------------------------
   has_invest: {dims: [flow], dtype: bool}
-  invest_min: {dims: [flow]}
-  invest_max: {dims: [flow]}
   prior_capacity: {dims: [flow]}
   has_prior_capacity: {dims: [flow], dtype: bool}
   # 1 where a build in `build_period` is still within lifetime in `period`
@@ -261,12 +261,12 @@ variables:
   size:
     foreach: [flow, period]
     where: "has_sizing OR has_invest"
-    bounds: {lower: 0, upper: size_upper}
+    bounds: {lower: 0, upper: size_max}
 
   invest_size:
     foreach: [flow]
     where: "has_invest"
-    bounds: {lower: 0, upper: invest_max}
+    bounds: {lower: 0, upper: size_max}
 
   invest_build:
     foreach: [flow, build_period]
@@ -281,7 +281,7 @@ variables:
   invest_size_at_build:
     foreach: [flow, build_period]
     where: "has_invest"
-    bounds: {lower: 0, upper: invest_max}
+    bounds: {lower: 0, upper: size_max}
 
   # Every sized flow has one, not only the optional ones: a mandatory build
   # is the same decision already taken, and pinning it to 1 is cheaper than a
@@ -735,23 +735,23 @@ constraints:
   invest_size_mandatory_min:
     foreach: [flow]
     where: "has_invest AND mandatory AND NOT has_prior_capacity"
-    expression: invest_size >= invest_min
+    expression: invest_size >= size_min
 
   invest_size_optional_min:
     foreach: [flow]
     where: "has_invest AND NOT mandatory AND NOT has_prior_capacity"
-    expression: invest_size - invest_min * sum(invest_build, over=build_period) >= 0
+    expression: invest_size - size_min * sum(invest_build, over=build_period) >= 0
 
   invest_size_optional_max:
     foreach: [flow]
     where: "has_invest AND NOT mandatory AND NOT has_prior_capacity"
-    expression: invest_size - invest_max * sum(invest_build, over=build_period) <= 0
+    expression: invest_size - size_max * sum(invest_build, over=build_period) <= 0
 
   # --- size == invest_size when active, 0 when not (big-M).
   invest_size_link_active:
     foreach: [flow, period]
     where: "has_invest"
-    expression: size - invest_max * invest_active <= 0
+    expression: size - size_max * invest_active <= 0
 
   invest_size_link_max:
     foreach: [flow, period]
@@ -761,13 +761,13 @@ constraints:
   invest_size_link_min:
     foreach: [flow, period]
     where: "has_invest"
-    expression: size - invest_size - invest_max * invest_active >= 0 - invest_max
+    expression: size - invest_size - size_max * invest_active >= 0 - size_max
 
   # --- size_at_build == invest_size * build, linearised.
   invest_sab_build:
     foreach: [flow, build_period]
     where: "has_invest"
-    expression: invest_size_at_build - invest_max * invest_build <= 0
+    expression: invest_size_at_build - size_max * invest_build <= 0
 
   invest_sab_max:
     foreach: [flow, build_period]
@@ -778,8 +778,8 @@ constraints:
     foreach: [flow, build_period]
     where: "has_invest"
     expression: >-
-      invest_size_at_build - invest_size - invest_max * invest_build
-      >= 0 - invest_max
+      invest_size_at_build - invest_size - size_max * invest_build
+      >= 0 - size_max
 
   # --- flow aggregates. Each period is bounded on its own.
   flow_hours_lower:
