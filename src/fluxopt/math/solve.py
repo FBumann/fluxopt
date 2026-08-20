@@ -23,8 +23,9 @@ def solve(
     solver_name: str = 'highs',
     solver_options: Mapping[str, Any] | None = None,
     math: Any = None,
-    parameters: Mapping[str, Any] | None = None,
+    dimensions: Mapping[str, Any] | None = None,
     lookups: Mapping[str, Any] | None = None,
+    parameters: Mapping[str, Any] | None = None,
 ) -> Result:
     """Build *data* as a streaming program and solve it.
 
@@ -40,15 +41,24 @@ def solve(
             model returned by :meth:`~fluxopt.flow_system.FlowSystem.math`,
             with whatever the caller added to it. It goes through validation
             and lowering exactly as a file does.
-        parameters: Data for the parameters *math* adds. Merged with the
-            program's own, which it may not overwrite: a caller who could
-            silently replace `rate_max` could change the model without
-            editing it.
+        dimensions: Labels for the dimensions *math* adds, as
+            ``{name: labels}``.
         lookups: Data for the lookups *math* adds, as ``{name: frame}`` with
-            the ``over`` dimension and the values. A lookup is a column on an
-            index table rather than a source of its own, so it merges onto
-            that table instead of arriving beside it — which is why it needs
-            a channel and cannot go through *parameters*.
+            the ``over`` dimension and the value it maps to.
+        parameters: Data for the parameters *math* adds, as
+            ``{name: frame}`` with the declared dims and a ``value`` column.
+
+            The three are the language's own declaration blocks, and they are
+            named apart here for the same reason
+            :class:`~fluxopt.math.parameters.Parameters` keeps them apart: the
+            source dict merges dimensions and parameters into one namespace,
+            but that is how they travel rather than what they are. A lookup
+            does not even travel that way — it is a column on an index table,
+            so it merges onto one rather than arriving beside it.
+
+            None of the three may overwrite a name the program already binds:
+            a caller who could silently replace ``rate_max`` could change the
+            model without editing it.
 
     Returns:
         The same :class:`~fluxopt.results.Result` the linopy lane returns.
@@ -61,11 +71,15 @@ def solve(
     weights = objective_weights(data, objective)
     sources, coords = build_sources(data, weights)
     bound = {**sources, **coords}
-    if parameters:
-        if clashes := sorted(set(parameters) & set(bound)):
+    # Dimensions and parameters are one namespace to the binder — its own error
+    # says a source key names "neither a parameter nor a dimension" — so they
+    # merge alike here, and are named apart only at the call site.
+    supplied = {**(dimensions or {}), **(parameters or {})}
+    if supplied:
+        if clashes := sorted(set(supplied) & set(bound)):
             msg = f"these names are the program's own and cannot be supplied: {clashes}"
             raise ValueError(msg)
-        bound |= dict(parameters)
+        bound |= supplied
     program = lpspec.load_model(PROGRAM if math is None else math)
     if lookups:
         bound |= _merged_lookups(lookups, bound, program)

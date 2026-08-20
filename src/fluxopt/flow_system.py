@@ -287,8 +287,9 @@ class FlowSystem(BaseModel):
         *,
         solver: str = 'highs',
         math: Any = None,
-        parameters: Mapping[str, Any] | None = None,
+        dimensions: Mapping[str, Any] | None = None,
         lookups: Mapping[str, Any] | None = None,
+        parameters: Mapping[str, Any] | None = None,
         **kwargs: Any,
     ) -> Result:
         """Resolve profile references, build the data, and solve.
@@ -301,12 +302,14 @@ class FlowSystem(BaseModel):
             math: An edited :meth:`math` to solve instead of the shipped
                 program. Whatever it declares is checked and lowered exactly
                 as the shipped one is.
-            parameters: Data for parameters *math* adds. Ignored by the
-                shipped program, which declares none of its own.
-            lookups: Data for lookups *math* adds, as ``{name: frame}``. A
-                lookup travels as a column on the index of the dimension it
-                runs over, so it merges onto that table rather than arriving
-                as a source of its own.
+            dimensions: Labels for dimensions *math* adds.
+            lookups: Data for lookups *math* adds, as ``{name: frame}``.
+            parameters: Data for parameters *math* adds.
+
+                The three are the language's own declaration blocks, and
+                :meth:`parameters` returns them under the same three names.
+                All are ignored by the shipped program, which declares
+                nothing a caller has to fill.
             **kwargs: Passed to the solver verbatim, in its own vocabulary.
         """
         from fluxopt.math import solve
@@ -317,6 +320,7 @@ class FlowSystem(BaseModel):
             solver_name=solver,
             solver_options=kwargs or None,
             math=math,
-            parameters=parameters,
+            dimensions=dimensions,
             lookups=lookups,
+            parameters=parameters,
         )
