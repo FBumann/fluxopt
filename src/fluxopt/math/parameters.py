@@ -71,8 +71,7 @@ class Parameters:
     dimensions: dict[str, pl.DataFrame]
     #: Lookup name -> `(over, into)` — or `(over, <name>)` where the lookup
     #: owns its label space rather than naming another dimension. One row per
-    #: label the map is defined at: partial by nature, so a flow that charges
-    #: no storage is simply absent rather than present and null.
+    #: label it maps: a flow charging no storage is simply absent.
     lookups: dict[str, pl.DataFrame]
     #: Parameter name -> its tidy `(dims..., value)` table
     parameters: dict[str, pl.DataFrame]
@@ -97,9 +96,9 @@ class Parameters:
     def of(cls, data: ModelData, objective: str | dict[str, float], math: Any = None) -> Parameters:
         """Bind *data* to a program and keep what was bound, split by kind.
 
-        The program is what says which columns of an index table are lookups
-        and what they map into, so the split is read off the declarations
-        rather than guessed from the names.
+        The program is what tells a lookup's source key from a parameter's,
+        so the split is read off the declarations rather than guessed from
+        the names.
 
         Args:
             data: The model data to bind.
@@ -121,26 +120,13 @@ class Parameters:
         # owns an inline label space and targets nothing. The first is a
         # relation between two dimensions and reads best keyed by both; the
         # second has only its own name to be keyed by.
-        declared: dict[str, list[tuple[str, str]]] = {}
-        for name, lookup in model.lookups.items():
-            declared.setdefault(lookup.over, []).append((name, lookup.into or name))
-
-        dimensions: dict[str, pl.DataFrame] = {}
-        lookups: dict[str, pl.DataFrame] = {}
-        for dim, value in coords.items():
-            frame = _as_frame(value, dim)
-            dimensions[dim] = frame.select(dim)
-            for name, into in declared.get(dim, []):
-                if name not in frame.columns:
-                    continue
-                # A map is defined where it is defined: a flow that charges no
-                # storage has no row here, rather than a row saying so.
-                lookups[name] = frame.select([dim, pl.col(name).alias(into)]).drop_nulls()
-
+        # A lookup is a source key of its own, so the three kinds arrive
+        # already apart and nothing has to be taken out of an index table.
+        names = set(model.lookups)
         return cls(
-            dimensions=dimensions,
-            lookups=lookups,
-            parameters={k: _as_frame(v, k) for k, v in sources.items()},
+            dimensions={k: _as_frame(v, k) for k, v in coords.items()},
+            lookups={k: _as_frame(v, k) for k, v in sources.items() if k in names},
+            parameters={k: _as_frame(v, k) for k, v in sources.items() if k not in names},
         )
 
     def save(self, path: str | Path) -> None:

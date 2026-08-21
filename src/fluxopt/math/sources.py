@@ -309,8 +309,8 @@ def _reject_unsupported(data: ModelData) -> None:
                 "piecewise method 'lp' states a curve as its segment lines, which this lane has "
                 'no formulation for — the one it does have interpolates between breakpoints, so it '
                 'would answer a different question. Use the default method. lpspec has it as '
-                '`method: lp` since #926, but only through its `piecewise:` block, which cannot '
-                'take a curve whose arity is data (lpspec #1101).'
+                '`method: lp` since #926, but only through its `piecewise:` block, which takes a '
+                'static list of links and so cannot state a curve whose arity is data.'
             )
     if fds.invest is not None and not data.dims.has_periods:
         raise UnsupportedFeatureError('investment requires multi-period optimization (periods must be specified)')
@@ -963,14 +963,32 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
             sources[name] = _empty(name, *dcols)
         converter_ids = linear_convs
 
-    # Stated as a schema rather than inferred. Every column here is a label
-    # or a lookup into one, and a system with no storages leaves
-    # `charge_storage` all-null — which infers as a null column and fails the
-    # join against the storage labels. The schema says what each column is
-    # regardless of what this particular system happens to fill in.
-    flow_axis = pl.DataFrame(
-        {c: flow_index[c].tolist() for c in flow_index.columns},
-        schema=dict.fromkeys(flow_index.columns, pl.String),
+    # A map is its own source key, keyed `(over, into)` and holding only the
+    # labels it maps — a flow charging no storage has no row, rather than a
+    # null saying so. An index carrying a column named after a lookup over it
+    # is refused, so the two facts stay apart all the way down.
+    def maps(index: pd.DataFrame, over: str, into: dict[str, str]) -> dict[str, pl.DataFrame]:
+        """One table per lookup declared over *over*, from its index columns."""
+        return {
+            name: pl.DataFrame(
+                {over: index[over].tolist(), target: index[name].tolist()},
+                schema={over: pl.String, target: pl.String},
+            ).drop_nulls(target)
+            for name, target in into.items()
+            if name in index.columns
+        }
+
+    flow_axis = pl.DataFrame({'flow': flow_ids}, schema={'flow': pl.String})
+    lookup_tables = maps(
+        flow_index,
+        'flow',
+        {
+            'carrier_of': 'carrier',
+            'converter_of': 'converter',
+            'charge_storage': 'storage',
+            'discharge_storage': 'storage',
+            'status_of': 'status_entity',
+        },
     )
 
     # Single-period models supply a length-1 period so one program serves both.
@@ -1003,17 +1021,6 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         if df is not None and 'build_period' in df.columns:
             sources[name] = onto_periods(df, 'build_period')
 
-    def _index_frame(dim: str, values: list[str], lookups: dict[str, dict[str, str | None]]) -> pl.DataFrame:
-        """A dimension's index table plus the lookup columns declared over it.
-
-        Stated as a schema for the same reason the flow index is: a lookup no
-        system happens to fill is all-null, and a null column joins against
-        nothing.
-        """
-        cols: dict[str, list[str | None]] = {dim: list(values)}
-        cols.update({name: [m.get(v) for v in values] for name, m in lookups.items()})
-        return pl.DataFrame(cols, schema=dict.fromkeys(cols, pl.String))
-
     def labels(values: Any) -> np.ndarray:
         """A string dimension's labels, carrying their type even when empty.
 
@@ -1044,7 +1051,7 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         # Both kinds: a converter states linear equations, a piecewise curve,
         # or one of each. The axis is the union, or a curve's own converter
         # would not be a coordinate of the dimension its rows are keyed on.
-        'converter': _index_frame('converter', converter_ids, {'pw_status_of': pw_status_of}),
+        'converter': pl.DataFrame({'converter': converter_ids}, schema={'converter': pl.String}),
         'eq_idx': axis('eq_idx', range(data.converters.width) if data.converters is not None else []),
         'storage': labels(storage_ids),
         'effect': labels(effect_ids),
@@ -1053,5 +1060,9 @@ def build_sources(data: ModelData, objective: dict[str, float]) -> tuple[dict[st
         # bare `[]` has no integer type for the join to match.
         'bp': axis('bp', range(bp_width)),
     }
+    lookup_tables['pw_status_of'] = pl.DataFrame(
+        {'converter': list(pw_status_of), 'status_entity': [pw_status_of[c] for c in pw_status_of]},
+        schema={'converter': pl.String, 'status_entity': pl.String},
+    ).drop_nulls('status_entity')
     _stamp_empty_dtypes(sources)
-    return sources, coords
+    return {**sources, **lookup_tables}, coords

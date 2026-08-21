@@ -127,10 +127,9 @@ class TestDerivedNotAuthored:
 class TestSupplyingALookup:
     """A caller who adds a lookup in `math=` can supply it.
 
-    A lookup is not a source key — it travels as a column on the index of the
-    dimension it runs over. That made it the one thing `math=` could declare
-    and nothing could fill: handing back the index table means supplying a
-    name the program owns, which `parameters=` refuses on purpose.
+    A map is a source key of its own, so this is the same channel a parameter
+    uses and needs nothing of ours: what refuses a bad one is lpspec, against
+    the program, and those refusals are not restated here.
     """
 
     def _grouped(self) -> tuple[FlowSystem, object]:
@@ -182,35 +181,3 @@ class TestSupplyingALookup:
         taken = set(inspect.signature(system.optimize).parameters)
         returned = {f.name for f in dataclasses.fields(system.parameters())}
         assert returned <= taken, 'every kind the artifact reports should have a channel to supply it'
-
-    def test_an_undeclared_lookup_is_refused_by_name(self) -> None:
-        system, math = self._grouped()
-        with pytest.raises(ValueError, match="'nope' is not a lookup this program declares"):
-            system.optimize(math=math, lookups={'nope': pl.DataFrame({'flow': ['north(heat)'], 'x': ['a']})})
-
-    def test_a_lookup_whose_dimension_was_never_supplied_says_so(self) -> None:
-        """The one check lpspec cannot make: it knows the declaration, not our tables.
-
-        `region` is the caller's own dimension, so fluxopt builds no index for
-        it. A lookup running *over* it, with the dimension itself never
-        supplied, leaves the merge with nothing to land on.
-        """
-        system, _ = self._grouped()
-        raw = system.math().to_dict()
-        raw['dimensions']['region'] = {'dtype': 'str'}
-        raw['lookups']['zone_of'] = {'over': 'region', 'dtype': 'str'}
-        import lpspec
-
-        with pytest.raises(ValueError, match="runs over 'region', which this system has no index for"):
-            system.optimize(
-                math=lpspec.load_model(raw),
-                lookups={'zone_of': pl.DataFrame({'region': ['cheap'], 'zone': ['north']})},
-            )
-
-    def test_a_lookup_needs_the_two_columns_it_maps_between(self) -> None:
-        system, math = self._grouped()
-        with pytest.raises(ValueError, match='needs a two-column table'):
-            system.optimize(
-                math=math,
-                lookups={'region_of': pl.DataFrame({'flow': ['north(heat)'], 'region': ['a'], 'extra': [1]})},
-            )
