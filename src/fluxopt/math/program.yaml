@@ -199,11 +199,10 @@ parameters:
   # in how many flows they tie together. Here a link is a *row* — one per curve
   # flow, keyed on `flow` — so arity is data like everything else.
   #
-  # The block otherwise says all of this now: `points:` for a curve narrower
-  # than the dimension, `activity:` for the gate (emitting the same pair of
-  # complementary convexity rows), `method: sos2` for the set. Only the arity
-  # stands between the two, tracked as lpspec #1101 — when that lands, this
-  # whole section collapses into a block.
+  # Not a workaround waiting on the block: lpspec #1101 closed as a
+  # sugar-coverage gap rather than a ceiling one, and this row-keyed shape is
+  # what its docs now name as the way to state a curve whose arity is data.
+  # The block stays sugar for the fixed-arity case.
   has_piecewise: {dims: [converter], dtype: bool}
   pw_gated: {dims: [converter], dtype: bool}       # the curve answers to a Status
   pw_bp_present: {dims: [converter, bp], dtype: bool}   # this curve has this breakpoint
