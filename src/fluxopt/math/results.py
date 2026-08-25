@@ -18,11 +18,15 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import xarray as xr
+from lpspec import NoSolutionError
 
 from fluxopt.contract import Var
 from fluxopt.results import Result
 
 if TYPE_CHECKING:
+    from lpspec import Result as Solved
+    from math_spec import Model
+
     from fluxopt.model_data import ModelData
 
 #: Program variable -> the name it answers to in a solution. Variables the
@@ -162,7 +166,7 @@ def _split_status(arr: xr.DataArray, data: ModelData) -> tuple[xr.DataArray | No
     return parts[0], parts[1]
 
 
-def to_result(result: Any, data: ModelData, weights: dict[str, float], model: Any = None) -> Result:
+def to_result(result: Solved, data: ModelData, weights: dict[str, float], model: Model | None = None) -> Result:
     """Build a :class:`~fluxopt.results.Result` from a solved lpspec model.
 
     Args:
@@ -178,17 +182,17 @@ def to_result(result: Any, data: ModelData, weights: dict[str, float], model: An
         The same object the linopy lane returns.
 
     Raises:
-        RuntimeError: If the solve did not produce a primal solution — there
-            is no result to read, and an empty one would read as zeros.
+        NoSolutionError: If the solve did not produce a primal solution —
+            there is no result to read, and an empty one would read as zeros.
+            lpspec's own, so a caller sweeping scenarios catches one class for
+            every lane and records the outcome.
     """
     if model is None:
-        import lpspec
+        from fluxopt.math.sources import program
 
-        from fluxopt.math.sources import PROGRAM
-
-        model = lpspec.load_model(PROGRAM)
+        model = program()
     if not result.has_primal:
-        raise RuntimeError(f'no primal solution to read: the solver terminated {result.termination_condition!r}')
+        raise NoSolutionError(f'no primal solution to read: the solver terminated {result.termination_condition!r}')
 
     solution: dict[str, xr.DataArray] = {}
     for program_name, var_name in _DIRECT.items():

@@ -402,15 +402,14 @@ class TestContributionsAreDeclared:
         other would attribute a cost nobody is charged, or charge one nobody
         is attributed.
         """
-        import lpspec
 
         from fluxopt.contributions import LUMP, TEMPORAL
-        from fluxopt.math import PROGRAM
+        from fluxopt.math import program
 
-        program = lpspec.load_model(PROGRAM)
+        math = program()
         declared = set(TEMPORAL) | set(LUMP)
-        assert declared <= set(program.expressions), 'a contribution is read that the program does not declare'
-        summed = program.expressions['effect_temporal'].expression + program.expressions['effect_lump'].expression
+        assert declared <= set(math.expressions), 'a contribution is read that the program does not declare'
+        summed = math.expressions['effect_temporal'].expression + math.expressions['effect_lump'].expression
         for name in declared:
             assert name in summed, f'{name} is read back but the ledger never sums it'
 

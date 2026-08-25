@@ -155,9 +155,9 @@ class TestSupplyingALookup:
             'where': 'region_cap',
             'expression': 'sum(rate, by=region_of) <= region_cap',
         }
-        import lpspec
+        from math_spec import load_model
 
-        return system, lpspec.load_model(raw)
+        return system, load_model(raw)
 
     def test_a_supplied_lookup_reaches_the_constraint_that_reads_it(self) -> None:
         """Capping the cheap region forces the expensive one, which changes the cost."""
