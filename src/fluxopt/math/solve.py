@@ -7,10 +7,12 @@ from typing import TYPE_CHECKING, Any
 import lpspec
 
 from fluxopt.math.results import objective_weights, to_result
-from fluxopt.math.sources import PROGRAM, build_sources
+from fluxopt.math.sources import build_sources, program
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+
+    from math_spec import Model
 
     from fluxopt.model_data import ModelData
     from fluxopt.results import Result
@@ -22,7 +24,7 @@ def solve(
     *,
     solver_name: str = 'highs',
     solver_options: Mapping[str, Any] | None = None,
-    math: Any = None,
+    math: Model | None = None,
     dimensions: Mapping[str, Any] | None = None,
     lookups: Mapping[str, Any] | None = None,
     parameters: Mapping[str, Any] | None = None,
@@ -65,7 +67,8 @@ def solve(
     Raises:
         UnsupportedFeatureError: If *data* uses a feature the program does not
             express yet.
-        RuntimeError: If the solve produced no primal solution.
+        NoSolutionError: If the solve produced no primal solution — lpspec's
+            own, so one class covers a sweep whichever lane ran.
     """
     weights = objective_weights(data, objective)
     sources, coords = build_sources(data, weights)
@@ -79,6 +82,8 @@ def solve(
             msg = f"these names are the program's own and cannot be supplied: {clashes}"
             raise ValueError(msg)
         bound |= supplied
-    program = lpspec.load_model(PROGRAM if math is None else math)
-    solved = lpspec.solve(program, bound, solver_name, solver_options=solver_options)
-    return to_result(solved, data, weights, program)
+    from math_spec import load_model
+
+    model = program() if math is None else load_model(math)
+    solved = lpspec.solve(model, bound, solver_name, solver_options=solver_options)
+    return to_result(solved, data, weights, model)

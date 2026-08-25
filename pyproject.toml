@@ -30,6 +30,11 @@ dependencies = [
     # The modeling layer. fluxopt's math is `math/program.yaml`; lpspec
     # validates it, lowers it and streams it to the solver.
     "lpspec",
+    # The language half of lpspec, extracted to its own package so a consumer
+    # that only declares and typesets math need not take an engine. fluxopt is
+    # that consumer as well as an engine one: `FlowSystem.math()` hands a
+    # `Model` to a caller who may only want to read or render it.
+    "math-spec",
     # Leaving. `model.py` is the last core module importing linopy; it is
     # deleted rather than ported, and this line goes with it — the eager lane
     # lives in the `linopy` extra below.
@@ -67,7 +72,13 @@ linopy = ["lpspec[linopy]"]
 # Pinned to a tag: lpspec is pre-1.0 and its language surface still moves, so
 # an unpinned git ref would let a `uv sync` change what `core.yaml` means.
 # Bumping this is a deliberate change with `pytest tests/` behind it.
-lpspec = { git = "https://github.com/fluxopt/lpspec.git", tag = "v0.0.1-alpha.245" }
+lpspec = { git = "https://github.com/fluxopt/lpspec.git", tag = "v0.0.1-alpha.255" }
+# The language: `Model`, `load_model`, the typesetters. lpspec depends on it
+# too, so this is declared at the same ref rather than left transitive —
+# `math_spec` is imported here directly, and a package should declare what it
+# imports. Two direct references to one package at different refs is a
+# resolution error, which is the failure we want if the two ever drift.
+math-spec = { git = "https://github.com/energy-models/math-spec", tag = "v0.0.0-alpha.11" }
 
 [project.urls]
 repository = "https://github.com/FBumann/fluxopt"

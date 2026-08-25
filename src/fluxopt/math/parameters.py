@@ -29,6 +29,8 @@ import pandas as pd
 import polars as pl
 
 if TYPE_CHECKING:
+    from math_spec import Model
+
     from fluxopt.model_data import ModelData
 
 #: What a pandas column's dtype means in polars. `build_sources` still emits
@@ -93,7 +95,7 @@ class Parameters:
         return sum(len(f) for g in groups for f in g.values())
 
     @classmethod
-    def of(cls, data: ModelData, objective: str | dict[str, float], math: Any = None) -> Parameters:
+    def of(cls, data: ModelData, objective: str | dict[str, float], math: Model | None = None) -> Parameters:
         """Bind *data* to a program and keep what was bound, split by kind.
 
         The program is what tells a lookup's source key from a parameter's,
@@ -108,12 +110,10 @@ class Parameters:
                 without knowing what is being minimised.
             math: The program to bind against. Defaults to the shipped one.
         """
-        import lpspec
-
         from fluxopt.math.results import objective_weights
-        from fluxopt.math.sources import PROGRAM, build_sources
+        from fluxopt.math.sources import build_sources, program
 
-        model = math if math is not None else lpspec.load_model(PROGRAM)
+        model = math if math is not None else program()
         sources, coords = build_sources(data, objective_weights(data, objective))
 
         # A lookup either names the dimension its values are labels of, or

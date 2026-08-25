@@ -31,6 +31,20 @@ if TYPE_CHECKING:
 #: The YAML program holding fluxopt's math. Shipped as package data.
 PROGRAM = Path(__file__).with_name('program.yaml')
 
+
+def program() -> Any:
+    """fluxopt's math, loaded and checked.
+
+    A :class:`math_spec.Model` — the language is its own package, so `Model`
+    and the typesetters come from there while the engine verbs come from
+    lpspec. This is the pairing of :data:`PROGRAM` with the loader, which four
+    callers wanted and none wanted separately.
+    """
+    from math_spec import load_model
+
+    return load_model(PROGRAM)
+
+
 #: Parameters the YAML declares with a `period` axis *and* emit without one.
 #: Anything here is cross-joined onto every period. A frame-backed table
 #: carries its own period column and is not in this list.

@@ -204,17 +204,15 @@ class FlowSystem(BaseModel):
 
         An :class:`lpspec.Model` — the whole program, before any of this
         system's numbers are bound to it. Read it (``to_yaml()``), typeset it
-        (``lpspec.to_latex(...)``), or edit it and hand it back to
+        (``math_spec.to_latex(...)``), or edit it and hand it back to
         :meth:`optimize` as ``math=``: adding a named quantity to
         ``expressions:`` or a row to ``constraints:`` is how a caller extends
         the math now, in the same language and with the same load-time checks
         the shipped program gets.
         """
-        import lpspec
+        from fluxopt.math import program
 
-        from fluxopt.math import PROGRAM
-
-        return lpspec.load_model(PROGRAM)
+        return program()
 
     def parameters(self, profiles: Mapping[str, Any] | None = None) -> Parameters:
         """The numbers this system binds to its math, as data.
